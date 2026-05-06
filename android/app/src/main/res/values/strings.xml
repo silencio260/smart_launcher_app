@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Smart Launcher</string>
+    <string name="accessibility_service_description">Allows Smart Launcher to perform actions like sleeping the screen and opening recents</string>
+</resources>

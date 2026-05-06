@@ -1,94 +1,56 @@
 package com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app
 
-import android.content.Intent
-import android.net.Uri
+import android.appwidget.AppWidgetHost
 import android.os.Bundle
-import android.provider.Settings
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.plugin.common.MethodChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.AlarmChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.AppInstallEventChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.AppsChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.CalendarChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.ContactsChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.NotificationChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.SystemChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.WallpaperChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.widget.WidgetHostViewFactory
 
 class MainActivity : FlutterActivity() {
 
-    private val APPS_CHANNEL = "com.genrevibes.smartlauncher/apps"
-    private val SYSTEM_CHANNEL = "com.genrevibes.smartlauncher/system"
+    private val appWidgetHost by lazy { AppWidgetHost(this, 1024) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+        appWidgetHost.startListening()
+    }
+
+    override fun onDestroy() {
+        appWidgetHost.stopListening()
+        super.onDestroy()
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        val messenger = flutterEngine.dartExecutor.binaryMessenger
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, APPS_CHANNEL)
-            .setMethodCallHandler { call, result ->
-                when (call.method) {
-                    "getApps" -> {
-                        try {
-                            result.success(AppQueryHelper.getLauncherActivities(this))
-                        } catch (e: Exception) {
-                            result.error("GET_APPS_ERROR", e.message, null)
-                        }
-                    }
-                    "launchApp" -> {
-                        val packageName = call.argument<String>("packageName")
-                        if (packageName != null) {
-                            val intent = packageManager.getLaunchIntentForPackage(packageName)
-                            if (intent != null) {
-                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                startActivity(intent)
-                                result.success(true)
-                            } else {
-                                result.success(false)
-                            }
-                        } else {
-                            result.success(false)
-                        }
-                    }
-                    "openAppSettings" -> {
-                        val packageName = call.argument<String>("packageName")
-                        if (packageName != null) {
-                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                            intent.data = Uri.parse("package:$packageName")
-                            startActivity(intent)
-                            result.success(true)
-                        } else {
-                            result.error("INVALID_PACKAGE", "Package name is null", null)
-                        }
-                    }
-                    "uninstallApp" -> {
-                        val packageName = call.argument<String>("packageName")
-                        if (packageName != null) {
-                            val intent = Intent(Intent.ACTION_DELETE)
-                            intent.data = Uri.parse("package:$packageName")
-                            startActivity(intent)
-                            result.success(true)
-                        } else {
-                            result.success(false)
-                        }
-                    }
-                    else -> result.notImplemented()
-                }
-            }
+        AppsChannel(this).register(messenger)
+        SystemChannel(this).register(messenger)
+        WallpaperChannel(this).register(messenger)
+        NotificationChannel(this).register(messenger)
+        ContactsChannel(this).register(messenger)
+        CalendarChannel(this).register(messenger)
+        AlarmChannel(this).register(messenger)
+        AppInstallEventChannel(this).register(messenger)
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SYSTEM_CHANNEL)
-            .setMethodCallHandler { call, result ->
-                when (call.method) {
-                    "changeWallpaper" -> {
-                        try {
-                            val intent = Intent(Intent.ACTION_SET_WALLPAPER)
-                            startActivity(Intent.createChooser(intent, "Select Wallpaper"))
-                            result.success(true)
-                        } catch (e: Exception) {
-                            result.error("WALLPAPER_ERROR", e.message, null)
-                        }
-                    }
-                    else -> result.notImplemented()
-                }
-            }
+        flutterEngine.platformViewsController.registry.registerViewFactory(
+            "com.genrevibes.smartlauncher/widget_host_view",
+            WidgetHostViewFactory(this, appWidgetHost),
+        )
     }
 
+    @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        // Swallow back press — launchers should not exit on back
+        // Launchers swallow the back button
     }
 }
