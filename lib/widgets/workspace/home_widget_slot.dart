@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../models/item_info.dart';
 import '../../models/launcher_widget_info.dart';
+import '../../models/workspace_item_info.dart';
+import '../../services/drag/drag_controller.dart';
 import '../../state/workspace_cubit.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -8,12 +11,14 @@ class HomeWidgetSlot extends StatefulWidget {
   final LauncherWidgetInfo widget;
   final int page;
   final int slot;
+  final DragController dragController;
 
   const HomeWidgetSlot({
     super.key,
     required this.widget,
     required this.page,
     required this.slot,
+    required this.dragController,
   });
 
   @override
@@ -26,16 +31,59 @@ class _HomeWidgetSlotState extends State<HomeWidgetSlot> {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        _WidgetView(appWidgetId: widget.widget.appWidgetId),
-        if (_resizing) _buildResizeHandles(context),
-        GestureDetector(
-          onLongPress: () => setState(() => _resizing = !_resizing),
-          behavior: HitTestBehavior.translucent,
-          child: const SizedBox.expand(),
+    final w = widget.widget;
+    final payload = DragPayload(
+      item: WorkspaceItemInfo(
+        id: w.id,
+        itemType: ItemType.appWidget,
+        packageName: w.providerPackage,
+        componentName: w.providerClass,
+        title: 'Widget',
+      ),
+      sourcePage: widget.page,
+      sourceSlot: widget.slot,
+    );
+
+    return LongPressDraggable<DragPayload>(
+      data: payload,
+      delay: const Duration(milliseconds: 500),
+      onDragStarted: () =>
+          widget.dragController.startDrag(payload.item, widget.page, widget.slot, Offset.zero),
+      onDragEnd: (_) => widget.dragController.cancelDrag(),
+      onDraggableCanceled: (_, __) => widget.dragController.cancelDrag(),
+      feedback: Material(
+        color: Colors.transparent,
+        child: Opacity(
+          opacity: 0.75,
+          child: Container(
+            width: 120,
+            height: 80,
+            decoration: BoxDecoration(
+              color: Colors.white24,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white38),
+            ),
+            child: const Center(
+              child: Icon(Icons.widgets_outlined, color: Colors.white70, size: 36),
+            ),
+          ),
         ),
-      ],
+      ),
+      childWhenDragging: Opacity(
+        opacity: 0.25,
+        child: _WidgetView(appWidgetId: w.appWidgetId),
+      ),
+      child: Stack(
+        children: [
+          _WidgetView(appWidgetId: w.appWidgetId),
+          if (_resizing) _buildResizeHandles(context),
+          GestureDetector(
+            onLongPress: () => setState(() => _resizing = !_resizing),
+            behavior: HitTestBehavior.translucent,
+            child: const SizedBox.expand(),
+          ),
+        ],
+      ),
     );
   }
 

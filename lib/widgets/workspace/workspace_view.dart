@@ -69,12 +69,7 @@ class _WorkspaceViewState extends State<WorkspaceView> {
             return CellLayoutView(
               page: state.pages[i],
               pageIndex: i,
-              columns: widget.settings.gridColumns,
-              rows: widget.settings.gridRows,
-              iconSize: widget.settings.iconSize,
-              showLabels: widget.settings.showLabels,
-              labelSize: widget.settings.labelSize,
-              iconShape: widget.settings.iconShape,
+              settings: widget.settings,
               dragController: widget.dragController,
               badgeCounts: widget.badgeCounts,
               onAppTap: widget.onAppTap,

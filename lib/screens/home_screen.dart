@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../models/app_info.dart';
+import '../models/item_info.dart';
 import '../models/launcher_settings.dart';
 import '../models/launcher_state.dart' as ls;
+import '../models/workspace_item_info.dart';
 import '../services/launcher_service.dart';
 import '../state/apps_cubit.dart';
 import '../state/launcher_cubit.dart';
@@ -60,30 +62,107 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   void _openDrawer() {
     final settings = context.read<SettingsCubit>().state;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      useRootNavigator: true,
-      builder: (sheetCtx) => MultiBlocProvider(
-        providers: [
-          BlocProvider.value(value: context.read<AppsCubit>()),
-          BlocProvider.value(value: context.read<SearchCubit>()),
-          BlocProvider.value(value: context.read<SettingsCubit>()),
-        ],
-        child: DraggableScrollableSheet(
-          initialChildSize: 0.9,
-          minChildSize: 0.5,
-          maxChildSize: 0.95,
-          builder: (_, __) => AllAppsContainer(
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        opaque: false,
+        barrierColor: Colors.transparent,
+        transitionDuration: Duration.zero,
+        pageBuilder: (routeCtx, _, __) => MultiBlocProvider(
+          providers: [
+            BlocProvider.value(value: context.read<AppsCubit>()),
+            BlocProvider.value(value: context.read<SearchCubit>()),
+            BlocProvider.value(value: context.read<SettingsCubit>()),
+            BlocProvider.value(value: context.read<WorkspaceCubit>()),
+          ],
+          child: AllAppsContainer(
             settings: settings,
             onAppTap: (app) {
-              Navigator.pop(sheetCtx);
+              Navigator.pop(routeCtx);
               LauncherService.launchApp(app.packageName);
             },
-            onAppLongPress: (app) => _showAppMenu(app),
+            onAppLongPress: (app) => _showDrawerAppMenu(app, routeCtx),
           ),
         ),
+      ),
+    );
+  }
+
+  void _showDrawerAppMenu(AppInfo app, BuildContext drawerCtx) {
+    showModalBottomSheet(
+      context: drawerCtx,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AppContextMenu(
+        app: app,
+        showAddToHome: true,
+        onOpen: () {
+          Navigator.pop(drawerCtx); // close menu
+          Navigator.pop(drawerCtx); // close drawer
+          LauncherService.launchApp(app.packageName);
+        },
+        onAddToHome: () {
+          Navigator.pop(drawerCtx); // close menu
+          Navigator.pop(drawerCtx); // close drawer
+          _addAppToHomeScreen(app);
+        },
+        onAppInfo: () {
+          Navigator.pop(drawerCtx);
+          LauncherService.openAppSettings(app.packageName);
+        },
+        onHide: () {
+          Navigator.pop(drawerCtx);
+          context.read<AppsCubit>().hideApp(app.packageName);
+        },
+        onUninstall: () {
+          Navigator.pop(drawerCtx);
+          LauncherService.uninstallApp(app.packageName);
+        },
+      ),
+    );
+  }
+
+  void _addAppToHomeScreen(AppInfo app) {
+    final workspaceState = context.read<WorkspaceCubit>().state;
+    final settings = context.read<SettingsCubit>().state;
+    final slotsPerPage = settings.gridColumns * settings.gridRows;
+
+    int targetPage = -1;
+    int targetSlot = -1;
+
+    for (int p = 0; p < workspaceState.pages.length; p++) {
+      for (int s = 0; s < slotsPerPage; s++) {
+        if (workspaceState.pages[p].slots[s] == null) {
+          targetPage = p;
+          targetSlot = s;
+          break;
+        }
+      }
+      if (targetPage >= 0) break;
+    }
+
+    if (targetPage < 0) {
+      context.read<WorkspaceCubit>().addPage();
+      targetPage = workspaceState.pages.length;
+      targetSlot = 0;
+    }
+
+    final item = WorkspaceItemInfo(
+      id: app.id,
+      itemType: ItemType.application,
+      packageName: app.packageName,
+      componentName: app.appComponentName,
+      title: app.name,
+      icon: app.icon,
+      screenId: targetPage,
+    );
+
+    context.read<WorkspaceCubit>().addItem(item, targetPage, targetSlot);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${app.name} added to Home Screen'),
+        duration: const Duration(seconds: 2),
+        backgroundColor: Colors.black87,
       ),
     );
   }
@@ -169,38 +248,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  void _showAppMenu(AppInfo app) {
+  void _showWorkspaceAppMenu(AppInfo app) {
     showModalBottomSheet(
       context: context,
-      builder: (_) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(Icons.open_in_new),
-            title: Text(app.name),
-            subtitle: const Text('Open'),
-            onTap: () {
-              Navigator.pop(context);
-              LauncherService.launchApp(app.packageName);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: const Text('App Info'),
-            onTap: () {
-              Navigator.pop(context);
-              LauncherService.openAppSettings(app.packageName);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.delete_outline, color: Colors.red),
-            title: const Text('Uninstall', style: TextStyle(color: Colors.red)),
-            onTap: () {
-              Navigator.pop(context);
-              LauncherService.uninstallApp(app.packageName);
-            },
-          ),
-        ],
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AppContextMenu(
+        app: app,
+        showAddToHome: false,
+        onOpen: () {
+          Navigator.pop(context);
+          LauncherService.launchApp(app.packageName);
+        },
+        onAppInfo: () {
+          Navigator.pop(context);
+          LauncherService.openAppSettings(app.packageName);
+        },
+        onUninstall: () {
+          Navigator.pop(context);
+          LauncherService.uninstallApp(app.packageName);
+        },
       ),
     );
   }
@@ -211,9 +277,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       builder: (context, settings) {
         return BlocListener<LauncherCubit, ls.LauncherState>(
           listener: (context, state) {
-            if (state == ls.LauncherState.allApps) {
-              _openDrawer();
-            }
+            if (state == ls.LauncherState.allApps) _openDrawer();
           },
           child: Scaffold(
             backgroundColor: Colors.transparent,
@@ -222,6 +286,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 final dockApps = _resolveDockApps(appsState, settings);
                 return DragLayer(
                   dragController: _dragController,
+                  iconShape: settings.iconShape,
                   child: WorkspaceTouchListener(
                     settings: settings,
                     onDoubleTap: () => _handleGesture(settings.doubleTapAction),
@@ -241,7 +306,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             settings: settings,
                             badgeCounts: appsState.badgeCounts,
                             onAppTap: (app) => LauncherService.launchApp(app.packageName),
-                            onAppLongPress: (app, page, slot) => _showAppMenu(app),
+                            onAppLongPress: (app, page, slot) => _showWorkspaceAppMenu(app),
                             onPageChanged: (offset) {
                               const MethodChannel('com.genrevibes.smartlauncher/wallpaper')
                                   .invokeMethod('setWallpaperOffset', {'xOffset': offset});
@@ -259,9 +324,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               apps: dockApps,
                               settings: settings,
                               badgeCounts: appsState.badgeCounts,
+                              dragController: _dragController,
                               onSwipeUp: () => _handleGesture(settings.swipeUpAction),
                               onAppTap: (app) => LauncherService.launchApp(app.packageName),
-                              onAppLongPress: _showAppMenu,
+                              onAppLongPress: _showWorkspaceAppMenu,
                             ),
                           ),
                       ],
@@ -295,6 +361,89 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 }
 
+// ─── Shared app context menu ──────────────────────────────────────────────────
+
+class _AppContextMenu extends StatelessWidget {
+  final AppInfo app;
+  final bool showAddToHome;
+  final VoidCallback onOpen;
+  final VoidCallback? onAddToHome;
+  final VoidCallback onAppInfo;
+  final VoidCallback? onHide;
+  final VoidCallback onUninstall;
+
+  const _AppContextMenu({
+    required this.app,
+    required this.showAddToHome,
+    required this.onOpen,
+    this.onAddToHome,
+    required this.onAppInfo,
+    this.onHide,
+    required this.onUninstall,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey[900]!.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 8),
+          Container(
+            width: 36, height: 4,
+            decoration: BoxDecoration(
+              color: Colors.white24,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Text(
+              app.name,
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.open_in_new, color: Colors.white70),
+            title: const Text('Open', style: TextStyle(color: Colors.white)),
+            onTap: onOpen,
+          ),
+          if (showAddToHome && onAddToHome != null)
+            ListTile(
+              leading: const Icon(Icons.add_to_home_screen, color: Colors.white70),
+              title: const Text('Add to Home Screen', style: TextStyle(color: Colors.white)),
+              onTap: onAddToHome,
+            ),
+          ListTile(
+            leading: const Icon(Icons.info_outline, color: Colors.white70),
+            title: const Text('App Info', style: TextStyle(color: Colors.white)),
+            onTap: onAppInfo,
+          ),
+          if (onHide != null)
+            ListTile(
+              leading: const Icon(Icons.visibility_off_outlined, color: Colors.white70),
+              title: const Text('Hide App', style: TextStyle(color: Colors.white)),
+              onTap: onHide,
+            ),
+          ListTile(
+            leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+            title: const Text('Uninstall', style: TextStyle(color: Colors.redAccent)),
+            onTap: onUninstall,
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Home context menu ────────────────────────────────────────────────────────
+
 class _HomeContextMenu extends StatelessWidget {
   final VoidCallback onWallpaper;
   final VoidCallback onSettings;
@@ -319,8 +468,7 @@ class _HomeContextMenu extends StatelessWidget {
         children: [
           const SizedBox(height: 8),
           Container(
-            width: 36,
-            height: 4,
+            width: 36, height: 4,
             decoration: BoxDecoration(
               color: Colors.white24,
               borderRadius: BorderRadius.circular(2),

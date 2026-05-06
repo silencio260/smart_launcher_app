@@ -1,19 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/app_info.dart';
+import '../../models/launcher_settings.dart';
 import '../../services/drag/drag_controller.dart';
 import '../../state/workspace_cubit.dart';
 import '../icons/bubble_text_view.dart';
+import '../folder/folder_icon.dart';
 
 class CellLayoutView extends StatelessWidget {
   final WorkspacePage page;
   final int pageIndex;
-  final int columns;
-  final int rows;
-  final double iconSize;
-  final bool showLabels;
-  final double labelSize;
-  final String iconShape;
+  final LauncherSettings settings;
   final DragController dragController;
   final Map<String, int> badgeCounts;
   final void Function(AppInfo app) onAppTap;
@@ -23,12 +20,7 @@ class CellLayoutView extends StatelessWidget {
     super.key,
     required this.page,
     required this.pageIndex,
-    required this.columns,
-    required this.rows,
-    required this.iconSize,
-    required this.showLabels,
-    required this.labelSize,
-    required this.iconShape,
+    required this.settings,
     required this.dragController,
     required this.badgeCounts,
     required this.onAppTap,
@@ -37,13 +29,16 @@ class CellLayoutView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final totalSlots = columns * rows;
+    final totalSlots = settings.gridColumns * settings.gridRows;
     return GridView.builder(
       physics: const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: columns,
-        childAspectRatio: iconSize / (iconSize + (showLabels ? labelSize + 8 : 0) + 8),
+        crossAxisCount: settings.gridColumns,
+        childAspectRatio: settings.iconSize /
+            (settings.iconSize +
+                (settings.showLabels ? settings.labelSize + 8 : 0) +
+                8),
       ),
       itemCount: totalSlots,
       itemBuilder: (context, slot) {
@@ -58,8 +53,9 @@ class CellLayoutView extends StatelessWidget {
                   pageIndex,
                   slot,
                 );
+            dragController.cancelDrag();
           },
-          builder: (context, candidateData, rejectedData) {
+          builder: (context, candidateData, _) {
             final isHovered = candidateData.isNotEmpty;
             return AnimatedContainer(
               duration: const Duration(milliseconds: 150),
@@ -78,9 +74,7 @@ class CellLayoutView extends StatelessWidget {
   }
 
   Widget _buildSlotContent(BuildContext context, SlotContent? content, int slot) {
-    if (content == null || content is EmptySlot) {
-      return const SizedBox.shrink();
-    }
+    if (content == null || content is EmptySlot) return const SizedBox.shrink();
 
     if (content is AppSlot) {
       final item = content.item;
@@ -92,9 +86,16 @@ class CellLayoutView extends StatelessWidget {
         icon: item.icon,
       );
       final badge = badgeCounts[item.packageName] ?? 0;
+      final payload = DragPayload(item: item, sourcePage: pageIndex, sourceSlot: slot);
+
       return Center(
-        child: Draggable<DragPayload>(
-          data: DragPayload(item: item, sourcePage: pageIndex, sourceSlot: slot),
+        child: LongPressDraggable<DragPayload>(
+          data: payload,
+          delay: const Duration(milliseconds: 350),
+          onDragStarted: () =>
+              dragController.startDrag(item, pageIndex, slot, Offset.zero),
+          onDragEnd: (_) => dragController.cancelDrag(),
+          onDraggableCanceled: (_, __) => dragController.cancelDrag(),
           feedback: Material(
             color: Colors.transparent,
             child: Opacity(
@@ -103,9 +104,9 @@ class CellLayoutView extends StatelessWidget {
                 scale: 1.15,
                 child: BubbleTextView(
                   app: app,
-                  iconSize: iconSize,
+                  iconSize: settings.iconSize,
                   showLabel: false,
-                  iconShape: iconShape,
+                  iconShape: settings.iconShape,
                 ),
               ),
             ),
@@ -114,19 +115,19 @@ class CellLayoutView extends StatelessWidget {
             opacity: 0.3,
             child: BubbleTextView(
               app: app,
-              iconSize: iconSize,
-              showLabel: showLabels,
-              labelSize: labelSize,
-              iconShape: iconShape,
+              iconSize: settings.iconSize,
+              showLabel: settings.showLabels,
+              labelSize: settings.labelSize,
+              iconShape: settings.iconShape,
               badgeCount: badge,
             ),
           ),
           child: BubbleTextView(
             app: app,
-            iconSize: iconSize,
-            showLabel: showLabels,
-            labelSize: labelSize,
-            iconShape: iconShape,
+            iconSize: settings.iconSize,
+            showLabel: settings.showLabels,
+            labelSize: settings.labelSize,
+            iconShape: settings.iconShape,
             badgeCount: badge,
             onTap: () => onAppTap(app),
             onLongPress: () => onAppLongPress(app, slot),
@@ -136,8 +137,17 @@ class CellLayoutView extends StatelessWidget {
     }
 
     if (content is FolderSlot) {
+      final folders = context.read<WorkspaceCubit>().state.folders;
+      final folder = folders[content.folderId];
+      if (folder == null) return const SizedBox.shrink();
       return Center(
-        child: Icon(Icons.folder, size: iconSize, color: Colors.amber.shade300),
+        child: FolderIconView(
+          folder: folder,
+          settings: settings,
+          badgeCount: 0,
+          onTap: () {},
+          onLongPress: () {},
+        ),
       );
     }
 

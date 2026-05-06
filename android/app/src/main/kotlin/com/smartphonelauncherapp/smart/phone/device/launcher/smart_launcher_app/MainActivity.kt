@@ -4,6 +4,8 @@ import android.appwidget.AppWidgetHost
 import android.os.Bundle
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.RenderMode
+import io.flutter.embedding.android.TransparencyMode
 import io.flutter.embedding.engine.FlutterEngine
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.AlarmChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.AppInstallEventChannel
@@ -18,6 +20,9 @@ import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.
 class MainActivity : FlutterActivity() {
 
     private val appWidgetHost by lazy { AppWidgetHost(this, 1024) }
+
+    override fun getRenderMode(): RenderMode = RenderMode.texture
+    override fun getTransparencyMode(): TransparencyMode = TransparencyMode.transparent
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
