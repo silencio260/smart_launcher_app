@@ -108,7 +108,9 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
 
   void addItem(WorkspaceItemInfo item, int page, int slot) {
     final pages = List<WorkspacePage>.from(state.pages);
-    while (pages.length <= page) { pages.add(WorkspacePage({})); }
+    while (pages.length <= page) {
+      pages.add(WorkspacePage({}));
+    }
     final slots = Map<int, SlotContent>.from(pages[page].slots);
     slots[slot] = AppSlot(item);
     pages[page] = WorkspacePage(slots);
@@ -118,7 +120,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
 
   void removeItem(int page, int slot) {
     final pages = List<WorkspacePage>.from(state.pages);
-    if (page >= pages.length) return;
+    if (page < 0 || page >= pages.length) return;
     final slots = Map<int, SlotContent>.from(pages[page].slots);
     slots.remove(slot);
     pages[page] = WorkspacePage(slots);
@@ -128,17 +130,30 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
 
   void moveItem(int fromPage, int fromSlot, int toPage, int toSlot) {
     final pages = List<WorkspacePage>.from(state.pages);
+    if (fromPage < 0 || toPage < 0) return;
     if (fromPage >= pages.length || toPage >= pages.length) return;
     final content = pages[fromPage].slots[fromSlot];
     if (content == null) return;
-    final fromSlots = Map<int, SlotContent>.from(pages[fromPage].slots)..remove(fromSlot);
-    final toSlots = Map<int, SlotContent>.from(pages[toPage].slots)..[toSlot] = content;
-    pages[fromPage] = WorkspacePage(fromSlots);
-    pages[toPage] = WorkspacePage(toSlots);
+
+    if (fromPage == toPage) {
+      // Atomic single-page move — avoids the double-write copy bug
+      final slots = Map<int, SlotContent>.from(pages[fromPage].slots)
+        ..remove(fromSlot)
+        ..[toSlot] = content;
+      pages[fromPage] = WorkspacePage(slots);
+    } else {
+      final fromSlots = Map<int, SlotContent>.from(pages[fromPage].slots)
+        ..remove(fromSlot);
+      final toSlots = Map<int, SlotContent>.from(pages[toPage].slots)
+        ..[toSlot] = content;
+      pages[fromPage] = WorkspacePage(fromSlots);
+      pages[toPage] = WorkspacePage(toSlots);
+    }
     emit(state.copyWith(pages: pages));
     saveLayout();
   }
 
+  // Creates a folder from two app slots. Folder lands at slotB (the drop target).
   void createFolder(int page, int slotA, int slotB, String title) {
     final pages = List<WorkspacePage>.from(state.pages);
     if (page >= pages.length) return;
@@ -152,14 +167,16 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
       id: folderId.hashCode,
       folderTitle: title,
       contents: [contentA.item, contentB.item],
-      cellX: slotA % 5,
-      cellY: slotA ~/ 5,
+      cellX: slotB % 5,
+      cellY: slotB ~/ 5,
       screenId: page,
     );
-    final folders = Map<String, FolderInfo>.from(state.folders)..[folderId] = folder;
+    final folders = Map<String, FolderInfo>.from(state.folders)
+      ..[folderId] = folder;
     slots.remove(slotA);
     slots.remove(slotB);
-    slots[slotA] = FolderSlot(folderId);
+    // Folder appears at the target slot (where the user dropped)
+    slots[slotB] = FolderSlot(folderId);
     pages[page] = WorkspacePage(slots);
     emit(state.copyWith(pages: pages, folders: folders));
     saveLayout();
@@ -169,6 +186,8 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     final folders = Map<String, FolderInfo>.from(state.folders);
     final folder = folders[folderId];
     if (folder == null) return;
+    // Avoid duplicates
+    if (folder.contents.any((c) => c.packageName == item.packageName)) return;
     folders[folderId] = FolderInfo(
       id: folder.id,
       folderTitle: folder.folderTitle,
@@ -197,16 +216,6 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     saveLayout();
   }
 
-  void updateWidgetSpan(int page, int slot, LauncherWidgetInfo updated) {
-    final pages = List<WorkspacePage>.from(state.pages);
-    if (page >= pages.length) return;
-    final slots = Map<int, SlotContent>.from(pages[page].slots);
-    slots[slot] = WidgetSlot(updated);
-    pages[page] = WorkspacePage(slots);
-    emit(state.copyWith(pages: pages));
-    saveLayout();
-  }
-
   void removeFromFolder(String folderId, int itemId) {
     final folders = Map<String, FolderInfo>.from(state.folders);
     final folder = folders[folderId];
@@ -223,24 +232,80 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     saveLayout();
   }
 
+  // Collapses folder to a single app slot (or removes it) when items drop below 2.
+  void tryCollapseFolder(String folderId, int page, int slot) {
+    final folder = state.folders[folderId];
+    if (folder == null) return;
+    if (folder.contents.length > 1) return;
+
+    final pages = List<WorkspacePage>.from(state.pages);
+    if (page >= pages.length) return;
+    final slots = Map<int, SlotContent>.from(pages[page].slots);
+    if (folder.contents.length == 1) {
+      slots[slot] = AppSlot(folder.contents.first);
+    } else {
+      slots.remove(slot);
+    }
+    pages[page] = WorkspacePage(slots);
+    final folders = Map<String, FolderInfo>.from(state.folders)
+      ..remove(folderId);
+    emit(state.copyWith(pages: pages, folders: folders));
+    saveLayout();
+  }
+
+  // Removes completely empty pages (but always keeps at least one).
+  void collapseEmptyPages() {
+    if (state.pages.length <= 1) return;
+    final nonEmpty =
+        state.pages.where((p) => p.slots.isNotEmpty).toList();
+    if (nonEmpty.length == state.pages.length) return;
+    final retained = nonEmpty.isEmpty ? [WorkspacePage({})] : nonEmpty;
+    final cur = state.currentPage.clamp(0, retained.length - 1);
+    emit(state.copyWith(pages: retained, currentPage: cur));
+    saveLayout();
+  }
+
+  void updateWidgetSpan(int page, int slot, LauncherWidgetInfo updated) {
+    final pages = List<WorkspacePage>.from(state.pages);
+    if (page >= pages.length) return;
+    final slots = Map<int, SlotContent>.from(pages[page].slots);
+    slots[slot] = WidgetSlot(updated);
+    pages[page] = WorkspacePage(slots);
+    emit(state.copyWith(pages: pages));
+    saveLayout();
+  }
+
   Map<String, dynamic> _serialize(WorkspaceState s) => {
         'currentPage': s.currentPage,
         'isLocked': s.isLocked,
-        'pages': s.pages.map((p) => {
-          'slots': p.slots.map((k, v) => MapEntry(k.toString(), _serializeSlot(v))),
-        }).toList(),
+        'pages': s.pages
+            .map((p) => {
+                  'slots': p.slots.map(
+                      (k, v) => MapEntry(k.toString(), _serializeSlot(v))),
+                })
+            .toList(),
         'folders': s.folders.map((k, v) => MapEntry(k, {
-          'id': v.id,
-          'title': v.folderTitle,
-          'cellX': v.cellX,
-          'cellY': v.cellY,
-          'screenId': v.screenId,
-        })),
+              'id': v.id,
+              'title': v.folderTitle,
+              'cellX': v.cellX,
+              'cellY': v.cellY,
+              'screenId': v.screenId,
+              'contents': v.contents
+                  .map((i) => {
+                        'packageName': i.packageName,
+                        'title': i.title,
+                      })
+                  .toList(),
+            })),
       };
 
   Map<String, dynamic> _serializeSlot(SlotContent slot) {
     if (slot is AppSlot) {
-      return {'type': 'app', 'packageName': slot.item.packageName, 'title': slot.item.title};
+      return {
+        'type': 'app',
+        'packageName': slot.item.packageName,
+        'title': slot.item.title,
+      };
     } else if (slot is FolderSlot) {
       return {'type': 'folder', 'folderId': slot.folderId};
     }
@@ -256,10 +321,34 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
       return WorkspacePage(slotMap);
     }).toList();
 
+    final foldersMap = <String, FolderInfo>{};
+    final rawFolders = data['folders'] as Map? ?? {};
+    rawFolders.forEach((k, v) {
+      final vMap = v as Map<String, dynamic>;
+      final contents = (vMap['contents'] as List? ?? []).map((c) {
+        final cMap = c as Map<String, dynamic>;
+        return WorkspaceItemInfo(
+          id: 0,
+          itemType: ItemType.application,
+          packageName: cMap['packageName'] as String,
+          title: cMap['title'] as String?,
+        );
+      }).toList();
+      foldersMap[k as String] = FolderInfo(
+        id: vMap['id'] as int? ?? 0,
+        folderTitle: vMap['title'] as String? ?? 'Folder',
+        contents: contents,
+        cellX: vMap['cellX'] as int? ?? 0,
+        cellY: vMap['cellY'] as int? ?? 0,
+        screenId: vMap['screenId'] as int? ?? 0,
+      );
+    });
+
     return WorkspaceState(
       pages: pagesList.isEmpty ? [WorkspacePage({})] : pagesList,
       currentPage: data['currentPage'] as int? ?? 0,
       isLocked: data['isLocked'] as bool? ?? false,
+      folders: foldersMap,
     );
   }
 

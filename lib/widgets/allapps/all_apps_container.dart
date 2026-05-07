@@ -105,18 +105,21 @@ class _AllAppsContainerState extends State<AllAppsContainer>
             opacity: (1.0 - dismissProgress * 0.5).clamp(0.0, 1.0),
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-              child: Container(
-                height: screenH,
-                color: widget.settings.drawerBackgroundColor
-                    .withValues(alpha: widget.settings.drawerBackgroundOpacity),
-                child: Column(
-                  children: [
-                    SizedBox(height: MediaQuery.of(context).padding.top + 16),
-                    _SearchRow(onDismiss: _dismiss),
-                    const SizedBox(height: 4),
-                    Expanded(child: _buildBody()),
-                    SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
-                  ],
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  height: screenH,
+                  color: widget.settings.drawerBackgroundColor
+                      .withValues(alpha: widget.settings.drawerBackgroundOpacity),
+                  child: Column(
+                    children: [
+                      SizedBox(height: MediaQuery.of(context).padding.top + 16),
+                      _SearchRow(onDismiss: _dismiss),
+                      const SizedBox(height: 4),
+                      Expanded(child: _buildBody()),
+                      SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
+                    ],
+                  ),
                 ),
               ),
             ),

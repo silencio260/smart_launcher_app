@@ -51,7 +51,7 @@ class AllAppsRecycler extends StatelessWidget {
                 }
                 if (item is AppRow) {
                   return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                     child: Row(
                       children: [
                         ...item.apps.map((app) => Expanded(

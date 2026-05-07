@@ -342,12 +342,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  List<AppInfo> _resolveDockApps(AppsState appsState, LauncherSettings settings) {
+  List<AppInfo?> _resolveDockApps(AppsState appsState, LauncherSettings settings) {
     if (settings.dockPackages.isNotEmpty) {
-      return settings.dockPackages
-          .map((pkg) => appsState.apps.where((a) => a.packageName == pkg).firstOrNull)
-          .whereType<AppInfo>()
-          .toList();
+      // Preserve slot positions: empty-string entries become null so the dock
+      // displays an empty slot rather than shifting subsequent apps left.
+      return settings.dockPackages.map((pkg) {
+        if (pkg.isEmpty) return null;
+        return appsState.apps.where((a) => a.packageName == pkg).firstOrNull;
+      }).toList();
     }
     const defaults = [
       'com.android.dialer',
@@ -357,7 +359,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       'com.android.camera2',
     ];
     final pinned = appsState.apps.where((a) => defaults.contains(a.packageName)).toList();
-    return pinned.isEmpty ? appsState.apps.take(settings.dockSize).toList() : pinned;
+    final resolved = pinned.isEmpty ? appsState.apps.take(settings.dockSize).toList() : pinned;
+    return resolved.map<AppInfo?>((a) => a).toList();
   }
 }
 

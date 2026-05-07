@@ -1,16 +1,17 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/app_info.dart';
 import '../../models/item_info.dart';
 import '../../models/launcher_settings.dart';
 import '../../models/workspace_item_info.dart';
 import '../../services/drag/drag_controller.dart';
+import '../../state/settings_cubit.dart';
 import '../../state/workspace_cubit.dart';
 import '../icons/bubble_text_view.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 
 class HotseatView extends StatelessWidget {
-  final List<AppInfo> apps;
+  final List<AppInfo?> apps;
   final LauncherSettings settings;
   final Map<String, int> badgeCounts;
   final DragController dragController;
@@ -92,26 +93,70 @@ class _DockSlot extends StatelessWidget {
     required this.onAppLongPress,
   });
 
+  // Writes `packageName` at position `slot` in dockPackages, expanding the
+  // list with empty strings as needed.
+  void _setDockSlot(BuildContext context, String packageName) {
+    final s = context.read<SettingsCubit>().state;
+    final packages = List<String>.from(s.dockPackages);
+    while (packages.length <= slot) { packages.add(''); }
+    packages[slot] = packageName;
+    context.read<SettingsCubit>().update(s.copyWith(dockPackages: packages));
+  }
+
+  // Clears this dock slot (sets it to empty string).
+  void _clearDockSlot(BuildContext context) {
+    final s = context.read<SettingsCubit>().state;
+    final packages = List<String>.from(s.dockPackages);
+    if (slot < packages.length) packages[slot] = '';
+    context.read<SettingsCubit>().update(s.copyWith(dockPackages: packages));
+  }
+
   @override
   Widget build(BuildContext context) {
     final current = app;
+
     if (current == null) {
+      // Empty dock slot — accepts drops from workspace or other dock slots.
       return DragTarget<DragPayload>(
         onWillAcceptWithDetails: (_) => true,
         onAcceptWithDetails: (details) {
           final payload = details.data;
-          context.read<WorkspaceCubit>().removeItem(payload.sourcePage, payload.sourceSlot);
-          // Dock is settings-managed; just remove from workspace so user can pin via settings
+          final pkg = (payload.item is WorkspaceItemInfo)
+              ? (payload.item as WorkspaceItemInfo).packageName
+              : '';
+          if (pkg.isEmpty) return;
+
+          _setDockSlot(context, pkg);
+
+          // Remove from workspace source if dragged from workspace
+          if (payload.sourcePage >= 0) {
+            context
+                .read<WorkspaceCubit>()
+                .removeItem(payload.sourcePage, payload.sourceSlot);
+            context.read<WorkspaceCubit>().collapseEmptyPages();
+          }
+          // If dragged from another dock slot, clear that slot
+          if (payload.sourcePage == -1 && payload.sourceSlot != slot) {
+            final s = context.read<SettingsCubit>().state;
+            final packages = List<String>.from(s.dockPackages);
+            if (payload.sourceSlot < packages.length) {
+              packages[payload.sourceSlot] = '';
+            }
+            context
+                .read<SettingsCubit>()
+                .update(s.copyWith(dockPackages: packages));
+          }
         },
         builder: (_, candidateData, __) {
           return SizedBox(
             width: settings.dockIconSize + 16,
-            height: settings.dockIconSize + (settings.showDockLabels ? 28 : 16),
+            height: settings.dockIconSize +
+                (settings.showDockLabels ? 28 : 16),
             child: candidateData.isNotEmpty
                 ? Container(
                     margin: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.15),
+                      color: Colors.white.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(12),
                     ),
                   )
@@ -136,10 +181,38 @@ class _DockSlot extends StatelessWidget {
     );
 
     return DragTarget<DragPayload>(
-      onWillAcceptWithDetails: (d) => d.data.sourcePage != -1 || d.data.sourceSlot != slot,
+      // Accept anything except itself
+      onWillAcceptWithDetails: (d) =>
+          d.data.sourcePage != -1 || d.data.sourceSlot != slot,
       onAcceptWithDetails: (details) {
         final incoming = details.data;
-        context.read<WorkspaceCubit>().removeItem(incoming.sourcePage, incoming.sourceSlot);
+        final incomingPkg = (incoming.item is WorkspaceItemInfo)
+            ? (incoming.item as WorkspaceItemInfo).packageName
+            : '';
+        if (incomingPkg.isEmpty) return;
+
+        // Swap: put incoming app into this dock slot
+        _setDockSlot(context, incomingPkg);
+
+        // Remove incoming from its source
+        if (incoming.sourcePage >= 0) {
+          // From workspace — remove that workspace slot
+          context
+              .read<WorkspaceCubit>()
+              .removeItem(incoming.sourcePage, incoming.sourceSlot);
+          context.read<WorkspaceCubit>().collapseEmptyPages();
+        } else if (incoming.sourcePage == -1 &&
+            incoming.sourceSlot != slot) {
+          // From a different dock slot — clear source dock slot
+          final s = context.read<SettingsCubit>().state;
+          final packages = List<String>.from(s.dockPackages);
+          if (incoming.sourceSlot < packages.length) {
+            packages[incoming.sourceSlot] = '';
+          }
+          context
+              .read<SettingsCubit>()
+              .update(s.copyWith(dockPackages: packages));
+        }
       },
       builder: (_, candidateData, __) {
         final isHovered = candidateData.isNotEmpty;
@@ -154,10 +227,16 @@ class _DockSlot extends StatelessWidget {
           child: LongPressDraggable<DragPayload>(
             data: payload,
             delay: const Duration(milliseconds: 350),
-            onDragStarted: () => dragController.startDrag(
-              payload.item, -1, slot, Offset.zero,
-            ),
-            onDragEnd: (_) => dragController.cancelDrag(),
+            onDragStarted: () =>
+                dragController.startDrag(payload.item, -1, slot, Offset.zero),
+            // When the item is successfully dropped somewhere, clear this slot.
+            onDragCompleted: () => _clearDockSlot(context),
+            onDragEnd: (details) {
+              if (!details.wasAccepted) {
+                // Cancelled — nothing to do, slot keeps its app.
+              }
+              dragController.cancelDrag();
+            },
             feedback: Material(
               color: Colors.transparent,
               child: Opacity(
