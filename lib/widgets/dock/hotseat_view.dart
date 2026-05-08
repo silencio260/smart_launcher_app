@@ -103,14 +103,6 @@ class _DockSlot extends StatelessWidget {
     context.read<SettingsCubit>().update(s.copyWith(dockPackages: packages));
   }
 
-  // Clears this dock slot (sets it to empty string).
-  void _clearDockSlot(BuildContext context) {
-    final s = context.read<SettingsCubit>().state;
-    final packages = List<String>.from(s.dockPackages);
-    if (slot < packages.length) packages[slot] = '';
-    context.read<SettingsCubit>().update(s.copyWith(dockPackages: packages));
-  }
-
   @override
   Widget build(BuildContext context) {
     final current = app;
@@ -191,27 +183,32 @@ class _DockSlot extends StatelessWidget {
             : '';
         if (incomingPkg.isEmpty) return;
 
-        // Swap: put incoming app into this dock slot
+        // Save the displaced app before overwriting this slot
+        final displacedPkg = current.packageName;
+
+        // Put incoming app into this dock slot
         _setDockSlot(context, incomingPkg);
 
-        // Remove incoming from its source
+        // Relocate the displaced app to the source location
         if (incoming.sourcePage >= 0) {
-          // From workspace — remove that workspace slot
-          context
-              .read<WorkspaceCubit>()
-              .removeItem(incoming.sourcePage, incoming.sourceSlot);
-          context.read<WorkspaceCubit>().collapseEmptyPages();
-        } else if (incoming.sourcePage == -1 &&
-            incoming.sourceSlot != slot) {
-          // From a different dock slot — clear source dock slot
+          // From workspace — put displaced app back at the source workspace slot
+          final workspaceCubit = context.read<WorkspaceCubit>();
+          final displacedItem = WorkspaceItemInfo(
+            id: current.id,
+            itemType: ItemType.application,
+            packageName: displacedPkg,
+            componentName: current.appComponentName,
+            title: current.name,
+            icon: current.icon,
+          );
+          workspaceCubit.addItem(displacedItem, incoming.sourcePage, incoming.sourceSlot);
+        } else if (incoming.sourcePage == -1 && incoming.sourceSlot != slot) {
+          // From a different dock slot — swap: put displaced app at source dock slot
           final s = context.read<SettingsCubit>().state;
           final packages = List<String>.from(s.dockPackages);
-          if (incoming.sourceSlot < packages.length) {
-            packages[incoming.sourceSlot] = '';
-          }
-          context
-              .read<SettingsCubit>()
-              .update(s.copyWith(dockPackages: packages));
+          while (packages.length <= incoming.sourceSlot) { packages.add(''); }
+          packages[incoming.sourceSlot] = displacedPkg;
+          context.read<SettingsCubit>().update(s.copyWith(dockPackages: packages));
         }
       },
       builder: (_, candidateData, __) {
@@ -229,12 +226,7 @@ class _DockSlot extends StatelessWidget {
             delay: const Duration(milliseconds: 350),
             onDragStarted: () =>
                 dragController.startDrag(payload.item, -1, slot, Offset.zero),
-            // When the item is successfully dropped somewhere, clear this slot.
-            onDragCompleted: () => _clearDockSlot(context),
             onDragEnd: (details) {
-              if (!details.wasAccepted) {
-                // Cancelled — nothing to do, slot keeps its app.
-              }
               dragController.cancelDrag();
             },
             feedback: Material(

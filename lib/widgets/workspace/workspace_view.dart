@@ -11,8 +11,9 @@ class WorkspaceView extends StatefulWidget {
   final DragController dragController;
   final Map<String, int> badgeCounts;
   final void Function(AppInfo app) onAppTap;
-  final void Function(AppInfo app, int page, int slot) onAppLongPress;
+  final void Function(AppInfo app, int page, int slot, Offset iconCenter) onAppLongPress;
   final void Function(double offset) onPageChanged;
+  final void Function(PageController)? onControllerReady;
 
   const WorkspaceView({
     super.key,
@@ -22,6 +23,7 @@ class WorkspaceView extends StatefulWidget {
     required this.onAppTap,
     required this.onAppLongPress,
     required this.onPageChanged,
+    this.onControllerReady,
   });
 
   @override
@@ -36,6 +38,9 @@ class _WorkspaceViewState extends State<WorkspaceView> {
     super.initState();
     _controller = PageController();
     _controller.addListener(_onScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.onControllerReady?.call(_controller);
+    });
   }
 
   @override
@@ -73,7 +78,7 @@ class _WorkspaceViewState extends State<WorkspaceView> {
               dragController: widget.dragController,
               badgeCounts: widget.badgeCounts,
               onAppTap: widget.onAppTap,
-              onAppLongPress: (app, slot) => widget.onAppLongPress(app, i, slot),
+              onAppLongPress: (app, slot, center) => widget.onAppLongPress(app, i, slot, center),
             );
           },
         );

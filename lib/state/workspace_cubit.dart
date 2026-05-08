@@ -253,6 +253,19 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     saveLayout();
   }
 
+  void movePage(int from, int to) {
+    if (from == to) return;
+    final pages = List<WorkspacePage>.from(state.pages);
+    if (from < 0 || from >= pages.length || to < 0 || to >= pages.length) return;
+    final page = pages.removeAt(from);
+    pages.insert(to, page);
+    final cur = state.currentPage == from
+        ? to
+        : state.currentPage.clamp(0, pages.length - 1);
+    emit(state.copyWith(pages: pages, currentPage: cur));
+    saveLayout();
+  }
+
   // Removes completely empty pages (but always keeps at least one).
   void collapseEmptyPages() {
     if (state.pages.length <= 1) return;

@@ -5,11 +5,18 @@ class DragPayload {
   final ItemInfo item;
   final int sourcePage;
   final int sourceSlot;
+  // Non-null when the drag originated from inside a folder
+  final String? folderId;
+  final int folderPage;
+  final int folderSlot;
 
   const DragPayload({
     required this.item,
     required this.sourcePage,
     required this.sourceSlot,
+    this.folderId,
+    this.folderPage = -1,
+    this.folderSlot = -1,
   });
 }
 

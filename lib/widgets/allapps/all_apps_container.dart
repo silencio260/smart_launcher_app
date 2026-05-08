@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/app_info.dart';
@@ -12,12 +11,14 @@ class AllAppsContainer extends StatefulWidget {
   final LauncherSettings settings;
   final void Function(AppInfo app) onAppTap;
   final void Function(AppInfo app) onAppLongPress;
+  final VoidCallback onDismiss;
 
   const AllAppsContainer({
     super.key,
     required this.settings,
     required this.onAppTap,
     required this.onAppLongPress,
+    required this.onDismiss,
   });
 
   @override
@@ -62,7 +63,7 @@ class _AllAppsContainerState extends State<AllAppsContainer>
     if (_isDismissing) return;
     _isDismissing = true;
     _animController.reverse().then((_) {
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) widget.onDismiss();
     });
   }
 
@@ -103,23 +104,20 @@ class _AllAppsContainerState extends State<AllAppsContainer>
           offset: Offset(0, _dragDy),
           child: Opacity(
             opacity: (1.0 - dismissProgress * 0.5).clamp(0.0, 1.0),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-              child: Material(
-                color: Colors.transparent,
-                child: Container(
-                  height: screenH,
-                  color: widget.settings.drawerBackgroundColor
-                      .withValues(alpha: widget.settings.drawerBackgroundOpacity),
-                  child: Column(
-                    children: [
-                      SizedBox(height: MediaQuery.of(context).padding.top + 16),
-                      _SearchRow(onDismiss: _dismiss),
-                      const SizedBox(height: 4),
-                      Expanded(child: _buildBody()),
-                      SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
-                    ],
-                  ),
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                height: screenH,
+                color: widget.settings.drawerBackgroundColor
+                    .withValues(alpha: widget.settings.drawerBackgroundOpacity),
+                child: Column(
+                  children: [
+                    SizedBox(height: MediaQuery.of(context).padding.top + 16),
+                    _SearchRow(onDismiss: _dismiss),
+                    const SizedBox(height: 4),
+                    Expanded(child: _buildBody()),
+                    SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
+                  ],
                 ),
               ),
             ),

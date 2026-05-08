@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../services/drag/drag_controller.dart';
@@ -9,12 +10,14 @@ class DragLayer extends StatelessWidget {
   final Widget child;
   final DragController dragController;
   final String iconShape;
+  final PageController? pageController;
 
   const DragLayer({
     super.key,
     required this.child,
     required this.dragController,
     this.iconShape = 'squircle',
+    this.pageController,
   });
 
   @override
@@ -35,6 +38,16 @@ class DragLayer extends StatelessWidget {
                     ),
                   ),
                 ),
+              ),
+              // Left edge zone — hover 600 ms to go to previous page
+              Positioned(
+                left: 0, top: 0, bottom: 80,
+                child: _EdgePageZone(direction: -1, pageController: pageController),
+              ),
+              // Right edge zone — hover 600 ms to go to next page
+              Positioned(
+                right: 0, top: 0, bottom: 80,
+                child: _EdgePageZone(direction: 1, pageController: pageController),
               ),
               // Trash zone at the bottom — drop here to remove from home/dock
               Positioned(
@@ -57,6 +70,90 @@ class DragLayer extends StatelessWidget {
   }
 }
 
+class _EdgePageZone extends StatefulWidget {
+  final int direction; // -1 = previous, +1 = next
+  final PageController? pageController;
+
+  const _EdgePageZone({required this.direction, required this.pageController});
+
+  @override
+  State<_EdgePageZone> createState() => _EdgePageZoneState();
+}
+
+class _EdgePageZoneState extends State<_EdgePageZone> {
+  Timer? _timer;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer(const Duration(milliseconds: 600), () {
+      final pc = widget.pageController;
+      if (pc == null || !pc.hasClients) return;
+      if (widget.direction > 0) {
+        pc.nextPage(
+            duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+      } else {
+        pc.previousPage(
+            duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+      }
+    });
+  }
+
+  void _cancelTimer() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DragTarget<DragPayload>(
+      onWillAcceptWithDetails: (_) => true,
+      onAcceptWithDetails: (_) {}, // edge zone is not a real drop target
+      builder: (_, candidateData, __) {
+        final isHovered = candidateData.isNotEmpty;
+        if (isHovered && _timer == null) _startTimer();
+        if (!isHovered) _cancelTimer();
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          width: 60,
+          decoration: isHovered
+              ? BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: widget.direction > 0
+                        ? Alignment.centerRight
+                        : Alignment.centerLeft,
+                    end: widget.direction > 0
+                        ? Alignment.centerLeft
+                        : Alignment.centerRight,
+                    colors: [
+                      Colors.white.withValues(alpha: 0.25),
+                      Colors.transparent,
+                    ],
+                  ),
+                )
+              : null,
+          child: isHovered
+              ? Center(
+                  child: Icon(
+                    widget.direction > 0
+                        ? Icons.chevron_right
+                        : Icons.chevron_left,
+                    color: Colors.white.withValues(alpha: 0.8),
+                    size: 32,
+                  ),
+                )
+              : null,
+        );
+      },
+    );
+  }
+}
+
 class _TrashZone extends StatelessWidget {
   final DragController dragController;
 
@@ -68,12 +165,21 @@ class _TrashZone extends StatelessWidget {
       onWillAcceptWithDetails: (_) => true,
       onAcceptWithDetails: (details) {
         final payload = details.data;
-        if (payload.sourcePage >= 0) {
+        final workspace = context.read<WorkspaceCubit>();
+        if (payload.folderId != null) {
+          // Remove from folder (drag-out → trash)
+          workspace.removeFromFolder(payload.folderId!, payload.item.id);
+          final remaining =
+              workspace.state.folders[payload.folderId!]?.contents.length ?? 0;
+          if (remaining <= 1) {
+            workspace.tryCollapseFolder(
+                payload.folderId!, payload.folderPage, payload.folderSlot);
+          }
+          workspace.collapseEmptyPages();
+        } else if (payload.sourcePage >= 0) {
           // Remove from workspace
-          context
-              .read<WorkspaceCubit>()
-              .removeItem(payload.sourcePage, payload.sourceSlot);
-          context.read<WorkspaceCubit>().collapseEmptyPages();
+          workspace.removeItem(payload.sourcePage, payload.sourceSlot);
+          workspace.collapseEmptyPages();
         } else if (payload.sourcePage == -1) {
           // Remove from dock
           final s = context.read<SettingsCubit>().state;

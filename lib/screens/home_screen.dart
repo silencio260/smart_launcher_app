@@ -14,6 +14,7 @@ import '../state/settings_cubit.dart';
 import '../state/workspace_cubit.dart';
 import '../widgets/allapps/all_apps_container.dart';
 import '../widgets/dock/hotseat_view.dart';
+import '../widgets/edit_mode/edit_mode_overlay.dart';
 import '../widgets/drag/drag_layer.dart';
 import '../widgets/smartspace/smartspace_view.dart';
 import '../widgets/workspace/workspace_touch_listener.dart';
@@ -31,6 +32,10 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _dragController = DragController();
+  OverlayEntry? _appInfoTooltip;
+  bool _drawerOpen = false;
+  bool _editMode = false;
+  PageController? _pageController;
 
   @override
   void initState() {
@@ -44,11 +49,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AppsCubit>().startBadgeListening();
     });
+    _dragController.addListener(_onDragChange);
+  }
+
+  void _onDragChange() {
+    if (_dragController.isDragging) _dismissAppInfoTooltip();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _dragController.removeListener(_onDragChange);
     _dragController.dispose();
     super.dispose();
   }
@@ -60,62 +71,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _openDrawer() {
-    final settings = context.read<SettingsCubit>().state;
-    Navigator.push(
-      context,
-      PageRouteBuilder(
-        opaque: false,
-        barrierColor: Colors.transparent,
-        transitionDuration: Duration.zero,
-        pageBuilder: (routeCtx, _, __) => MultiBlocProvider(
-          providers: [
-            BlocProvider.value(value: context.read<AppsCubit>()),
-            BlocProvider.value(value: context.read<SearchCubit>()),
-            BlocProvider.value(value: context.read<SettingsCubit>()),
-            BlocProvider.value(value: context.read<WorkspaceCubit>()),
-          ],
-          child: AllAppsContainer(
-            settings: settings,
-            onAppTap: (app) {
-              Navigator.pop(routeCtx);
-              LauncherService.launchApp(app.packageName);
-            },
-            onAppLongPress: (app) => _showDrawerAppMenu(app, routeCtx),
-          ),
-        ),
-      ),
-    );
+  void _openDrawer() => setState(() => _drawerOpen = true);
+
+  void _closeDrawer() {
+    setState(() => _drawerOpen = false);
+    context.read<LauncherCubit>().goToState(ls.LauncherState.normal);
   }
 
-  void _showDrawerAppMenu(AppInfo app, BuildContext drawerCtx) {
+  void _enterEditMode() {
+    _dismissAppInfoTooltip();
+    setState(() => _editMode = true);
+  }
+
+  void _exitEditMode() => setState(() => _editMode = false);
+
+  void _showDrawerAppMenu(AppInfo app) {
     showModalBottomSheet(
-      context: drawerCtx,
+      context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => _AppContextMenu(
+      builder: (_) => _DrawerAppMenu(
         app: app,
-        showAddToHome: true,
-        onOpen: () {
-          Navigator.pop(drawerCtx); // close menu
-          Navigator.pop(drawerCtx); // close drawer
-          LauncherService.launchApp(app.packageName);
-        },
         onAddToHome: () {
-          Navigator.pop(drawerCtx); // close menu
-          Navigator.pop(drawerCtx); // close drawer
+          Navigator.pop(context);
+          _closeDrawer();
           _addAppToHomeScreen(app);
         },
         onAppInfo: () {
-          Navigator.pop(drawerCtx);
+          Navigator.pop(context);
           LauncherService.openAppSettings(app.packageName);
-        },
-        onHide: () {
-          Navigator.pop(drawerCtx);
-          context.read<AppsCubit>().hideApp(app.packageName);
-        },
-        onUninstall: () {
-          Navigator.pop(drawerCtx);
-          LauncherService.uninstallApp(app.packageName);
         },
       ),
     );
@@ -230,45 +213,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  void _showHomeMenu() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _HomeContextMenu(
-        onWallpaper: () {
-          Navigator.pop(context);
-          LauncherService.changeWallpaper();
-        },
-        onSettings: () {
-          Navigator.pop(context);
-          _openSettings();
-        },
-        onWidgets: () => Navigator.pop(context),
-      ),
-    );
-  }
-
-  void _showWorkspaceAppMenu(AppInfo app) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _AppContextMenu(
+  void _showAppInfoTooltip(AppInfo app, Offset iconCenter) {
+    _dismissAppInfoTooltip();
+    final overlay = Overlay.of(context);
+    _appInfoTooltip = OverlayEntry(
+      builder: (_) => _AppInfoTooltip(
         app: app,
-        showAddToHome: false,
-        onOpen: () {
-          Navigator.pop(context);
-          LauncherService.launchApp(app.packageName);
-        },
+        iconCenter: iconCenter,
+        onDismiss: _dismissAppInfoTooltip,
         onAppInfo: () {
-          Navigator.pop(context);
+          _dismissAppInfoTooltip();
           LauncherService.openAppSettings(app.packageName);
         },
-        onUninstall: () {
-          Navigator.pop(context);
-          LauncherService.uninstallApp(app.packageName);
-        },
       ),
     );
+    overlay.insert(_appInfoTooltip!);
+  }
+
+  void _dismissAppInfoTooltip() {
+    _appInfoTooltip?.remove();
+    _appInfoTooltip = null;
   }
 
   @override
@@ -284,55 +248,104 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             body: BlocBuilder<AppsCubit, AppsState>(
               builder: (context, appsState) {
                 final dockApps = _resolveDockApps(appsState, settings);
-                return DragLayer(
-                  dragController: _dragController,
-                  iconShape: settings.iconShape,
-                  child: WorkspaceTouchListener(
-                    settings: settings,
-                    onDoubleTap: () => _handleGesture(settings.doubleTapAction),
-                    onSwipeUp: () => _handleGesture(settings.swipeUpAction),
-                    onSwipeDown: () => _handleGesture(settings.swipeDownAction),
-                    onLongPress: _showHomeMenu,
-                    child: Column(
-                      children: [
-                        SizedBox(height: MediaQuery.of(context).padding.top + 32),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: SmartspaceView(settings: settings),
-                        ),
-                        Expanded(
-                          child: WorkspaceView(
-                            dragController: _dragController,
-                            settings: settings,
-                            badgeCounts: appsState.badgeCounts,
-                            onAppTap: (app) => LauncherService.launchApp(app.packageName),
-                            onAppLongPress: (app, page, slot) => _showWorkspaceAppMenu(app),
-                            onPageChanged: (offset) {
-                              const MethodChannel('com.genrevibes.smartlauncher/wallpaper')
-                                  .invokeMethod('setWallpaperOffset', {'xOffset': offset});
-                            },
-                          ),
-                        ),
-                        if (settings.showDock)
-                          Padding(
-                            padding: EdgeInsets.only(
-                              left: 12,
-                              right: 12,
-                              bottom: MediaQuery.of(context).padding.bottom + 12,
+                return Stack(
+                  children: [
+                    DragLayer(
+                      dragController: _dragController,
+                      iconShape: settings.iconShape,
+                      pageController: _pageController,
+                      child: WorkspaceTouchListener(
+                        settings: settings,
+                        onDoubleTap: () => _handleGesture(settings.doubleTapAction),
+                        onSwipeUp: () => _handleGesture(settings.swipeUpAction),
+                        onSwipeDown: () => _handleGesture(settings.swipeDownAction),
+                        onLongPress: _enterEditMode,
+                        child: Column(
+                          children: [
+                            SizedBox(height: MediaQuery.of(context).padding.top + 32),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              child: Visibility(
+                                visible: !_drawerOpen,
+                                maintainState: true,
+                                child: SmartspaceView(settings: settings),
+                              ),
                             ),
-                            child: HotseatView(
-                              apps: dockApps,
-                              settings: settings,
-                              badgeCounts: appsState.badgeCounts,
-                              dragController: _dragController,
-                              onSwipeUp: () => _handleGesture(settings.swipeUpAction),
-                              onAppTap: (app) => LauncherService.launchApp(app.packageName),
-                              onAppLongPress: _showWorkspaceAppMenu,
+                            Expanded(
+                              child: Visibility(
+                                visible: !_drawerOpen,
+                                maintainState: true,
+                                maintainAnimation: true,
+                                maintainSize: true,
+                                child: WorkspaceView(
+                                  dragController: _dragController,
+                                  settings: settings,
+                                  badgeCounts: appsState.badgeCounts,
+                                  onAppTap: (app) => LauncherService.launchApp(app.packageName),
+                                  onAppLongPress: (app, page, slot, center) =>
+                                      _showAppInfoTooltip(app, center),
+                                  onPageChanged: (offset) {
+                                    const MethodChannel(
+                                            'com.genrevibes.smartlauncher/wallpaper')
+                                        .invokeMethod('setWallpaperOffset',
+                                            {'xOffset': offset});
+                                  },
+                                  onControllerReady: (ctrl) =>
+                                      setState(() => _pageController = ctrl),
+                                ),
+                              ),
                             ),
-                          ),
-                      ],
+                            if (settings.showDock)
+                              Visibility(
+                                visible: !_drawerOpen,
+                                maintainState: true,
+                                child: Padding(
+                                  padding: EdgeInsets.only(
+                                    left: 12,
+                                    right: 12,
+                                    bottom: MediaQuery.of(context).padding.bottom + 12,
+                                  ),
+                                  child: HotseatView(
+                                    apps: dockApps,
+                                    settings: settings,
+                                    badgeCounts: appsState.badgeCounts,
+                                    dragController: _dragController,
+                                    onSwipeUp: () => _handleGesture(settings.swipeUpAction),
+                                    onAppTap: (app) =>
+                                        LauncherService.launchApp(app.packageName),
+                                    onAppLongPress: (app) =>
+                                        _showAppInfoTooltip(app, Offset.zero),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
+                    if (_drawerOpen)
+                      AllAppsContainer(
+                        settings: settings,
+                        onDismiss: _closeDrawer,
+                        onAppTap: (app) {
+                          _closeDrawer();
+                          LauncherService.launchApp(app.packageName);
+                        },
+                        onAppLongPress: _showDrawerAppMenu,
+                      ),
+                    if (_editMode)
+                      EditModeOverlay(
+                        settings: settings,
+                        onDismiss: _exitEditMode,
+                        onWallpaper: () {
+                          _exitEditMode();
+                          LauncherService.changeWallpaper();
+                        },
+                        onSettings: () {
+                          _exitEditMode();
+                          _openSettings();
+                        },
+                      ),
+                  ],
                 );
               },
             ),
@@ -366,23 +379,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
 // ─── Shared app context menu ──────────────────────────────────────────────────
 
-class _AppContextMenu extends StatelessWidget {
+class _DrawerAppMenu extends StatelessWidget {
   final AppInfo app;
-  final bool showAddToHome;
-  final VoidCallback onOpen;
-  final VoidCallback? onAddToHome;
+  final VoidCallback onAddToHome;
   final VoidCallback onAppInfo;
-  final VoidCallback? onHide;
-  final VoidCallback onUninstall;
 
-  const _AppContextMenu({
+  const _DrawerAppMenu({
     required this.app,
-    required this.showAddToHome,
-    required this.onOpen,
-    this.onAddToHome,
+    required this.onAddToHome,
     required this.onAppInfo,
-    this.onHide,
-    required this.onUninstall,
   });
 
   @override
@@ -399,45 +404,22 @@ class _AppContextMenu extends StatelessWidget {
           const SizedBox(height: 8),
           Container(
             width: 36, height: 4,
-            decoration: BoxDecoration(
-              color: Colors.white24,
-              borderRadius: BorderRadius.circular(2),
-            ),
+            decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Text(
-              app.name,
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
-            ),
+            child: Text(app.name, style: const TextStyle(color: Colors.white70, fontSize: 13)),
           ),
           ListTile(
-            leading: const Icon(Icons.open_in_new, color: Colors.white70),
-            title: const Text('Open', style: TextStyle(color: Colors.white)),
-            onTap: onOpen,
+            leading: const Icon(Icons.add_to_home_screen, color: Colors.white70),
+            title: const Text('Add to Home Screen', style: TextStyle(color: Colors.white)),
+            onTap: onAddToHome,
           ),
-          if (showAddToHome && onAddToHome != null)
-            ListTile(
-              leading: const Icon(Icons.add_to_home_screen, color: Colors.white70),
-              title: const Text('Add to Home Screen', style: TextStyle(color: Colors.white)),
-              onTap: onAddToHome,
-            ),
           ListTile(
             leading: const Icon(Icons.info_outline, color: Colors.white70),
             title: const Text('App Info', style: TextStyle(color: Colors.white)),
             onTap: onAppInfo,
           ),
-          if (onHide != null)
-            ListTile(
-              leading: const Icon(Icons.visibility_off_outlined, color: Colors.white70),
-              title: const Text('Hide App', style: TextStyle(color: Colors.white)),
-              onTap: onHide,
-            ),
-          ListTile(
-            leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-            title: const Text('Uninstall', style: TextStyle(color: Colors.redAccent)),
-            onTap: onUninstall,
-          ),
           const SizedBox(height: 8),
         ],
       ),
@@ -445,56 +427,65 @@ class _AppContextMenu extends StatelessWidget {
   }
 }
 
-// ─── Home context menu ────────────────────────────────────────────────────────
+// ─── App Info tooltip (non-blocking, dismisses on drag) ──────────────────────
 
-class _HomeContextMenu extends StatelessWidget {
-  final VoidCallback onWallpaper;
-  final VoidCallback onSettings;
-  final VoidCallback onWidgets;
+class _AppInfoTooltip extends StatelessWidget {
+  final AppInfo app;
+  final Offset iconCenter;
+  final VoidCallback onDismiss;
+  final VoidCallback onAppInfo;
 
-  const _HomeContextMenu({
-    required this.onWallpaper,
-    required this.onSettings,
-    required this.onWidgets,
+  const _AppInfoTooltip({
+    required this.app,
+    required this.iconCenter,
+    required this.onDismiss,
+    required this.onAppInfo,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.grey[900]!.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 8),
-          Container(
-            width: 36, height: 4,
-            decoration: BoxDecoration(
-              color: Colors.white24,
-              borderRadius: BorderRadius.circular(2),
+    final screenSize = MediaQuery.of(context).size;
+    const tooltipW = 160.0;
+    const tooltipH = 48.0;
+
+    // Position above the icon; clamp to screen bounds
+    double left = (iconCenter.dx - tooltipW / 2).clamp(8.0, screenSize.width - tooltipW - 8);
+    double top = (iconCenter.dy - tooltipH - 12).clamp(8.0, screenSize.height - tooltipH - 8);
+
+    return Stack(
+      children: [
+        // Tap-outside dismisses
+        Positioned.fill(child: GestureDetector(onTap: onDismiss, behavior: HitTestBehavior.translucent)),
+        Positioned(
+          left: left,
+          top: top,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              width: tooltipW,
+              height: tooltipH,
+              decoration: BoxDecoration(
+                color: Colors.grey[850]!.withValues(alpha: 0.96),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [BoxShadow(color: Colors.black45, blurRadius: 8, offset: Offset(0, 3))],
+              ),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: onAppInfo,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.info_outline, color: Colors.white70, size: 18),
+                    const SizedBox(width: 8),
+                    Text(app.name, style: const TextStyle(color: Colors.white, fontSize: 13), overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              ),
             ),
           ),
-          ListTile(
-            leading: const Icon(Icons.wallpaper, color: Colors.white70),
-            title: const Text('Change Wallpaper', style: TextStyle(color: Colors.white)),
-            onTap: onWallpaper,
-          ),
-          ListTile(
-            leading: const Icon(Icons.widgets_outlined, color: Colors.white70),
-            title: const Text('Widgets', style: TextStyle(color: Colors.white)),
-            onTap: onWidgets,
-          ),
-          ListTile(
-            leading: const Icon(Icons.settings_outlined, color: Colors.white70),
-            title: const Text('Launcher Settings', style: TextStyle(color: Colors.white)),
-            onTap: onSettings,
-          ),
-          const SizedBox(height: 8),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
+

@@ -21,7 +21,7 @@ class CellLayoutView extends StatefulWidget {
   final DragController dragController;
   final Map<String, int> badgeCounts;
   final void Function(AppInfo app) onAppTap;
-  final void Function(AppInfo app, int slot) onAppLongPress;
+  final void Function(AppInfo app, int slot, Offset iconCenter) onAppLongPress;
 
   const CellLayoutView({
     super.key,
@@ -54,6 +54,28 @@ class _CellLayoutViewState extends State<CellLayoutView> {
     final payload = details.data;
     final target = widget.page.slots[slot];
     final workspace = context.read<WorkspaceCubit>();
+
+    // Drag originated from inside a folder — place item and remove from folder
+    if (payload.folderId != null) {
+      final item = payload.item;
+      if (item is WorkspaceItemInfo) {
+        if (target is FolderSlot) {
+          workspace.addToFolder(target.folderId, item);
+        } else {
+          workspace.addItem(item, widget.pageIndex, slot);
+        }
+        workspace.removeFromFolder(payload.folderId!, item.id);
+        final remaining =
+            workspace.state.folders[payload.folderId!]?.contents.length ?? 0;
+        if (remaining <= 1) {
+          workspace.tryCollapseFolder(
+              payload.folderId!, payload.folderPage, payload.folderSlot);
+        }
+      }
+      workspace.collapseEmptyPages();
+      widget.dragController.cancelDrag();
+      return;
+    }
 
     if (target is FolderSlot) {
       // Only apps can be added into a folder (not nested folders)
@@ -234,7 +256,13 @@ class _CellLayoutViewState extends State<CellLayoutView> {
             // so by the time this callback runs _draggingSlot is already set.
             onLongPress: _draggingSlot == slot
                 ? null
-                : () => widget.onAppLongPress(app, slot),
+                : () {
+                    final box = context.findRenderObject() as RenderBox?;
+                    final center = box == null
+                        ? Offset.zero
+                        : box.localToGlobal(Offset(box.size.width / 2, box.size.height / 2));
+                    widget.onAppLongPress(app, slot, center);
+                  },
           ),
         ),
       );
@@ -310,7 +338,7 @@ class _CellLayoutViewState extends State<CellLayoutView> {
             folder: resolvedFolder,
             settings: widget.settings,
             badgeCount: 0,
-            onTap: () => _openFolder(context, folder, content.folderId),
+            onTap: () => _openFolder(context, content.folderId, slot),
             onLongPress: _draggingSlot == slot ? () {} : () {},
           ),
         ),
@@ -348,7 +376,7 @@ class _CellLayoutViewState extends State<CellLayoutView> {
     );
   }
 
-  void _openFolder(BuildContext context, FolderInfo folder, String folderId) {
+  void _openFolder(BuildContext context, String folderId, int slot) {
     final badgeCounts = widget.badgeCounts;
     Navigator.of(context).push(
       PageRouteBuilder(
@@ -359,8 +387,9 @@ class _CellLayoutViewState extends State<CellLayoutView> {
             BlocProvider.value(value: context.read<WorkspaceCubit>()),
           ],
           child: FolderView(
-            folder: folder,
             folderId: folderId,
+            folderPage: widget.pageIndex,
+            folderSlot: slot,
             settings: widget.settings,
             badgeCounts: badgeCounts,
             onAppTap: (app) {
