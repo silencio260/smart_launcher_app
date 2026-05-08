@@ -84,23 +84,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   void _exitEditMode() => setState(() => _editMode = false);
 
-  void _showDrawerAppMenu(AppInfo app) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _DrawerAppMenu(
-        app: app,
-        onAddToHome: () {
-          Navigator.pop(context);
-          _closeDrawer();
-          _addAppToHomeScreen(app);
-        },
-        onAppInfo: () {
-          Navigator.pop(context);
-          LauncherService.openAppSettings(app.packageName);
-        },
-      ),
-    );
+  void _navigateToBestDragPage() {
+    final workspaceState = context.read<WorkspaceCubit>().state;
+    final settings = context.read<SettingsCubit>().state;
+    final slotsPerPage = settings.gridColumns * settings.gridRows;
+
+    for (int p = 0; p < workspaceState.pages.length; p++) {
+      for (int s = 0; s < slotsPerPage; s++) {
+        if (workspaceState.pages[p].slots[s] == null) {
+          _pageController?.animateToPage(
+            p,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+          );
+          return;
+        }
+      }
+    }
+
+    // All pages full — create a new one and navigate to it.
+    context.read<WorkspaceCubit>().addPage();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final newPage = context.read<WorkspaceCubit>().state.pages.length - 1;
+      _pageController?.animateToPage(
+        newPage,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    });
   }
 
   void _addAppToHomeScreen(AppInfo app) {
@@ -139,6 +150,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
 
     context.read<WorkspaceCubit>().addItem(item, targetPage, targetSlot);
+
+    // Navigate to the page where the app was placed.
+    final page = targetPage;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pageController?.animateToPage(
+        page,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    });
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -323,7 +344,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           _closeDrawer();
                           LauncherService.launchApp(app.packageName);
                         },
-                        onAppLongPress: _showDrawerAppMenu,
+                        onAddToHome: _addAppToHomeScreen,
+                        onDragToHome: _navigateToBestDragPage,
                       ),
                     if (_editMode)
                       EditModeOverlay(
@@ -367,56 +389,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final pinned = appsState.apps.where((a) => defaults.contains(a.packageName)).toList();
     final resolved = pinned.isEmpty ? appsState.apps.take(settings.dockSize).toList() : pinned;
     return resolved.map<AppInfo?>((a) => a).toList();
-  }
-}
-
-// ─── Shared app context menu ──────────────────────────────────────────────────
-
-class _DrawerAppMenu extends StatelessWidget {
-  final AppInfo app;
-  final VoidCallback onAddToHome;
-  final VoidCallback onAppInfo;
-
-  const _DrawerAppMenu({
-    required this.app,
-    required this.onAddToHome,
-    required this.onAppInfo,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.grey[900]!.withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 8),
-          Container(
-            width: 36, height: 4,
-            decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Text(app.name, style: const TextStyle(color: Colors.white70, fontSize: 13)),
-          ),
-          ListTile(
-            leading: const Icon(Icons.add_to_home_screen, color: Colors.white70),
-            title: const Text('Add to Home Screen', style: TextStyle(color: Colors.white)),
-            onTap: onAddToHome,
-          ),
-          ListTile(
-            leading: const Icon(Icons.info_outline, color: Colors.white70),
-            title: const Text('App Info', style: TextStyle(color: Colors.white)),
-            onTap: onAppInfo,
-          ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
   }
 }
 

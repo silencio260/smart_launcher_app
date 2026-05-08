@@ -14,7 +14,7 @@ class AllAppsRecycler extends StatelessWidget {
   final Map<String, int> badgeCounts;
   final DragController dragController;
   final void Function(AppInfo app) onAppTap;
-  final void Function(AppInfo app) onAppLongPress;
+  final void Function(AppInfo app, Offset globalPos) onAppLongPress;
   final VoidCallback onDragStarted;
   final void Function(bool wasAccepted) onDragEnded;
   final ScrollController? scrollController;
@@ -72,7 +72,7 @@ class AllAppsRecycler extends StatelessWidget {
                                   badgeCount: badgeCounts[app.packageName] ?? 0,
                                   dragController: dragController,
                                   onTap: () => onAppTap(app),
-                                  onLongPress: () => onAppLongPress(app),
+                                  onLongPress: (pos) => onAppLongPress(app, pos),
                                   onDragStarted: onDragStarted,
                                   onDragEnded: onDragEnded,
                                 ),
@@ -104,7 +104,7 @@ class _DrawerAppIcon extends StatefulWidget {
   final int badgeCount;
   final DragController dragController;
   final VoidCallback onTap;
-  final VoidCallback onLongPress;
+  final void Function(Offset globalPos) onLongPress;
   final VoidCallback onDragStarted;
   final void Function(bool wasAccepted) onDragEnded;
 
@@ -186,7 +186,17 @@ class _DrawerAppIconState extends State<_DrawerAppIcon> {
       childWhenDragging: Opacity(opacity: 0.3, child: iconView),
       child: GestureDetector(
         onTap: _dragging ? null : widget.onTap,
-        onLongPress: _dragging ? null : widget.onLongPress,
+        onLongPress: _dragging
+            ? null
+            : () {
+                final box = context.findRenderObject() as RenderBox?;
+                if (box != null) {
+                  final center = box.localToGlobal(
+                    Offset(box.size.width / 2, box.size.height / 2),
+                  );
+                  widget.onLongPress(center);
+                }
+              },
         child: iconView,
       ),
     );

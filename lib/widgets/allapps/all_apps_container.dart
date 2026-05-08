@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/app_info.dart';
 import '../../models/launcher_settings.dart';
 import '../../services/drag/drag_controller.dart';
+import '../../services/launcher_service.dart';
 import '../../state/apps_cubit.dart';
 import '../../state/search_cubit.dart';
 import 'all_apps_recycler.dart';
@@ -13,16 +14,18 @@ class AllAppsContainer extends StatefulWidget {
   final LauncherSettings settings;
   final DragController dragController;
   final void Function(AppInfo app) onAppTap;
-  final void Function(AppInfo app) onAppLongPress;
+  final void Function(AppInfo app) onAddToHome;
   final VoidCallback onDismiss;
+  final VoidCallback? onDragToHome;
 
   const AllAppsContainer({
     super.key,
     required this.settings,
     required this.dragController,
     required this.onAppTap,
-    required this.onAppLongPress,
+    required this.onAddToHome,
     required this.onDismiss,
+    this.onDragToHome,
   });
 
   @override
@@ -31,7 +34,7 @@ class AllAppsContainer extends StatefulWidget {
 
 class _AllAppsContainerState extends State<AllAppsContainer>
     with SingleTickerProviderStateMixin {
-  ScrollController? _scrollController;
+  late ScrollController _scrollController;
   late AnimationController _animController;
   late Animation<Offset> _slideAnim;
 
@@ -40,12 +43,14 @@ class _AllAppsContainerState extends State<AllAppsContainer>
   bool _isDismissing = false;
   bool _drawerDragging = false;
 
+  AppInfo? _menuApp;
+  Offset _menuPos = Offset.zero;
+
   @override
   void initState() {
     super.initState();
-    if (widget.settings.drawerRememberScroll) {
-      _scrollController = ScrollController();
-    }
+    // Always create a scroll controller to prevent PrimaryScrollController conflicts.
+    _scrollController = ScrollController();
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 320),
@@ -59,7 +64,7 @@ class _AllAppsContainerState extends State<AllAppsContainer>
 
   @override
   void dispose() {
-    _scrollController?.dispose();
+    _scrollController.dispose();
     _animController.dispose();
     super.dispose();
   }
@@ -71,6 +76,15 @@ class _AllAppsContainerState extends State<AllAppsContainer>
       if (mounted) widget.onDismiss();
     });
   }
+
+  void _showMenu(AppInfo app, Offset globalPos) {
+    setState(() {
+      _menuApp = app;
+      _menuPos = globalPos;
+    });
+  }
+
+  void _dismissMenu() => setState(() => _menuApp = null);
 
   void _onVerticalDragStart(DragStartDetails d) {
     _dragStartY = d.globalPosition.dy;
@@ -97,10 +111,9 @@ class _AllAppsContainerState extends State<AllAppsContainer>
   @override
   Widget build(BuildContext context) {
     final screenH = MediaQuery.of(context).size.height;
+    final screenW = MediaQuery.of(context).size.width;
     final dismissProgress = (_dragDy / screenH).clamp(0.0, 1.0);
 
-    // When a drawer drag-to-home is in progress: keep widget alive but
-    // invisible and non-absorbing so workspace DragTargets can receive the drop.
     if (_drawerDragging) {
       return AbsorbPointer(
         absorbing: false,
@@ -114,9 +127,9 @@ class _AllAppsContainerState extends State<AllAppsContainer>
         if (!didPop) _dismiss();
       },
       child: GestureDetector(
-        onVerticalDragStart: _onVerticalDragStart,
-        onVerticalDragUpdate: _onVerticalDragUpdate,
-        onVerticalDragEnd: _onVerticalDragEnd,
+        onVerticalDragStart: _drawerDragging ? null : _onVerticalDragStart,
+        onVerticalDragUpdate: _drawerDragging ? null : _onVerticalDragUpdate,
+        onVerticalDragEnd: _drawerDragging ? null : _onVerticalDragEnd,
         child: SlideTransition(
           position: _slideAnim,
           child: Transform.translate(
@@ -127,24 +140,69 @@ class _AllAppsContainerState extends State<AllAppsContainer>
                 color: Colors.transparent,
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
-                  child: Container(
-                    height: screenH,
-                    color: Colors.black.withValues(alpha: 0.60),
-                    child: Column(
-                      children: [
-                        SizedBox(height: MediaQuery.of(context).padding.top + 16),
-                        _SearchRow(onDismiss: _dismiss),
-                        const SizedBox(height: 4),
-                        Expanded(child: _buildBody()),
-                        SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
+                  child: Stack(
+                    children: [
+                      Container(
+                        height: screenH,
+                        color: Colors.black.withValues(alpha: 0.60),
+                        child: Column(
+                          children: [
+                            SizedBox(height: MediaQuery.of(context).padding.top + 16),
+                            _SearchRow(onDismiss: _dismiss),
+                            const SizedBox(height: 4),
+                            Expanded(child: _buildBody()),
+                            SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
+                          ],
+                        ),
+                      ),
+                      if (_menuApp != null) ...[
+                        // Tap-outside dismisses the menu
+                        Positioned.fill(
+                          child: GestureDetector(
+                            onTap: _dismissMenu,
+                            behavior: HitTestBehavior.translucent,
+                            child: Container(color: Colors.black26),
+                          ),
+                        ),
+                        // Context menu card positioned near the icon
+                        _buildMenuCard(screenW, screenH),
                       ],
-                    ),
+                    ],
                   ),
                 ),
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildMenuCard(double screenW, double screenH) {
+    const menuW = 188.0;
+    const menuH = 128.0;
+    final x = (_menuPos.dx - menuW / 2).clamp(8.0, screenW - menuW - 8);
+    final rawY = _menuPos.dy < screenH / 2
+        ? _menuPos.dy + 40
+        : _menuPos.dy - menuH - 40;
+    final y = rawY.clamp(8.0, screenH - menuH - 8);
+
+    return Positioned(
+      left: x,
+      top: y,
+      child: _AppContextMenu(
+        app: _menuApp!,
+        onAddToHome: () {
+          final app = _menuApp!;
+          _dismissMenu();
+          _dismiss();
+          widget.onAddToHome(app);
+        },
+        onAppInfo: () {
+          final pkg = _menuApp!.packageName;
+          _dismissMenu();
+          LauncherService.openAppSettings(pkg);
+        },
       ),
     );
   }
@@ -163,9 +221,13 @@ class _AllAppsContainerState extends State<AllAppsContainer>
           badgeCounts: appsState.badgeCounts,
           dragController: widget.dragController,
           onAppTap: widget.onAppTap,
-          onAppLongPress: widget.onAppLongPress,
+          onAppLongPress: _showMenu,
           scrollController: _scrollController,
-          onDragStarted: () => setState(() => _drawerDragging = true),
+          onDragStarted: () {
+            _dismissMenu();
+            setState(() => _drawerDragging = true);
+            widget.onDragToHome?.call();
+          },
           onDragEnded: (wasAccepted) {
             setState(() => _drawerDragging = false);
             if (wasAccepted) _dismiss();
@@ -175,6 +237,81 @@ class _AllAppsContainerState extends State<AllAppsContainer>
     );
   }
 }
+
+// ─── Context menu ─────────────────────────────────────────────────────────────
+
+class _AppContextMenu extends StatelessWidget {
+  final AppInfo app;
+  final VoidCallback onAddToHome;
+  final VoidCallback onAppInfo;
+
+  const _AppContextMenu({
+    required this.app,
+    required this.onAddToHome,
+    required this.onAppInfo,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        width: 188,
+        decoration: BoxDecoration(
+          color: Colors.grey[850]!.withValues(alpha: 0.97),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 14, offset: Offset(0, 4))],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 13, 16, 8),
+              child: Text(
+                app.name,
+                style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const Divider(color: Colors.white12, height: 1, thickness: 1),
+            _ContextMenuItem(icon: Icons.add_to_home_screen, label: 'Add to Home', onTap: onAddToHome),
+            _ContextMenuItem(icon: Icons.info_outline, label: 'App Info', onTap: onAppInfo),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ContextMenuItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _ContextMenuItem({required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.white70, size: 18),
+            const SizedBox(width: 10),
+            Text(label, style: const TextStyle(color: Colors.white, fontSize: 14)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Search row ───────────────────────────────────────────────────────────────
 
 class _SearchRow extends StatelessWidget {
   final VoidCallback onDismiss;
