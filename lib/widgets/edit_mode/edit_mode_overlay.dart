@@ -60,22 +60,12 @@ class _EditModeOverlayState extends State<EditModeOverlay>
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
           child: Container(
-            color: Colors.black.withValues(alpha: 0.65),
+            color: Colors.black.withValues(alpha: 0.60),
             child: SafeArea(
               child: Column(
                 children: [
-                  const SizedBox(height: 20),
-                  const Text(
-                    'Edit Home Screen',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   Expanded(child: _buildPageArea()),
-                  const SizedBox(height: 8),
                   _buildBottomBar(),
                   const SizedBox(height: 8),
                 ],
@@ -92,7 +82,7 @@ class _EditModeOverlayState extends State<EditModeOverlay>
       builder: (context, state) {
         return Column(
           children: [
-            // Trash drop zone
+            // Trash drop zone — compact, icon-only until hovered
             DragTarget<int>(
               onWillAcceptWithDetails: (_) => state.pages.length > 1,
               onAcceptWithDetails: (details) =>
@@ -101,12 +91,12 @@ class _EditModeOverlayState extends State<EditModeOverlay>
                 final isHovered = candidateData.isNotEmpty;
                 return AnimatedContainer(
                   duration: const Duration(milliseconds: 150),
-                  height: isHovered ? 54 : 42,
-                  margin: const EdgeInsets.symmetric(horizontal: 48),
+                  height: isHovered ? 52 : 40,
+                  margin: const EdgeInsets.symmetric(horizontal: 64),
                   decoration: BoxDecoration(
                     color: isHovered
                         ? Colors.red.withValues(alpha: 0.8)
-                        : Colors.white.withValues(alpha: 0.12),
+                        : Colors.white.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Row(
@@ -117,14 +107,13 @@ class _EditModeOverlayState extends State<EditModeOverlay>
                         color: Colors.white,
                         size: isHovered ? 22 : 18,
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        isHovered ? 'Release to delete' : 'Drag page here to delete',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.8),
-                          fontSize: 12,
+                      if (isHovered) ...[
+                        const SizedBox(width: 6),
+                        const Text(
+                          'Release to delete',
+                          style: TextStyle(color: Colors.white, fontSize: 12),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 );
@@ -216,32 +205,31 @@ class _EditModeOverlayState extends State<EditModeOverlay>
 
   Widget _buildBottomBar() {
     return GestureDetector(
-      // Prevent taps on the bar from dismissing the overlay
       onTap: () {},
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(20),
+          color: Colors.white.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(24),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
             _BottomBarItem(
-              icon: Icons.wallpaper,
-              label: 'Wallpaper',
+              icon: Icons.wallpaper_outlined,
+              label: 'Wallpaper\nand style',
               onTap: widget.onWallpaper,
             ),
             _BottomBarItem(
               icon: Icons.palette_outlined,
               label: 'Themes',
-              onTap: () {},
+              onTap: widget.onSettings,
             ),
             _BottomBarItem(
               icon: Icons.widgets_outlined,
               label: 'Widgets',
-              onTap: () {},
+              onTap: widget.onSettings,
             ),
             _BottomBarItem(
               icon: Icons.settings_outlined,
@@ -295,8 +283,8 @@ class _PageThumbnailCard extends StatelessWidget {
       height: 130,
       decoration: BoxDecoration(
         color: Colors.white
-            .withValues(alpha: isDragging ? 0.28 : (isCurrentPage ? 0.2 : 0.12)),
-        borderRadius: BorderRadius.circular(14),
+            .withValues(alpha: isDragging ? 0.28 : (isCurrentPage ? 0.22 : 0.12)),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isCurrentPage
               ? Colors.white
@@ -372,14 +360,23 @@ class _BottomBarItem extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: Colors.white, size: 24),
-          const SizedBox(height: 4),
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(icon, color: Colors.white, size: 26),
+          ),
+          const SizedBox(height: 6),
           Text(
             label,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.8),
+              color: Colors.white.withValues(alpha: 0.85),
               fontSize: 11,
             ),
+            textAlign: TextAlign.center,
           ),
         ],
       ),

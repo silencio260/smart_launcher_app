@@ -15,6 +15,7 @@ class FolderView extends StatefulWidget {
   final LauncherSettings settings;
   final Map<String, int> badgeCounts;
   final void Function(AppInfo app) onAppTap;
+  final VoidCallback onClose;
 
   const FolderView({
     super.key,
@@ -24,6 +25,7 @@ class FolderView extends StatefulWidget {
     required this.settings,
     required this.badgeCounts,
     required this.onAppTap,
+    required this.onClose,
   });
 
   @override
@@ -63,7 +65,7 @@ class _FolderViewState extends State<FolderView>
     if (_closing) return;
     _closing = true;
     _animController.reverse().then((_) {
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) widget.onClose();
     });
   }
 
@@ -71,7 +73,6 @@ class _FolderViewState extends State<FolderView>
   Widget build(BuildContext context) {
     return BlocListener<WorkspaceCubit, WorkspaceState>(
       listenWhen: (prev, next) {
-        // Auto-close when folder is removed (collapsed to app or deleted)
         final wasPresent = prev.folders.containsKey(widget.folderId);
         final isPresent = next.folders.containsKey(widget.folderId);
         return wasPresent && !isPresent;
@@ -84,11 +85,15 @@ class _FolderViewState extends State<FolderView>
           final folder = state.folders[widget.folderId];
           if (folder == null) return const SizedBox.shrink();
 
-          // While dragging out: hide all UI but keep draggable items in tree
+          // While dragging out: keep draggables alive but hide UI.
+          // Use AbsorbPointer(false) so events pass through to workspace DragTargets.
           if (_draggingOut) {
-            return Opacity(
-              opacity: 0.0,
-              child: Center(child: _buildGrid(folder.contents)),
+            return AbsorbPointer(
+              absorbing: false,
+              child: Opacity(
+                opacity: 0.0,
+                child: Center(child: _buildGrid(folder.contents)),
+              ),
             );
           }
 
@@ -103,24 +108,29 @@ class _FolderViewState extends State<FolderView>
                     onTap: () {},
                     child: ScaleTransition(
                       scale: _scaleAnim,
-                      child: Container(
-                        width: MediaQuery.of(context).size.width * 0.8,
-                        constraints: BoxConstraints(
-                          maxHeight: MediaQuery.of(context).size.height * 0.6,
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                          bottom: MediaQuery.of(context).viewInsets.bottom,
                         ),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[900]!.withValues(alpha: 0.95),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const SizedBox(height: 16),
-                            _buildTitle(folder.folderTitle),
-                            const SizedBox(height: 8),
-                            Flexible(child: _buildGrid(folder.contents)),
-                            const SizedBox(height: 16),
-                          ],
+                        child: Container(
+                          width: MediaQuery.of(context).size.width * 0.82,
+                          constraints: BoxConstraints(
+                            maxHeight: MediaQuery.of(context).size.height * 0.6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[850]!.withValues(alpha: 0.92),
+                            borderRadius: BorderRadius.circular(28),
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SizedBox(height: 16),
+                              Flexible(child: _buildGrid(folder.contents)),
+                              const SizedBox(height: 12),
+                              _buildTitle(folder.folderTitle),
+                              const SizedBox(height: 16),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -138,16 +148,23 @@ class _FolderViewState extends State<FolderView>
     if (_editingTitle) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: TextField(
-          controller: _titleController,
-          autofocus: true,
-          style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
-          textAlign: TextAlign.center,
-          decoration: const InputDecoration(border: InputBorder.none),
-          onSubmitted: (title) {
-            setState(() => _editingTitle = false);
-            context.read<WorkspaceCubit>().renameFolder(widget.folderId, title);
-          },
+        child: Material(
+          color: Colors.transparent,
+          child: TextField(
+            controller: _titleController,
+            autofocus: true,
+            style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+            textAlign: TextAlign.center,
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              hintText: 'Folder name',
+              hintStyle: TextStyle(color: Colors.white38),
+            ),
+            onSubmitted: (title) {
+              setState(() => _editingTitle = false);
+              context.read<WorkspaceCubit>().renameFolder(widget.folderId, title);
+            },
+          ),
         ),
       );
     }
@@ -176,10 +193,11 @@ class _FolderViewState extends State<FolderView>
     return GridView.builder(
       shrinkWrap: true,
       padding: const EdgeInsets.symmetric(horizontal: 16),
+      physics: const NeverScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: widget.settings.folderMaxColumns,
-        childAspectRatio: widget.settings.drawerIconSize /
-            (widget.settings.drawerIconSize +
+        childAspectRatio: widget.settings.iconSize /
+            (widget.settings.iconSize +
                 (widget.settings.showFolderLabels ? widget.settings.labelSize + 8 : 0) +
                 8),
       ),
@@ -203,7 +221,7 @@ class _FolderViewState extends State<FolderView>
         );
         final iconView = BubbleTextView(
           app: app,
-          iconSize: widget.settings.drawerIconSize,
+          iconSize: widget.settings.iconSize,
           showLabel: widget.settings.showFolderLabels,
           labelSize: widget.settings.labelSize,
           iconShape: widget.settings.iconShape,
@@ -215,9 +233,11 @@ class _FolderViewState extends State<FolderView>
             delay: const Duration(milliseconds: 350),
             onDragStarted: () => setState(() => _draggingOut = true),
             onDragEnd: (_) {
-              // Close folder after drag ends (success or cancel)
               if (mounted) setState(() => _draggingOut = false);
               _close();
+            },
+            onDraggableCanceled: (_, __) {
+              if (mounted) setState(() => _draggingOut = false);
             },
             feedback: Material(
               color: Colors.transparent,
@@ -227,7 +247,7 @@ class _FolderViewState extends State<FolderView>
                   scale: 1.15,
                   child: BubbleTextView(
                     app: app,
-                    iconSize: widget.settings.drawerIconSize,
+                    iconSize: widget.settings.iconSize,
                     showLabel: false,
                     iconShape: widget.settings.iconShape,
                   ),
@@ -244,5 +264,4 @@ class _FolderViewState extends State<FolderView>
       },
     );
   }
-
 }

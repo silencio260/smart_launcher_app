@@ -23,7 +23,9 @@ class FolderIconView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final size = settings.iconSize;
-    final miniSize = size * 0.38;
+    // Samsung-style: larger squircle radius, more breathing room for mini icons
+    final miniSize = size * 0.33;
+    final padding = size * 0.12;
 
     return GestureDetector(
       onTap: onTap,
@@ -34,33 +36,16 @@ class FolderIconView extends StatelessWidget {
           Stack(
             clipBehavior: Clip.none,
             children: [
-              // Folder background
               Container(
                 width: size,
                 height: size,
                 decoration: BoxDecoration(
                   color: settings.folderColor,
-                  borderRadius: BorderRadius.circular(size * 0.22),
+                  borderRadius: BorderRadius.circular(size * 0.30),
                 ),
                 child: Padding(
-                  padding: EdgeInsets.all(size * 0.08),
-                  child: GridView.count(
-                    crossAxisCount: 2,
-                    physics: const NeverScrollableScrollPhysics(),
-                    mainAxisSpacing: 2,
-                    crossAxisSpacing: 2,
-                    children: [
-                      ...folder.contents.take(4).map((item) => ShapedIcon(
-                            iconBytes: item.icon,
-                            shape: settings.iconShape,
-                            size: miniSize,
-                          )),
-                      ...List.generate(
-                        (4 - folder.contents.length).clamp(0, 4),
-                        (_) => const SizedBox.shrink(),
-                      ),
-                    ],
-                  ),
+                  padding: EdgeInsets.all(padding),
+                  child: _buildIconGrid(miniSize),
                 ),
               ),
               if (badgeCount > 0)
@@ -86,6 +71,41 @@ class FolderIconView extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildIconGrid(double miniSize) {
+    final count = folder.contents.length;
+    if (count == 0) {
+      return const SizedBox.shrink();
+    }
+    if (count == 1) {
+      // Single icon centered
+      return Center(
+        child: ShapedIcon(
+          iconBytes: folder.contents[0].icon,
+          shape: settings.iconShape,
+          size: miniSize * 1.4,
+        ),
+      );
+    }
+    // 2x2 grid for 2-4 icons; show up to 4
+    return GridView.count(
+      crossAxisCount: 2,
+      physics: const NeverScrollableScrollPhysics(),
+      mainAxisSpacing: 3,
+      crossAxisSpacing: 3,
+      children: [
+        ...folder.contents.take(4).map((item) => ShapedIcon(
+              iconBytes: item.icon,
+              shape: settings.iconShape,
+              size: miniSize,
+            )),
+        ...List.generate(
+          (4 - count).clamp(0, 4),
+          (_) => const SizedBox.shrink(),
+        ),
+      ],
     );
   }
 }

@@ -1,7 +1,9 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/app_info.dart';
 import '../../models/launcher_settings.dart';
+import '../../services/drag/drag_controller.dart';
 import '../../state/apps_cubit.dart';
 import '../../state/search_cubit.dart';
 import 'all_apps_recycler.dart';
@@ -9,6 +11,7 @@ import 'all_apps_search_bar.dart';
 
 class AllAppsContainer extends StatefulWidget {
   final LauncherSettings settings;
+  final DragController dragController;
   final void Function(AppInfo app) onAppTap;
   final void Function(AppInfo app) onAppLongPress;
   final VoidCallback onDismiss;
@@ -16,6 +19,7 @@ class AllAppsContainer extends StatefulWidget {
   const AllAppsContainer({
     super.key,
     required this.settings,
+    required this.dragController,
     required this.onAppTap,
     required this.onAppLongPress,
     required this.onDismiss,
@@ -34,6 +38,7 @@ class _AllAppsContainerState extends State<AllAppsContainer>
   double _dragStartY = 0;
   double _dragDy = 0;
   bool _isDismissing = false;
+  bool _drawerDragging = false;
 
   @override
   void initState() {
@@ -94,30 +99,47 @@ class _AllAppsContainerState extends State<AllAppsContainer>
     final screenH = MediaQuery.of(context).size.height;
     final dismissProgress = (_dragDy / screenH).clamp(0.0, 1.0);
 
-    return GestureDetector(
-      onVerticalDragStart: _onVerticalDragStart,
-      onVerticalDragUpdate: _onVerticalDragUpdate,
-      onVerticalDragEnd: _onVerticalDragEnd,
-      child: SlideTransition(
-        position: _slideAnim,
-        child: Transform.translate(
-          offset: Offset(0, _dragDy),
-          child: Opacity(
-            opacity: (1.0 - dismissProgress * 0.5).clamp(0.0, 1.0),
-            child: Material(
-              color: Colors.transparent,
-              child: Container(
-                height: screenH,
-                color: widget.settings.drawerBackgroundColor
-                    .withValues(alpha: widget.settings.drawerBackgroundOpacity),
-                child: Column(
-                  children: [
-                    SizedBox(height: MediaQuery.of(context).padding.top + 16),
-                    _SearchRow(onDismiss: _dismiss),
-                    const SizedBox(height: 4),
-                    Expanded(child: _buildBody()),
-                    SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
-                  ],
+    // When a drawer drag-to-home is in progress: keep widget alive but
+    // invisible and non-absorbing so workspace DragTargets can receive the drop.
+    if (_drawerDragging) {
+      return AbsorbPointer(
+        absorbing: false,
+        child: Opacity(opacity: 0.0, child: const SizedBox.expand()),
+      );
+    }
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _dismiss();
+      },
+      child: GestureDetector(
+        onVerticalDragStart: _onVerticalDragStart,
+        onVerticalDragUpdate: _onVerticalDragUpdate,
+        onVerticalDragEnd: _onVerticalDragEnd,
+        child: SlideTransition(
+          position: _slideAnim,
+          child: Transform.translate(
+            offset: Offset(0, _dragDy),
+            child: Opacity(
+              opacity: (1.0 - dismissProgress * 0.5).clamp(0.0, 1.0),
+              child: Material(
+                color: Colors.transparent,
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+                  child: Container(
+                    height: screenH,
+                    color: Colors.black.withValues(alpha: 0.60),
+                    child: Column(
+                      children: [
+                        SizedBox(height: MediaQuery.of(context).padding.top + 16),
+                        _SearchRow(onDismiss: _dismiss),
+                        const SizedBox(height: 4),
+                        Expanded(child: _buildBody()),
+                        SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -139,9 +161,15 @@ class _AllAppsContainerState extends State<AllAppsContainer>
           apps: displayApps,
           settings: widget.settings,
           badgeCounts: appsState.badgeCounts,
+          dragController: widget.dragController,
           onAppTap: widget.onAppTap,
           onAppLongPress: widget.onAppLongPress,
           scrollController: _scrollController,
+          onDragStarted: () => setState(() => _drawerDragging = true),
+          onDragEnded: (wasAccepted) {
+            setState(() => _drawerDragging = false);
+            if (wasAccepted) _dismiss();
+          },
         );
       },
     );
@@ -158,7 +186,7 @@ class _SearchRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
         children: [
-          Expanded(child: const AllAppsSearchBar()),
+          const Expanded(child: AllAppsSearchBar()),
           const SizedBox(width: 8),
           GestureDetector(
             onTap: onDismiss,

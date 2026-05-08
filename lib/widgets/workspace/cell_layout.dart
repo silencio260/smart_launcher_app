@@ -14,6 +14,9 @@ import '../folder/folder_icon.dart';
 import '../folder/folder_view.dart';
 import '../icons/bubble_text_view.dart';
 
+// sourcePage == -3 means the drag originated from the app drawer (no removal needed)
+const int kDrawerSourcePage = -3;
+
 class CellLayoutView extends StatefulWidget {
   final WorkspacePage page;
   final int pageIndex;
@@ -77,15 +80,28 @@ class _CellLayoutViewState extends State<CellLayoutView> {
       return;
     }
 
+    // Drag from app drawer — add to workspace, no removal needed
+    if (payload.sourcePage == kDrawerSourcePage) {
+      final item = payload.item;
+      if (item is WorkspaceItemInfo) {
+        workspace.addItem(item, widget.pageIndex, slot);
+        workspace.collapseEmptyPages();
+      }
+      widget.dragController.cancelDrag();
+      return;
+    }
+
     if (target is FolderSlot) {
       // Only apps can be added into a folder (not nested folders)
       final item = payload.item;
       if (item is WorkspaceItemInfo && item.itemType == ItemType.application) {
-        workspace.addToFolder(target.folderId, item);
-        if (payload.sourcePage >= 0) {
-          workspace.removeItem(payload.sourcePage, payload.sourceSlot);
-        } else {
-          _removeDockPackage(context, payload.sourceSlot);
+        final added = workspace.addToFolder(target.folderId, item);
+        if (added) {
+          if (payload.sourcePage >= 0) {
+            workspace.removeItem(payload.sourcePage, payload.sourceSlot);
+          } else if (payload.sourcePage == -1) {
+            _removeDockPackage(context, payload.sourceSlot);
+          }
         }
       } else {
         // Folder dragged onto folder → move folder to the target slot instead
@@ -101,7 +117,7 @@ class _CellLayoutViewState extends State<CellLayoutView> {
       workspace.createFolder(
           widget.pageIndex, payload.sourceSlot, slot, '');
     } else if (target is AppSlot && payload.sourcePage >= 0) {
-      // Cross-page app-on-app → move (overwrites target; Lawnchair does same)
+      // Cross-page app-on-app → move (overwrites target)
       workspace.moveItem(
           payload.sourcePage, payload.sourceSlot, widget.pageIndex, slot);
     } else {
@@ -109,8 +125,8 @@ class _CellLayoutViewState extends State<CellLayoutView> {
       if (payload.sourcePage >= 0) {
         workspace.moveItem(
             payload.sourcePage, payload.sourceSlot, widget.pageIndex, slot);
-      } else {
-        // From dock (sourcePage == -1)
+      } else if (payload.sourcePage == -1) {
+        // From dock
         final item = payload.item;
         if (item is WorkspaceItemInfo) {
           workspace.addItem(item, widget.pageIndex, slot);
@@ -377,28 +393,30 @@ class _CellLayoutViewState extends State<CellLayoutView> {
   }
 
   void _openFolder(BuildContext context, String folderId, int slot) {
-    final badgeCounts = widget.badgeCounts;
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        opaque: false,
-        barrierColor: Colors.transparent,
-        pageBuilder: (routeCtx, _, __) => MultiBlocProvider(
-          providers: [
-            BlocProvider.value(value: context.read<WorkspaceCubit>()),
-          ],
-          child: FolderView(
-            folderId: folderId,
-            folderPage: widget.pageIndex,
-            folderSlot: slot,
-            settings: widget.settings,
-            badgeCounts: badgeCounts,
-            onAppTap: (app) {
-              Navigator.pop(routeCtx);
-              LauncherService.launchApp(app.packageName);
-            },
-          ),
+    final overlay = Overlay.of(context);
+    final workspaceCubit = context.read<WorkspaceCubit>();
+    OverlayEntry? entry;
+    entry = OverlayEntry(
+      builder: (overlayCtx) => BlocProvider.value(
+        value: workspaceCubit,
+        child: FolderView(
+          folderId: folderId,
+          folderPage: widget.pageIndex,
+          folderSlot: slot,
+          settings: widget.settings,
+          badgeCounts: widget.badgeCounts,
+          onClose: () {
+            entry?.remove();
+            entry = null;
+          },
+          onAppTap: (app) {
+            entry?.remove();
+            entry = null;
+            LauncherService.launchApp(app.packageName);
+          },
         ),
       ),
     );
+    overlay.insert(entry!);
   }
 }

@@ -16,7 +16,6 @@ import '../widgets/allapps/all_apps_container.dart';
 import '../widgets/dock/hotseat_view.dart';
 import '../widgets/edit_mode/edit_mode_overlay.dart';
 import '../widgets/drag/drag_layer.dart';
-import '../widgets/smartspace/smartspace_view.dart';
 import '../widgets/workspace/workspace_touch_listener.dart';
 import '../widgets/workspace/workspace_view.dart';
 import '../services/drag/drag_controller.dart';
@@ -262,15 +261,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         onLongPress: _enterEditMode,
                         child: Column(
                           children: [
-                            SizedBox(height: MediaQuery.of(context).padding.top + 32),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              child: Visibility(
-                                visible: !_drawerOpen,
-                                maintainState: true,
-                                child: SmartspaceView(settings: settings),
-                              ),
-                            ),
+                            SizedBox(height: MediaQuery.of(context).padding.top + 8),
                             Expanded(
                               child: Visibility(
                                 visible: !_drawerOpen,
@@ -325,6 +316,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     if (_drawerOpen)
                       AllAppsContainer(
                         settings: settings,
+                        dragController: _dragController,
                         onDismiss: _closeDrawer,
                         onAppTap: (app) {
                           _closeDrawer();

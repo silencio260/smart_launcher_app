@@ -50,7 +50,6 @@ class HotseatView extends StatelessWidget {
                       .withValues(alpha: settings.dockBackgroundOpacity)
                   : Colors.transparent,
               borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,

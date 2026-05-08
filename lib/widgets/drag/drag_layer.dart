@@ -4,7 +4,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../services/drag/drag_controller.dart';
 import '../../state/settings_cubit.dart';
 import '../../state/workspace_cubit.dart';
-import 'drag_view.dart';
 
 class DragLayer extends StatelessWidget {
   final Widget child;
@@ -44,7 +43,7 @@ class DragLayer extends StatelessWidget {
                 left: 0, top: 0, bottom: 80,
                 child: _EdgePageZone(direction: -1, pageController: pageController),
               ),
-              // Right edge zone — hover 600 ms to go to next page
+              // Right edge zone — hover 600 ms to go to next page (creates page if needed)
               Positioned(
                 right: 0, top: 0, bottom: 80,
                 child: _EdgePageZone(direction: 1, pageController: pageController),
@@ -55,12 +54,6 @@ class DragLayer extends StatelessWidget {
                 right: 0,
                 bottom: 0,
                 child: _TrashZone(dragController: dragController),
-              ),
-              // Floating drag icon follows the pointer
-              DragView(
-                payload: dragController.activeDrag!,
-                position: dragController.dragPosition,
-                iconShape: iconShape,
               ),
             ],
           ],
@@ -94,12 +87,31 @@ class _EdgePageZoneState extends State<_EdgePageZone> {
     _timer = Timer(const Duration(milliseconds: 600), () {
       final pc = widget.pageController;
       if (pc == null || !pc.hasClients) return;
-      if (widget.direction > 0) {
-        pc.nextPage(
-            duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
-      } else {
+      if (widget.direction < 0) {
         pc.previousPage(
             duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+      } else {
+        final workspaceState = context.read<WorkspaceCubit>().state;
+        final currentPage = pc.page?.round() ?? workspaceState.currentPage;
+        final lastPageIndex = workspaceState.pages.length - 1;
+        if (currentPage < lastPageIndex) {
+          // Navigate to next existing page
+          pc.nextPage(
+              duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+        } else {
+          // On last page — only create a new page if the last page has content
+          final lastPage = workspaceState.pages[lastPageIndex];
+          if (lastPage.slots.isNotEmpty) {
+            context.read<WorkspaceCubit>().addPage();
+            // After addPage, pages.length increases; navigate to the new last page
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              final newLastIndex = context.read<WorkspaceCubit>().state.pages.length - 1;
+              pc.animateToPage(newLastIndex,
+                  duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+            });
+          }
+          // If last page is empty, don't create another empty page
+        }
       }
     });
   }
@@ -165,6 +177,11 @@ class _TrashZone extends StatelessWidget {
       onWillAcceptWithDetails: (_) => true,
       onAcceptWithDetails: (details) {
         final payload = details.data;
+        // Drawer drags cannot be trashed (nothing to remove from drawer)
+        if (payload.sourcePage == -3) {
+          dragController.cancelDrag();
+          return;
+        }
         final workspace = context.read<WorkspaceCubit>();
         if (payload.folderId != null) {
           // Remove from folder (drag-out → trash)

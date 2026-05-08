@@ -38,12 +38,14 @@ class WorkspaceState extends Equatable {
   final int currentPage;
   final bool isLocked;
   final Map<String, FolderInfo> folders;
+  final int clockPage;
 
   const WorkspaceState({
     this.pages = const [],
     this.currentPage = 0,
     this.isLocked = false,
     this.folders = const {},
+    this.clockPage = 0,
   });
 
   WorkspaceState copyWith({
@@ -51,16 +53,18 @@ class WorkspaceState extends Equatable {
     int? currentPage,
     bool? isLocked,
     Map<String, FolderInfo>? folders,
+    int? clockPage,
   }) =>
       WorkspaceState(
         pages: pages ?? this.pages,
         currentPage: currentPage ?? this.currentPage,
         isLocked: isLocked ?? this.isLocked,
         folders: folders ?? this.folders,
+        clockPage: clockPage ?? this.clockPage,
       );
 
   @override
-  List<Object?> get props => [pages, currentPage, isLocked, folders];
+  List<Object?> get props => [pages, currentPage, isLocked, folders, clockPage];
 }
 
 class WorkspaceCubit extends Cubit<WorkspaceState> {
@@ -89,6 +93,11 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
   }
 
   void setCurrentPage(int page) => emit(state.copyWith(currentPage: page));
+
+  void setClockPage(int page) {
+    emit(state.copyWith(clockPage: page.clamp(0, state.pages.length - 1)));
+    saveLayout();
+  }
 
   void addPage() {
     final pages = List<WorkspacePage>.from(state.pages)..add(WorkspacePage({}));
@@ -182,12 +191,10 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     saveLayout();
   }
 
-  void addToFolder(String folderId, WorkspaceItemInfo item) {
+  bool addToFolder(String folderId, WorkspaceItemInfo item) {
     final folders = Map<String, FolderInfo>.from(state.folders);
     final folder = folders[folderId];
-    if (folder == null) return;
-    // Avoid duplicates
-    if (folder.contents.any((c) => c.packageName == item.packageName)) return;
+    if (folder == null) return false;
     folders[folderId] = FolderInfo(
       id: folder.id,
       folderTitle: folder.folderTitle,
@@ -198,6 +205,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     );
     emit(state.copyWith(folders: folders));
     saveLayout();
+    return true;
   }
 
   void renameFolder(String folderId, String title) {
@@ -290,6 +298,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
 
   Map<String, dynamic> _serialize(WorkspaceState s) => {
         'currentPage': s.currentPage,
+        'clockPage': s.clockPage,
         'isLocked': s.isLocked,
         'pages': s.pages
             .map((p) => {
@@ -357,9 +366,11 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
       );
     });
 
+    final loadedPages = pagesList.isEmpty ? [WorkspacePage({})] : pagesList;
     return WorkspaceState(
-      pages: pagesList.isEmpty ? [WorkspacePage({})] : pagesList,
+      pages: loadedPages,
       currentPage: data['currentPage'] as int? ?? 0,
+      clockPage: (data['clockPage'] as int? ?? 0).clamp(0, loadedPages.length - 1),
       isLocked: data['isLocked'] as bool? ?? false,
       folders: foldersMap,
     );
