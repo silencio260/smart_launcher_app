@@ -34,41 +34,47 @@ class HotseatView extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!settings.showDock) return const SizedBox.shrink();
 
+    final row = Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: List.generate(settings.dockSize, (slot) {
+        final app = slot < apps.length ? apps[slot] : null;
+        return _DockSlot(
+          app: app,
+          slot: slot,
+          apps: apps,
+          settings: settings,
+          badgeCounts: badgeCounts,
+          dragController: dragController,
+          onAppTap: onAppTap,
+          onAppLongPress: onAppLongPress,
+        );
+      }),
+    );
+
     return GestureDetector(
       onVerticalDragEnd: (d) {
         if ((d.primaryVelocity ?? 0) < -200) onSwipeUp();
       },
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            decoration: BoxDecoration(
-              color: settings.dockShowBackground
-                  ? settings.dockBackgroundColor
-                      .withValues(alpha: settings.dockBackgroundOpacity)
-                  : Colors.transparent,
+      child: settings.dockShowBackground
+          ? ClipRRect(
               borderRadius: BorderRadius.circular(28),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: settings.dockBackgroundColor
+                        .withValues(alpha: settings.dockBackgroundOpacity),
+                    borderRadius: BorderRadius.circular(28),
+                  ),
+                  child: row,
+                ),
+              ),
+            )
+          : Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              child: row,
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: List.generate(settings.dockSize, (slot) {
-                final app = slot < apps.length ? apps[slot] : null;
-                return _DockSlot(
-                  app: app,
-                  slot: slot,
-                  settings: settings,
-                  badgeCounts: badgeCounts,
-                  dragController: dragController,
-                  onAppTap: onAppTap,
-                  onAppLongPress: onAppLongPress,
-                );
-              }),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -76,6 +82,7 @@ class HotseatView extends StatelessWidget {
 class _DockSlot extends StatelessWidget {
   final AppInfo? app;
   final int slot;
+  final List<AppInfo?> apps;
   final LauncherSettings settings;
   final Map<String, int> badgeCounts;
   final DragController dragController;
@@ -85,6 +92,7 @@ class _DockSlot extends StatelessWidget {
   const _DockSlot({
     required this.app,
     required this.slot,
+    required this.apps,
     required this.settings,
     required this.badgeCounts,
     required this.dragController,
@@ -96,10 +104,28 @@ class _DockSlot extends StatelessWidget {
   // list with empty strings as needed.
   void _setDockSlot(BuildContext context, String packageName) {
     final s = context.read<SettingsCubit>().state;
-    final packages = List<String>.from(s.dockPackages);
+    final packages = _ensureInitialized(s.dockPackages);
     while (packages.length <= slot) { packages.add(''); }
     packages[slot] = packageName;
     context.read<SettingsCubit>().update(s.copyWith(dockPackages: packages));
+  }
+
+  // Returns a mutable copy of dockPackages, pre-populated from the resolved
+  // apps list when the settings list is still empty (never customized).
+  List<String> _ensureInitialized(List<String> current) {
+    if (current.isNotEmpty) return List<String>.from(current);
+    return apps.map((a) => a?.packageName ?? '').toList();
+  }
+
+  // Persists the initialized dockPackages if they were not yet saved.
+  // Called on drag start so that CellLayoutView._removeDockPackage can find
+  // and clear this slot even when dockPackages was still empty.
+  void _initDockPackagesIfNeeded(BuildContext context) {
+    final s = context.read<SettingsCubit>().state;
+    if (s.dockPackages.isEmpty) {
+      final packages = _ensureInitialized(s.dockPackages);
+      context.read<SettingsCubit>().update(s.copyWith(dockPackages: packages));
+    }
   }
 
   @override
@@ -129,10 +155,9 @@ class _DockSlot extends StatelessWidget {
           // If dragged from another dock slot, clear that slot
           if (payload.sourcePage == -1 && payload.sourceSlot != slot) {
             final s = context.read<SettingsCubit>().state;
-            final packages = List<String>.from(s.dockPackages);
-            if (payload.sourceSlot < packages.length) {
-              packages[payload.sourceSlot] = '';
-            }
+            final packages = _ensureInitialized(s.dockPackages);
+            while (packages.length <= payload.sourceSlot) { packages.add(''); }
+            packages[payload.sourceSlot] = '';
             context
                 .read<SettingsCubit>()
                 .update(s.copyWith(dockPackages: packages));
@@ -223,8 +248,10 @@ class _DockSlot extends StatelessWidget {
           child: LongPressDraggable<DragPayload>(
             data: payload,
             delay: const Duration(milliseconds: 350),
-            onDragStarted: () =>
-                dragController.startDrag(payload.item, -1, slot, Offset.zero),
+            onDragStarted: () {
+              _initDockPackagesIfNeeded(context);
+              dragController.startDrag(payload.item, -1, slot, Offset.zero);
+            },
             onDragEnd: (details) {
               dragController.cancelDrag();
             },
