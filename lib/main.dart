@@ -44,12 +44,15 @@ class SmartLauncherApp extends StatelessWidget {
             title: 'Smart Launcher',
             debugShowCheckedModeBanner: false,
             themeMode: themeMode,
+            color: Colors.transparent,
             theme: ThemeData(
               colorScheme: ColorScheme.fromSeed(
                 seedColor: Colors.indigo,
                 brightness: Brightness.light,
               ),
               useMaterial3: true,
+              scaffoldBackgroundColor: Colors.transparent,
+              canvasColor: Colors.transparent,
             ),
             darkTheme: ThemeData(
               colorScheme: ColorScheme.fromSeed(
@@ -58,6 +61,7 @@ class SmartLauncherApp extends StatelessWidget {
               ),
               useMaterial3: true,
               scaffoldBackgroundColor: Colors.transparent,
+              canvasColor: Colors.transparent,
             ),
             home: const HomeScreen(),
           );

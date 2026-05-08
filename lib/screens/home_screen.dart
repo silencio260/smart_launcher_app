@@ -244,6 +244,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           },
           child: Scaffold(
             backgroundColor: Colors.transparent,
+            extendBody: true,
             body: BlocBuilder<AppsCubit, AppsState>(
               builder: (context, appsState) {
                 final dockApps = _resolveDockApps(appsState, settings);
