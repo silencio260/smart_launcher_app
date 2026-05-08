@@ -5,6 +5,7 @@ import '../../models/app_info.dart';
 import '../../models/launcher_settings.dart';
 import '../../models/workspace_item_info.dart';
 import '../../services/drag/drag_controller.dart';
+import '../../state/apps_cubit.dart';
 import '../../state/workspace_cubit.dart';
 import '../icons/bubble_text_view.dart';
 
@@ -81,9 +82,10 @@ class _FolderViewState extends State<FolderView>
       child: BlocBuilder<WorkspaceCubit, WorkspaceState>(
         buildWhen: (prev, next) =>
             prev.folders[widget.folderId] != next.folders[widget.folderId],
-        builder: (context, state) {
-          final folder = state.folders[widget.folderId];
+        builder: (context, workspaceState) {
+          final folder = workspaceState.folders[widget.folderId];
           if (folder == null) return const SizedBox.shrink();
+          final liveApps = context.watch<AppsCubit>().state.apps;
 
           // While dragging out: keep draggables alive but hide UI.
           // Use AbsorbPointer(false) so events pass through to workspace DragTargets.
@@ -92,7 +94,7 @@ class _FolderViewState extends State<FolderView>
               absorbing: false,
               child: Opacity(
                 opacity: 0.0,
-                child: Center(child: _buildGrid(folder.contents)),
+                child: Center(child: _buildGrid(folder.contents, liveApps)),
               ),
             );
           }
@@ -125,7 +127,7 @@ class _FolderViewState extends State<FolderView>
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               const SizedBox(height: 16),
-                              Flexible(child: _buildGrid(folder.contents)),
+                              Flexible(child: _buildGrid(folder.contents, liveApps)),
                               const SizedBox(height: 12),
                               _buildTitle(folder.folderTitle),
                               const SizedBox(height: 16),
@@ -189,7 +191,7 @@ class _FolderViewState extends State<FolderView>
     );
   }
 
-  Widget _buildGrid(List<WorkspaceItemInfo> apps) {
+  Widget _buildGrid(List<WorkspaceItemInfo> apps, List<AppInfo> liveApps) {
     return GridView.builder(
       shrinkWrap: true,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -204,12 +206,14 @@ class _FolderViewState extends State<FolderView>
       itemCount: apps.length,
       itemBuilder: (context, i) {
         final item = apps[i];
+        final resolvedIcon = item.icon ??
+            liveApps.where((a) => a.packageName == item.packageName).firstOrNull?.icon;
         final app = AppInfo(
           id: item.id,
           packageName: item.packageName,
           appComponentName: item.componentName ?? item.packageName,
           title: item.title,
-          icon: item.icon,
+          icon: resolvedIcon,
         );
         final payload = DragPayload(
           item: item,
