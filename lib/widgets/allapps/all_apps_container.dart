@@ -243,7 +243,10 @@ class _AllAppsContainerState extends State<AllAppsContainer>
             _dismissMenu();
             setState(() => _drawerDragging = false);
             if (wasAccepted) {
-              _dismiss();
+              // Drawer was already invisible during the drag (opacity 0).
+              // Skip the slide-out animation — just close instantly so the
+              // user never sees the drawer animate back in after the drop.
+              widget.onDismiss();
             } else {
               widget.onDragCancelled?.call();
             }

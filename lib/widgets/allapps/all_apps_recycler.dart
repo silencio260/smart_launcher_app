@@ -125,9 +125,10 @@ class _DrawerAppIcon extends StatefulWidget {
 
 class _DrawerAppIconState extends State<_DrawerAppIcon> {
   bool _dragging = false;
-  // True once drag has armed (long press fired); true once user actually moves.
   bool _dragArmed = false;
   bool _dragMoved = false;
+  // Global position where the long-press armed; used to measure drag distance.
+  Offset _dragStartGlobalPos = Offset.zero;
 
   @override
   Widget build(BuildContext context) {
@@ -158,7 +159,7 @@ class _DrawerAppIconState extends State<_DrawerAppIcon> {
       delay: const Duration(milliseconds: 350),
       onDragStarted: () {
         // Fires at long-press threshold — show the context menu here.
-        // Do NOT navigate yet; wait until the user actually moves.
+        // Do NOT navigate yet; wait until the user drags far enough.
         _dragArmed = true;
         _dragMoved = false;
         widget.dragController.startDrag(item, kDrawerSourcePage, -1, Offset.zero);
@@ -168,19 +169,24 @@ class _DrawerAppIconState extends State<_DrawerAppIcon> {
           final center = box.localToGlobal(
             Offset(box.size.width / 2, box.size.height / 2),
           );
+          _dragStartGlobalPos = center;
           widget.onLongPress(center);
         }
       },
       onDragUpdate: (details) {
-        // First real finger movement after long press → navigate to home.
+        // Only navigate to home after a significant downward drag (~one grid row).
         if (_dragArmed && !_dragMoved) {
-          _dragMoved = true;
-          widget.onDragStarted();
+          final dy = details.globalPosition.dy - _dragStartGlobalPos.dy;
+          if (dy > 80.0) {
+            _dragMoved = true;
+            widget.onDragStarted();
+          }
         }
       },
       onDragEnd: (details) {
         _dragArmed = false;
         _dragMoved = false;
+        _dragStartGlobalPos = Offset.zero;
         widget.dragController.cancelDrag();
         if (mounted) setState(() => _dragging = false);
         widget.onDragEnded(details.wasAccepted);
@@ -189,6 +195,7 @@ class _DrawerAppIconState extends State<_DrawerAppIcon> {
         final hadMoved = _dragMoved;
         _dragArmed = false;
         _dragMoved = false;
+        _dragStartGlobalPos = Offset.zero;
         widget.dragController.cancelDrag();
         if (mounted) setState(() => _dragging = false);
         // Only notify the container if the user had actually started dragging
