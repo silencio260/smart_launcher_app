@@ -170,10 +170,12 @@ class _AllAppsContainerState extends State<AllAppsContainer>
                         ),
                       ),
                       if (_menuApp != null) ...[
-                        // Tap-outside dismisses the menu
+                        // Tap-outside or swipe dismisses the menu
                         Positioned.fill(
                           child: GestureDetector(
                             onTap: _dismissMenu,
+                            onVerticalDragStart: (_) => _dismissMenu(),
+                            onHorizontalDragStart: (_) => _dismissMenu(),
                             behavior: HitTestBehavior.translucent,
                             child: const SizedBox.expand(),
                           ),
