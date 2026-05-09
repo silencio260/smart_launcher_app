@@ -58,6 +58,7 @@ class SettingsCubit extends Cubit<LauncherSettings> {
         'dockIconSize': s.dockIconSize,
         'dockPackages': s.dockPackages,
         'drawerLayout': s.drawerLayout.index,
+        'drawerShowBackground': s.drawerShowBackground,
         'drawerBackgroundColor': s.drawerBackgroundColor.toARGB32(),
         'drawerBackgroundOpacity': s.drawerBackgroundOpacity,
         'drawerColumns': s.drawerColumns,
@@ -121,6 +122,7 @@ class SettingsCubit extends Cubit<LauncherSettings> {
       dockIconSize: (j['dockIconSize'] as num?)?.toDouble() ?? 48,
       dockPackages: (j['dockPackages'] as List?)?.cast<String>() ?? [],
       drawerLayout: enumAt(DrawerLayout.values, 'drawerLayout', DrawerLayout.standard),
+      drawerShowBackground: j['drawerShowBackground'] as bool? ?? false,
       drawerBackgroundColor: j['drawerBackgroundColor'] != null
           ? Color(j['drawerBackgroundColor'] as int)
           : Colors.black,

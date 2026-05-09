@@ -91,6 +91,7 @@ class _AllAppsContainerState extends State<AllAppsContainer>
   void _dismissMenu() => setState(() => _menuApp = null);
 
   void _onVerticalDragStart(DragStartDetails d) {
+    if (_menuApp != null) _dismissMenu();
     _dragStartY = d.globalPosition.dy;
     _dragDy = 0;
   }
@@ -154,8 +155,10 @@ class _AllAppsContainerState extends State<AllAppsContainer>
                     children: [
                       Container(
                         height: screenH,
-                        color: widget.settings.drawerBackgroundColor
-                            .withValues(alpha: widget.settings.drawerBackgroundOpacity),
+                        color: widget.settings.drawerShowBackground
+                            ? widget.settings.drawerBackgroundColor
+                                .withValues(alpha: widget.settings.drawerBackgroundOpacity)
+                            : Colors.transparent,
                         child: Column(
                           children: [
                             SizedBox(height: MediaQuery.of(context).padding.top + 16),

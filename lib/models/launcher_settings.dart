@@ -60,6 +60,7 @@ class LauncherSettings extends Equatable {
 
   // Drawer
   final DrawerLayout drawerLayout;
+  final bool drawerShowBackground;
   final Color drawerBackgroundColor;
   final double drawerBackgroundOpacity;
   final int drawerColumns;
@@ -120,6 +121,7 @@ class LauncherSettings extends Equatable {
     this.dockIconSize = 48,
     this.dockPackages = const [],
     this.drawerLayout = DrawerLayout.standard,
+    this.drawerShowBackground = false,
     this.drawerBackgroundColor = Colors.black,
     this.drawerBackgroundOpacity = 0.0,
     this.drawerColumns = 4,
@@ -175,6 +177,7 @@ class LauncherSettings extends Equatable {
     double? dockIconSize,
     List<String>? dockPackages,
     DrawerLayout? drawerLayout,
+    bool? drawerShowBackground,
     Color? drawerBackgroundColor,
     double? drawerBackgroundOpacity,
     int? drawerColumns,
@@ -229,6 +232,7 @@ class LauncherSettings extends Equatable {
       dockIconSize: dockIconSize ?? this.dockIconSize,
       dockPackages: dockPackages ?? this.dockPackages,
       drawerLayout: drawerLayout ?? this.drawerLayout,
+      drawerShowBackground: drawerShowBackground ?? this.drawerShowBackground,
       drawerBackgroundColor: drawerBackgroundColor ?? this.drawerBackgroundColor,
       drawerBackgroundOpacity: drawerBackgroundOpacity ?? this.drawerBackgroundOpacity,
       drawerColumns: drawerColumns ?? this.drawerColumns,
@@ -262,8 +266,8 @@ class LauncherSettings extends Equatable {
         showLabels, labelSize, showStatusBar, darkStatusBar, textColorMode,
         wallpaperScrolling, wallpaperDepthEffect, wallpaperBlur, wallpaperBlurIntensity,
         showDock, dockSize, dockShowBackground, dockBackgroundColor, dockBackgroundOpacity,
-        showDockLabels, dockIconSize, dockPackages, drawerLayout, drawerBackgroundColor,
-        drawerBackgroundOpacity, drawerColumns, drawerIconSize, showDrawerLabels,
+        showDockLabels, dockIconSize, dockPackages, drawerLayout, drawerShowBackground,
+        drawerBackgroundColor, drawerBackgroundOpacity, drawerColumns, drawerIconSize, showDrawerLabels,
         drawerRememberScroll, drawerShowScrollbar, hiddenApps, timeFormat, workspaceFont,
         folderIconShape, folderColor, folderMaxColumns, folderMaxRows, showFolderLabels,
         doubleTapAction, swipeUpAction, swipeDownAction, twoFingerSwipeUpAction,
