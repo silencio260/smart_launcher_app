@@ -154,7 +154,8 @@ class _AllAppsContainerState extends State<AllAppsContainer>
                     children: [
                       Container(
                         height: screenH,
-                        color: Colors.black.withValues(alpha: 0.60),
+                        color: widget.settings.drawerBackgroundColor
+                            .withValues(alpha: widget.settings.drawerBackgroundOpacity),
                         child: Column(
                           children: [
                             SizedBox(height: MediaQuery.of(context).padding.top + 16),
@@ -171,7 +172,7 @@ class _AllAppsContainerState extends State<AllAppsContainer>
                           child: GestureDetector(
                             onTap: _dismissMenu,
                             behavior: HitTestBehavior.translucent,
-                            child: Container(color: Colors.black26),
+                            child: const SizedBox.expand(),
                           ),
                         ),
                         // Context menu card positioned near the icon

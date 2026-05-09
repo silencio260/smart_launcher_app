@@ -124,7 +124,7 @@ class SettingsCubit extends Cubit<LauncherSettings> {
       drawerBackgroundColor: j['drawerBackgroundColor'] != null
           ? Color(j['drawerBackgroundColor'] as int)
           : Colors.black,
-      drawerBackgroundOpacity: (j['drawerBackgroundOpacity'] as num?)?.toDouble() ?? 0.85,
+      drawerBackgroundOpacity: (j['drawerBackgroundOpacity'] as num?)?.toDouble() ?? 0.0,
       drawerColumns: j['drawerColumns'] as int? ?? 4,
       drawerIconSize: (j['drawerIconSize'] as num?)?.toDouble() ?? 56,
       showDrawerLabels: j['showDrawerLabels'] as bool? ?? true,

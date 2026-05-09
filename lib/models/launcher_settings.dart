@@ -121,7 +121,7 @@ class LauncherSettings extends Equatable {
     this.dockPackages = const [],
     this.drawerLayout = DrawerLayout.standard,
     this.drawerBackgroundColor = Colors.black,
-    this.drawerBackgroundOpacity = 0.85,
+    this.drawerBackgroundOpacity = 0.0,
     this.drawerColumns = 4,
     this.drawerIconSize = 56,
     this.showDrawerLabels = true,

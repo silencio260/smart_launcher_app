@@ -184,12 +184,15 @@ class _DrawerAppIconState extends State<_DrawerAppIcon> {
         }
       },
       onDragEnd: (details) {
+        final hadMoved = _dragMoved;
         _dragArmed = false;
         _dragMoved = false;
         _dragStartGlobalPos = Offset.zero;
         widget.dragController.cancelDrag();
         if (mounted) setState(() => _dragging = false);
-        widget.onDragEnded(details.wasAccepted);
+        // Only notify if the user actually dragged to home; a plain long-press
+        // release (no significant movement) must not dismiss the context menu.
+        if (hadMoved) widget.onDragEnded(details.wasAccepted);
       },
       onDraggableCanceled: (_, __) {
         final hadMoved = _dragMoved;
