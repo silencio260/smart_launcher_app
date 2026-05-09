@@ -17,6 +17,9 @@ class AllAppsContainer extends StatefulWidget {
   final void Function(AppInfo app) onAddToHome;
   final VoidCallback onDismiss;
   final VoidCallback? onDragToHome;
+  /// Called when the user started a drag-to-home but cancelled it (did not drop
+  /// on a valid target). Lets the home screen reset its workspace visibility.
+  final VoidCallback? onDragCancelled;
 
   const AllAppsContainer({
     super.key,
@@ -26,6 +29,7 @@ class AllAppsContainer extends StatefulWidget {
     required this.onAddToHome,
     required this.onDismiss,
     this.onDragToHome,
+    this.onDragCancelled,
   });
 
   @override
@@ -114,13 +118,19 @@ class _AllAppsContainerState extends State<AllAppsContainer>
     final screenW = MediaQuery.of(context).size.width;
     final dismissProgress = (_dragDy / screenH).clamp(0.0, 1.0);
 
-    if (_drawerDragging) {
-      return AbsorbPointer(
-        absorbing: false,
-        child: Opacity(opacity: 0.0, child: const SizedBox.expand()),
-      );
-    }
+    // When the user is dragging to home, keep the widget tree alive so that
+    // LongPressDraggable can continue receiving pointer events. We hide it
+    // visually with Opacity and block new input with IgnorePointer.
+    return IgnorePointer(
+      ignoring: _drawerDragging,
+      child: Opacity(
+        opacity: _drawerDragging ? 0.0 : 1.0,
+        child: _buildContent(screenH, screenW, dismissProgress),
+      ),
+    );
+  }
 
+  Widget _buildContent(double screenH, double screenW, double dismissProgress) {
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -224,13 +234,19 @@ class _AllAppsContainerState extends State<AllAppsContainer>
           onAppLongPress: _showMenu,
           scrollController: _scrollController,
           onDragStarted: () {
+            // Fires on first finger movement — safe to dismiss menu and reveal home.
             _dismissMenu();
             setState(() => _drawerDragging = true);
             widget.onDragToHome?.call();
           },
           onDragEnded: (wasAccepted) {
+            _dismissMenu();
             setState(() => _drawerDragging = false);
-            if (wasAccepted) _dismiss();
+            if (wasAccepted) {
+              _dismiss();
+            } else {
+              widget.onDragCancelled?.call();
+            }
           },
         );
       },

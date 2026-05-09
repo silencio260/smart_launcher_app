@@ -33,6 +33,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _dragController = DragController();
   OverlayEntry? _appInfoTooltip;
   bool _drawerOpen = false;
+  bool _drawerDraggingToHome = false;
   bool _editMode = false;
   PageController? _pageController;
 
@@ -73,7 +74,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void _openDrawer() => setState(() => _drawerOpen = true);
 
   void _closeDrawer() {
-    setState(() => _drawerOpen = false);
+    setState(() {
+      _drawerOpen = false;
+      _drawerDraggingToHome = false;
+    });
     context.read<LauncherCubit>().goToState(ls.LauncherState.normal);
   }
 
@@ -286,7 +290,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             SizedBox(height: MediaQuery.of(context).padding.top + 8),
                             Expanded(
                               child: Visibility(
-                                visible: !_drawerOpen,
+                                // Reveal workspace when dragging from drawer so
+                                // drop targets are reachable behind the drawer.
+                                visible: !_drawerOpen || _drawerDraggingToHome,
                                 maintainState: true,
                                 maintainAnimation: true,
                                 maintainSize: true,
@@ -310,7 +316,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             ),
                             if (settings.showDock)
                               Visibility(
-                                visible: !_drawerOpen,
+                                visible: !_drawerOpen || _drawerDraggingToHome,
                                 maintainState: true,
                                 child: Padding(
                                   padding: EdgeInsets.only(
@@ -345,7 +351,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           LauncherService.launchApp(app.packageName);
                         },
                         onAddToHome: _addAppToHomeScreen,
-                        onDragToHome: _navigateToBestDragPage,
+                        onDragToHome: () {
+                          setState(() => _drawerDraggingToHome = true);
+                          _navigateToBestDragPage();
+                        },
+                        onDragCancelled: () =>
+                            setState(() => _drawerDraggingToHome = false),
                       ),
                     if (_editMode)
                       EditModeOverlay(

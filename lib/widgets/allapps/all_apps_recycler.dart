@@ -125,6 +125,9 @@ class _DrawerAppIcon extends StatefulWidget {
 
 class _DrawerAppIconState extends State<_DrawerAppIcon> {
   bool _dragging = false;
+  // True once drag has armed (long press fired); true once user actually moves.
+  bool _dragArmed = false;
+  bool _dragMoved = false;
 
   @override
   Widget build(BuildContext context) {
@@ -154,19 +157,44 @@ class _DrawerAppIconState extends State<_DrawerAppIcon> {
       data: payload,
       delay: const Duration(milliseconds: 350),
       onDragStarted: () {
-        setState(() => _dragging = true);
+        // Fires at long-press threshold — show the context menu here.
+        // Do NOT navigate yet; wait until the user actually moves.
+        _dragArmed = true;
+        _dragMoved = false;
         widget.dragController.startDrag(item, kDrawerSourcePage, -1, Offset.zero);
-        widget.onDragStarted();
+        if (mounted) setState(() => _dragging = true);
+        final box = context.findRenderObject() as RenderBox?;
+        if (box != null && mounted) {
+          final center = box.localToGlobal(
+            Offset(box.size.width / 2, box.size.height / 2),
+          );
+          widget.onLongPress(center);
+        }
+      },
+      onDragUpdate: (details) {
+        // First real finger movement after long press → navigate to home.
+        if (_dragArmed && !_dragMoved) {
+          _dragMoved = true;
+          widget.onDragStarted();
+        }
       },
       onDragEnd: (details) {
+        _dragArmed = false;
+        _dragMoved = false;
         widget.dragController.cancelDrag();
-        setState(() => _dragging = false);
+        if (mounted) setState(() => _dragging = false);
         widget.onDragEnded(details.wasAccepted);
       },
       onDraggableCanceled: (_, __) {
+        final hadMoved = _dragMoved;
+        _dragArmed = false;
+        _dragMoved = false;
         widget.dragController.cancelDrag();
-        setState(() => _dragging = false);
-        widget.onDragEnded(false);
+        if (mounted) setState(() => _dragging = false);
+        // Only notify the container if the user had actually started dragging
+        // (i.e. the drawer was already hidden). If the user just held and released
+        // without moving, the context menu is still visible and we leave it alone.
+        if (hadMoved) widget.onDragEnded(false);
       },
       feedback: Material(
         color: Colors.transparent,
@@ -186,17 +214,7 @@ class _DrawerAppIconState extends State<_DrawerAppIcon> {
       childWhenDragging: Opacity(opacity: 0.3, child: iconView),
       child: GestureDetector(
         onTap: _dragging ? null : widget.onTap,
-        onLongPress: _dragging
-            ? null
-            : () {
-                final box = context.findRenderObject() as RenderBox?;
-                if (box != null) {
-                  final center = box.localToGlobal(
-                    Offset(box.size.width / 2, box.size.height / 2),
-                  );
-                  widget.onLongPress(center);
-                }
-              },
+        // onLongPress removed: LongPressDraggable.onDragStarted handles it.
         child: iconView,
       ),
     );
