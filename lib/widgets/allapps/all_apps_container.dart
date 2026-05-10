@@ -197,10 +197,15 @@ class _AllAppsContainerState extends State<AllAppsContainer>
   Widget _buildMenuCard(double screenW, double screenH) {
     const menuW = 188.0;
     const menuH = 128.0;
+    const gap = 10.0;
     final x = (_menuPos.dx - menuW / 2).clamp(8.0, screenW - menuW - 8);
-    final rawY = _menuPos.dy < screenH / 2
-        ? _menuPos.dy + 40
-        : _menuPos.dy - menuH - 40;
+    // _menuPos.dy is the bottom edge of the icon; prefer showing below
+    final belowY = _menuPos.dy + gap;
+    final approxIconH = widget.settings.drawerIconSize +
+        (widget.settings.showDrawerLabels ? 20.0 : 0.0) +
+        8.0;
+    final aboveY = _menuPos.dy - approxIconH - menuH - gap;
+    final rawY = (belowY + menuH <= screenH - gap) ? belowY : aboveY;
     final y = rawY.clamp(8.0, screenH - menuH - 8);
 
     return Positioned(

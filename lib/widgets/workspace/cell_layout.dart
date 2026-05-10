@@ -84,7 +84,13 @@ class _CellLayoutViewState extends State<CellLayoutView> {
     if (payload.sourcePage == kDrawerSourcePage) {
       final item = payload.item;
       if (item is WorkspaceItemInfo) {
-        workspace.addItem(item, widget.pageIndex, slot);
+        if (target is FolderSlot) {
+          workspace.addToFolder(target.folderId, item);
+        } else if (target is AppSlot) {
+          workspace.createFolderFromExternal(item, widget.pageIndex, slot, '');
+        } else {
+          workspace.addItem(item, widget.pageIndex, slot);
+        }
         workspace.collapseEmptyPages();
       }
       widget.dragController.cancelDrag();

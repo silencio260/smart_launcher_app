@@ -170,7 +170,10 @@ class _DrawerAppIconState extends State<_DrawerAppIcon> {
             Offset(box.size.width / 2, box.size.height / 2),
           );
           _dragStartGlobalPos = center;
-          widget.onLongPress(center);
+          final iconBottom = box.localToGlobal(
+            Offset(box.size.width / 2, box.size.height),
+          );
+          widget.onLongPress(iconBottom);
         }
       },
       onDragUpdate: (details) {

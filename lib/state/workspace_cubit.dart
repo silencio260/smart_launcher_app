@@ -191,6 +191,33 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     saveLayout();
   }
 
+  // Creates a folder at targetSlot by merging the existing app there with newItem.
+  // Used when dropping an app from the drawer onto an occupied home-screen slot.
+  void createFolderFromExternal(
+      WorkspaceItemInfo newItem, int page, int targetSlot, String title) {
+    final pages = List<WorkspacePage>.from(state.pages);
+    if (page >= pages.length) return;
+    final slots = Map<int, SlotContent>.from(pages[page].slots);
+    final existing = slots[targetSlot];
+    if (existing is! AppSlot) return;
+
+    final folderId = 'folder_${DateTime.now().millisecondsSinceEpoch}';
+    final folder = FolderInfo(
+      id: folderId.hashCode,
+      folderTitle: title,
+      contents: [existing.item, newItem],
+      cellX: targetSlot % 5,
+      cellY: targetSlot ~/ 5,
+      screenId: page,
+    );
+    final folders = Map<String, FolderInfo>.from(state.folders)
+      ..[folderId] = folder;
+    slots[targetSlot] = FolderSlot(folderId);
+    pages[page] = WorkspacePage(slots);
+    emit(state.copyWith(pages: pages, folders: folders));
+    saveLayout();
+  }
+
   bool addToFolder(String folderId, WorkspaceItemInfo item) {
     final folders = Map<String, FolderInfo>.from(state.folders);
     final folder = folders[folderId];
