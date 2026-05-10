@@ -1,24 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../models/item_info.dart';
-import '../../models/launcher_widget_info.dart';
-import '../../models/workspace_item_info.dart';
-import '../../services/drag/drag_controller.dart';
-import '../../state/workspace_cubit.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../models/launcher_widget_info.dart';
+import '../../state/workspace_cubit.dart';
 
+/// Renders a single Android app widget with resize handles on the right and
+/// bottom edges. The LongPressDraggable for moving is owned by CellLayoutView,
+/// so this widget only handles resizing.
 class HomeWidgetSlot extends StatefulWidget {
   final LauncherWidgetInfo widget;
   final int page;
   final int slot;
-  final DragController dragController;
 
   const HomeWidgetSlot({
     super.key,
     required this.widget,
     required this.page,
     required this.slot,
-    required this.dragController,
   });
 
   @override
@@ -26,116 +24,105 @@ class HomeWidgetSlot extends StatefulWidget {
 }
 
 class _HomeWidgetSlotState extends State<HomeWidgetSlot> {
-  bool _resizing = false;
-  final double _resizeHandleSize = 20;
+  static const double _handleSize = 18;
+
+  // Accumulated drag delta for smooth resize
+  double _dragAccumX = 0;
+  double _dragAccumY = 0;
 
   @override
   Widget build(BuildContext context) {
     final w = widget.widget;
-    final payload = DragPayload(
-      item: WorkspaceItemInfo(
-        id: w.id,
-        itemType: ItemType.appWidget,
-        packageName: w.providerPackage,
-        componentName: w.providerClass,
-        title: 'Widget',
-      ),
-      sourcePage: widget.page,
-      sourceSlot: widget.slot,
+    return Stack(
+      children: [
+        Positioned.fill(child: _WidgetView(appWidgetId: w.appWidgetId)),
+        _buildRightHandle(context, w),
+        _buildBottomHandle(context, w),
+        // Corner indicator (visual affordance, no interaction)
+        const Positioned(
+          right: 2,
+          bottom: 2,
+          child: Icon(Icons.open_in_full, color: Colors.white38, size: 12),
+        ),
+      ],
     );
+  }
 
-    return LongPressDraggable<DragPayload>(
-      data: payload,
-      delay: const Duration(milliseconds: 500),
-      onDragStarted: () =>
-          widget.dragController.startDrag(payload.item, widget.page, widget.slot, Offset.zero),
-      onDragEnd: (_) => widget.dragController.cancelDrag(),
-      onDraggableCanceled: (_, __) => widget.dragController.cancelDrag(),
-      feedback: Material(
-        color: Colors.transparent,
-        child: Opacity(
-          opacity: 0.75,
-          child: Container(
-            width: 120,
-            height: 80,
-            decoration: BoxDecoration(
-              color: Colors.white24,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white38),
+  Widget _buildRightHandle(BuildContext context, LauncherWidgetInfo w) {
+    return Positioned(
+      right: 0,
+      top: 0,
+      bottom: _handleSize,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragStart: (_) => _dragAccumX = 0,
+        onHorizontalDragUpdate: (d) {
+          _dragAccumX += d.delta.dx;
+          // Each ~60px of drag = one column step
+          final steps = (_dragAccumX / 60).truncate();
+          if (steps != 0) {
+            _dragAccumX -= steps * 60;
+            final newSpan = (w.spanX + steps).clamp(1, 4);
+            if (newSpan != w.spanX) {
+              context
+                  .read<WorkspaceCubit>()
+                  .updateWidgetSpan(widget.page, widget.slot, w.copyWith(spanX: newSpan));
+            }
+          }
+        },
+        child: Container(
+          width: _handleSize,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.12),
+            borderRadius: const BorderRadius.only(
+              topRight: Radius.circular(8),
             ),
-            child: const Center(
-              child: Icon(Icons.widgets_outlined, color: Colors.white70, size: 36),
-            ),
+          ),
+          child: const Center(
+            child: Icon(Icons.drag_indicator, color: Colors.white38, size: 14),
           ),
         ),
-      ),
-      childWhenDragging: Opacity(
-        opacity: 0.25,
-        child: _WidgetView(appWidgetId: w.appWidgetId),
-      ),
-      child: Stack(
-        children: [
-          _WidgetView(appWidgetId: w.appWidgetId),
-          if (_resizing) _buildResizeHandles(context),
-          GestureDetector(
-            onLongPress: () => setState(() => _resizing = !_resizing),
-            behavior: HitTestBehavior.translucent,
-            child: const SizedBox.expand(),
-          ),
-        ],
       ),
     );
   }
 
-  Widget _buildResizeHandles(BuildContext context) {
-    final cubit = context.read<WorkspaceCubit>();
-    return Stack(
-      children: [
-        // Right edge — expand columns
-        Positioned(
-          right: 0,
-          top: 0,
-          bottom: 0,
-          child: GestureDetector(
-            onHorizontalDragEnd: (d) {
-              if (d.primaryVelocity != null && d.primaryVelocity! > 0) {
-                final updated = widget.widget.copyWith(
-                  spanX: (widget.widget.spanX + 1).clamp(1, 4),
-                );
-                cubit.updateWidgetSpan(widget.page, widget.slot, updated);
-              }
-              setState(() => _resizing = false);
-            },
-            child: Container(
-              width: _resizeHandleSize,
-              color: Colors.white.withValues(alpha: 0.3),
-              child: const Icon(Icons.drag_handle, color: Colors.white70, size: 16),
+  Widget _buildBottomHandle(BuildContext context, LauncherWidgetInfo w) {
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: _handleSize,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onVerticalDragStart: (_) => _dragAccumY = 0,
+        onVerticalDragUpdate: (d) {
+          _dragAccumY += d.delta.dy;
+          final steps = (_dragAccumY / 60).truncate();
+          if (steps != 0) {
+            _dragAccumY -= steps * 60;
+            final newSpan = (w.spanY + steps).clamp(1, 4);
+            if (newSpan != w.spanY) {
+              context
+                  .read<WorkspaceCubit>()
+                  .updateWidgetSpan(widget.page, widget.slot, w.copyWith(spanY: newSpan));
+            }
+          }
+        },
+        child: Container(
+          height: _handleSize,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.12),
+            borderRadius: const BorderRadius.only(
+              bottomLeft: Radius.circular(8),
+            ),
+          ),
+          child: const Center(
+            child: RotatedBox(
+              quarterTurns: 1,
+              child: Icon(Icons.drag_indicator, color: Colors.white38, size: 14),
             ),
           ),
         ),
-        // Bottom edge — expand rows
-        Positioned(
-          bottom: 0,
-          left: 0,
-          right: 0,
-          child: GestureDetector(
-            onVerticalDragEnd: (d) {
-              if (d.primaryVelocity != null && d.primaryVelocity! > 0) {
-                final updated = widget.widget.copyWith(
-                  spanY: (widget.widget.spanY + 1).clamp(1, 4),
-                );
-                cubit.updateWidgetSpan(widget.page, widget.slot, updated);
-              }
-              setState(() => _resizing = false);
-            },
-            child: Container(
-              height: _resizeHandleSize,
-              color: Colors.white.withValues(alpha: 0.3),
-              child: const Icon(Icons.drag_handle, color: Colors.white70, size: 16),
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

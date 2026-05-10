@@ -18,7 +18,12 @@ class DragPayload {
     this.folderPage = -1,
     this.folderSlot = -1,
   });
+
+  bool get isWidget => item.itemType == ItemType.appWidget;
 }
+
+typedef DisplacementRevertCallback = void Function(
+    List<({int page, int fromSlot, int toSlot})> displacements);
 
 abstract class DropTarget {
   bool hitTest(Offset position);
@@ -32,6 +37,13 @@ class DragController extends ChangeNotifier {
   Offset _dragPosition = Offset.zero;
   DropTarget? _currentTarget;
   final List<DropTarget> _dropTargets = [];
+
+  // Tracks apps displaced during a widget drag so they can be reverted on cancel
+  final List<({int page, int fromSlot, int toSlot})> _displacements = [];
+  bool _displacementsCommitted = false;
+
+  // Called when drag is cancelled with uncommitted displacements
+  DisplacementRevertCallback? onRevertDisplacements;
 
   DragPayload? get activeDrag => _activeDrag;
   Offset get dragPosition => _dragPosition;
@@ -64,9 +76,24 @@ class DragController extends ChangeNotifier {
     _reset();
   }
 
+  // Records that an app was displaced to make room for a widget drag.
+  void recordDisplacement(int page, int fromSlot, int toSlot) {
+    _displacements.add((page: page, fromSlot: fromSlot, toSlot: toSlot));
+  }
+
+  // Called on successful drop — displacements are intentional, don't revert.
+  void commitDisplacements() {
+    _displacementsCommitted = true;
+  }
+
   void cancelDrag() => _reset();
 
   void _reset() {
+    if (!_displacementsCommitted && _displacements.isNotEmpty) {
+      onRevertDisplacements?.call(List.from(_displacements));
+    }
+    _displacements.clear();
+    _displacementsCommitted = false;
     _activeDrag = null;
     _currentTarget?.onDragExit();
     _currentTarget = null;

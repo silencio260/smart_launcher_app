@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../models/launcher_widget_info.dart';
 import '../../state/settings_cubit.dart';
 import 'general_settings_screen.dart';
 import 'home_screen_settings_screen.dart';
@@ -12,9 +13,12 @@ import 'gesture_settings_screen.dart';
 import 'recents_settings_screen.dart';
 import 'backup_restore_screen.dart';
 import 'about_screen.dart';
+import 'widget_picker_screen.dart';
 
 class SettingsRootScreen extends StatelessWidget {
-  const SettingsRootScreen({super.key});
+  final void Function(LauncherWidgetInfo widget, int page)? onWidgetAdded;
+
+  const SettingsRootScreen({super.key, this.onWidgetAdded});
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +43,18 @@ class SettingsRootScreen extends StatelessWidget {
                 subtitle: 'Grid, layout, wallpaper',
                 onTap: () => Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const HomeScreenSettingsScreen())),
+              ),
+              _Tile(
+                icon: Icons.widgets_outlined,
+                title: 'Widgets',
+                subtitle: 'Browse and add home screen widgets',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        WidgetPickerScreen(onWidgetAdded: onWidgetAdded),
+                  ),
+                ),
               ),
               _Tile(
                 icon: Icons.wb_sunny_outlined,

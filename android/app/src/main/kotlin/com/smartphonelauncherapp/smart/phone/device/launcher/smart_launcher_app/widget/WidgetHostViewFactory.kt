@@ -1,6 +1,7 @@
 package com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.widget
 
 import android.appwidget.AppWidgetHost
+import android.appwidget.AppWidgetHostView
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.view.View
@@ -26,11 +27,11 @@ private class WidgetPlatformView(
     appWidgetId: Int,
 ) : PlatformView {
 
-    private val hostView: LauncherWidgetHostView
+    private val hostView: AppWidgetHostView
 
     init {
         val info = AppWidgetManager.getInstance(context).getAppWidgetInfo(appWidgetId)
-        hostView = appWidgetHost.createView(context, appWidgetId, info) as LauncherWidgetHostView
+        hostView = appWidgetHost.createView(context, appWidgetId, info)
     }
 
     override fun getView(): View = hostView

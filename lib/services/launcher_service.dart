@@ -1,9 +1,11 @@
 import 'package:flutter/services.dart';
 import '../models/app_info.dart';
+import '../models/widget_provider_info.dart';
 
 class LauncherService {
   static const _apps = MethodChannel('com.genrevibes.smartlauncher/apps');
   static const _system = MethodChannel('com.genrevibes.smartlauncher/system');
+  static const _widgets = MethodChannel('com.genrevibes.smartlauncher/widgets');
 
   static Future<List<AppInfo>> getInstalledApps() async {
     final List<dynamic> raw = await _apps.invokeMethod('getApps');
@@ -29,5 +31,31 @@ class LauncherService {
 
   static Future<void> changeWallpaper() async {
     await _system.invokeMethod('changeWallpaper');
+  }
+
+  /// Returns a list of all app widget providers installed on the device.
+  static Future<List<WidgetProviderInfo>> getAvailableWidgets() async {
+    try {
+      final List<dynamic> raw =
+          await _widgets.invokeMethod('getAvailableWidgets');
+      return raw.map((e) => WidgetProviderInfo.fromMap(e as Map)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Allocates and binds an app widget, returning its appWidgetId.
+  /// Returns -1 if binding fails or the user cancels.
+  static Future<int> bindWidget(
+      String packageName, String providerClass) async {
+    try {
+      final int id = await _widgets.invokeMethod('bindWidget', {
+        'packageName': packageName,
+        'providerClass': providerClass,
+      });
+      return id;
+    } catch (_) {
+      return -1;
+    }
   }
 }

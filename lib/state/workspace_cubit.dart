@@ -24,6 +24,13 @@ class WidgetSlot extends SlotContent {
   WidgetSlot(this.widget);
 }
 
+class WidgetStackSlot extends SlotContent {
+  final List<LauncherWidgetInfo> widgets;
+  final int spanX;
+  final int spanY;
+  WidgetStackSlot(this.widgets, {this.spanX = 2, this.spanY = 1});
+}
+
 class EmptySlot extends SlotContent {}
 
 class WorkspacePage {
@@ -127,6 +134,18 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     saveLayout();
   }
 
+  void addWidget(LauncherWidgetInfo widget, int page, int slot) {
+    final pages = List<WorkspacePage>.from(state.pages);
+    while (pages.length <= page) {
+      pages.add(WorkspacePage({}));
+    }
+    final slots = Map<int, SlotContent>.from(pages[page].slots);
+    slots[slot] = WidgetSlot(widget);
+    pages[page] = WorkspacePage(slots);
+    emit(state.copyWith(pages: pages));
+    saveLayout();
+  }
+
   void removeItem(int page, int slot) {
     final pages = List<WorkspacePage>.from(state.pages);
     if (page < 0 || page >= pages.length) return;
@@ -145,7 +164,6 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     if (content == null) return;
 
     if (fromPage == toPage) {
-      // Atomic single-page move — avoids the double-write copy bug
       final slots = Map<int, SlotContent>.from(pages[fromPage].slots)
         ..remove(fromSlot)
         ..[toSlot] = content;
@@ -158,6 +176,44 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
       pages[fromPage] = WorkspacePage(fromSlots);
       pages[toPage] = WorkspacePage(toSlots);
     }
+    emit(state.copyWith(pages: pages));
+    saveLayout();
+  }
+
+  // Creates a widget stack from two widget slots (or a widget and a stack).
+  void createWidgetStack(int fromPage, int fromSlot, int toPage, int toSlot) {
+    final pages = List<WorkspacePage>.from(state.pages);
+    if (fromPage < 0 || fromPage >= pages.length) return;
+    if (toPage < 0 || toPage >= pages.length) return;
+
+    final fromContent = pages[fromPage].slots[fromSlot];
+    final toContent = pages[toPage].slots[toSlot];
+
+    final List<LauncherWidgetInfo> merged = [];
+    if (fromContent is WidgetSlot) merged.add(fromContent.widget);
+    if (fromContent is WidgetStackSlot) merged.addAll(fromContent.widgets);
+    if (toContent is WidgetSlot) merged.add(toContent.widget);
+    if (toContent is WidgetStackSlot) merged.addAll(toContent.widgets);
+
+    if (merged.isEmpty) return;
+
+    final spanX = merged.map((w) => w.spanX).reduce((a, b) => a > b ? a : b);
+    final spanY = merged.map((w) => w.spanY).reduce((a, b) => a > b ? a : b);
+
+    if (fromPage == toPage) {
+      final slots = Map<int, SlotContent>.from(pages[fromPage].slots)
+        ..remove(fromSlot)
+        ..[toSlot] = WidgetStackSlot(merged, spanX: spanX, spanY: spanY);
+      pages[fromPage] = WorkspacePage(slots);
+    } else {
+      final fromSlots = Map<int, SlotContent>.from(pages[fromPage].slots)
+        ..remove(fromSlot);
+      final toSlots = Map<int, SlotContent>.from(pages[toPage].slots)
+        ..[toSlot] = WidgetStackSlot(merged, spanX: spanX, spanY: spanY);
+      pages[fromPage] = WorkspacePage(fromSlots);
+      pages[toPage] = WorkspacePage(toSlots);
+    }
+
     emit(state.copyWith(pages: pages));
     saveLayout();
   }
@@ -184,15 +240,12 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
       ..[folderId] = folder;
     slots.remove(slotA);
     slots.remove(slotB);
-    // Folder appears at the target slot (where the user dropped)
     slots[slotB] = FolderSlot(folderId);
     pages[page] = WorkspacePage(slots);
     emit(state.copyWith(pages: pages, folders: folders));
     saveLayout();
   }
 
-  // Creates a folder at targetSlot by merging the existing app there with newItem.
-  // Used when dropping an app from the drawer onto an occupied home-screen slot.
   void createFolderFromExternal(
       WorkspaceItemInfo newItem, int page, int targetSlot, String title) {
     final pages = List<WorkspacePage>.from(state.pages);
@@ -267,7 +320,6 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     saveLayout();
   }
 
-  // Collapses folder to a single app slot (or removes it) when items drop below 2.
   void tryCollapseFolder(String folderId, int page, int slot) {
     final folder = state.folders[folderId];
     if (folder == null) return;
@@ -301,7 +353,6 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     saveLayout();
   }
 
-  // Removes completely empty pages (but always keeps at least one).
   void collapseEmptyPages() {
     if (state.pages.length <= 1) return;
     final nonEmpty =
@@ -321,6 +372,19 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     pages[page] = WorkspacePage(slots);
     emit(state.copyWith(pages: pages));
     saveLayout();
+  }
+
+  void updateWidgetStackSpan(int page, int slot, int spanX, int spanY) {
+    final pages = List<WorkspacePage>.from(state.pages);
+    if (page >= pages.length) return;
+    final slots = Map<int, SlotContent>.from(pages[page].slots);
+    final current = slots[slot];
+    if (current is WidgetStackSlot) {
+      slots[slot] = WidgetStackSlot(current.widgets, spanX: spanX, spanY: spanY);
+      pages[page] = WorkspacePage(slots);
+      emit(state.copyWith(pages: pages));
+      saveLayout();
+    }
   }
 
   Map<String, dynamic> _serialize(WorkspaceState s) => {
@@ -357,6 +421,30 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
       };
     } else if (slot is FolderSlot) {
       return {'type': 'folder', 'folderId': slot.folderId};
+    } else if (slot is WidgetSlot) {
+      return {
+        'type': 'widget',
+        'appWidgetId': slot.widget.appWidgetId,
+        'providerPackage': slot.widget.providerPackage,
+        'providerClass': slot.widget.providerClass,
+        'spanX': slot.widget.spanX,
+        'spanY': slot.widget.spanY,
+      };
+    } else if (slot is WidgetStackSlot) {
+      return {
+        'type': 'widgetStack',
+        'spanX': slot.spanX,
+        'spanY': slot.spanY,
+        'widgets': slot.widgets
+            .map((w) => {
+                  'appWidgetId': w.appWidgetId,
+                  'providerPackage': w.providerPackage,
+                  'providerClass': w.providerClass,
+                  'spanX': w.spanX,
+                  'spanY': w.spanY,
+                })
+            .toList(),
+      };
     }
     return {'type': 'empty'};
   }
@@ -415,6 +503,32 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
           title: data['title'] as String?,
         );
         return AppSlot(item);
+      case 'widget':
+        return WidgetSlot(LauncherWidgetInfo(
+          id: data['appWidgetId'] as int? ?? 0,
+          appWidgetId: data['appWidgetId'] as int? ?? 0,
+          providerPackage: data['providerPackage'] as String? ?? '',
+          providerClass: data['providerClass'] as String? ?? '',
+          spanX: data['spanX'] as int? ?? 1,
+          spanY: data['spanY'] as int? ?? 1,
+        ));
+      case 'widgetStack':
+        final widgets = (data['widgets'] as List? ?? []).map((w) {
+          final wMap = w as Map<String, dynamic>;
+          return LauncherWidgetInfo(
+            id: wMap['appWidgetId'] as int? ?? 0,
+            appWidgetId: wMap['appWidgetId'] as int? ?? 0,
+            providerPackage: wMap['providerPackage'] as String? ?? '',
+            providerClass: wMap['providerClass'] as String? ?? '',
+            spanX: wMap['spanX'] as int? ?? 1,
+            spanY: wMap['spanY'] as int? ?? 1,
+          );
+        }).toList();
+        return WidgetStackSlot(
+          widgets,
+          spanX: data['spanX'] as int? ?? 2,
+          spanY: data['spanY'] as int? ?? 1,
+        );
       default:
         return EmptySlot();
     }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/app_info.dart';
@@ -13,6 +14,8 @@ import '../../state/workspace_cubit.dart';
 import '../folder/folder_icon.dart';
 import '../folder/folder_view.dart';
 import '../icons/bubble_text_view.dart';
+import 'home_widget_slot.dart';
+import 'home_widget_stack_view.dart';
 
 // sourcePage == -3 means the drag originated from the app drawer (no removal needed)
 const int kDrawerSourcePage = -3;
@@ -42,9 +45,61 @@ class CellLayoutView extends StatefulWidget {
 }
 
 class _CellLayoutViewState extends State<CellLayoutView> {
-  // Tracks which slot started a drag so we can suppress the context-menu
-  // long-press callback that fires ~150ms after onDragStarted.
   int? _draggingSlot;
+
+  // Tracks per-slot timers for app displacement during widget hover
+  final Map<int, Timer> _displacementTimers = {};
+
+  @override
+  void dispose() {
+    _cancelAllDisplacementTimers();
+    super.dispose();
+  }
+
+  void _cancelAllDisplacementTimers() {
+    for (final t in _displacementTimers.values) {
+      t.cancel();
+    }
+    _displacementTimers.clear();
+  }
+
+  void _startDisplacementTimer(int slot, WorkspaceCubit workspace, LauncherSettings settings) {
+    if (_displacementTimers.containsKey(slot)) return;
+    _displacementTimers[slot] = Timer(const Duration(milliseconds: 1500), () {
+      _displacementTimers.remove(slot);
+      _tryDisplaceApp(slot, workspace, settings);
+    });
+  }
+
+  void _cancelDisplacementTimer(int slot) {
+    _displacementTimers[slot]?.cancel();
+    _displacementTimers.remove(slot);
+  }
+
+  void _tryDisplaceApp(int appSlot, WorkspaceCubit workspace, LauncherSettings settings) {
+    final totalSlots = settings.gridColumns * settings.gridRows;
+    final adjacent = _adjacentSlots(appSlot, settings.gridColumns, totalSlots);
+
+    for (final adj in adjacent) {
+      final target = widget.page.slots[adj];
+      if (target == null || target is EmptySlot) {
+        workspace.moveItem(widget.pageIndex, appSlot, widget.pageIndex, adj);
+        widget.dragController.recordDisplacement(widget.pageIndex, appSlot, adj);
+        return;
+      }
+    }
+    // No adjacent empty slot — widget cannot displace this app
+  }
+
+  List<int> _adjacentSlots(int slot, int cols, int total) {
+    final col = slot % cols;
+    final result = <int>[];
+    if (col < cols - 1) result.add(slot + 1);        // right
+    if (col > 0) result.add(slot - 1);               // left
+    if (slot + cols < total) result.add(slot + cols); // below
+    if (slot - cols >= 0) result.add(slot - cols);    // above
+    return result;
+  }
 
   void _removeDockPackage(BuildContext context, int dockSlot) {
     final settings = context.read<SettingsCubit>().state;
@@ -54,11 +109,32 @@ class _CellLayoutViewState extends State<CellLayoutView> {
   }
 
   void _onDrop(BuildContext context, DragTargetDetails<DragPayload> details, int slot) {
+    // Always commit displacements on any successful drop
+    widget.dragController.commitDisplacements();
+    _cancelAllDisplacementTimers();
+
     final payload = details.data;
     final target = widget.page.slots[slot];
     final workspace = context.read<WorkspaceCubit>();
 
-    // Drag originated from inside a folder — place item and remove from folder
+    // ── Widget drag ────────────────────────────────────────────────────────────
+    if (payload.isWidget) {
+      if (target is WidgetSlot || target is WidgetStackSlot) {
+        // Stack the two widgets together
+        workspace.createWidgetStack(
+            payload.sourcePage, payload.sourceSlot, widget.pageIndex, slot);
+      } else {
+        // Empty slot (possibly just vacated by a displaced app)
+        workspace.moveItem(
+            payload.sourcePage, payload.sourceSlot, widget.pageIndex, slot);
+      }
+      workspace.collapseEmptyPages();
+      widget.dragController.cancelDrag();
+      return;
+    }
+
+    // ── Normal app/folder drag ─────────────────────────────────────────────────
+
     if (payload.folderId != null) {
       final item = payload.item;
       if (item is WorkspaceItemInfo) {
@@ -80,7 +156,6 @@ class _CellLayoutViewState extends State<CellLayoutView> {
       return;
     }
 
-    // Drag from app drawer — add to workspace, no removal needed
     if (payload.sourcePage == kDrawerSourcePage) {
       final item = payload.item;
       if (item is WorkspaceItemInfo) {
@@ -98,7 +173,6 @@ class _CellLayoutViewState extends State<CellLayoutView> {
     }
 
     if (target is FolderSlot) {
-      // Only apps can be added into a folder (not nested folders)
       final item = payload.item;
       if (item is WorkspaceItemInfo && item.itemType == ItemType.application) {
         final added = workspace.addToFolder(target.folderId, item);
@@ -110,7 +184,6 @@ class _CellLayoutViewState extends State<CellLayoutView> {
           }
         }
       } else {
-        // Folder dragged onto folder → move folder to the target slot instead
         if (payload.sourcePage >= 0) {
           workspace.moveItem(
               payload.sourcePage, payload.sourceSlot, widget.pageIndex, slot);
@@ -119,20 +192,15 @@ class _CellLayoutViewState extends State<CellLayoutView> {
     } else if (target is AppSlot &&
         payload.sourcePage == widget.pageIndex &&
         payload.item is WorkspaceItemInfo) {
-      // Same-page app-on-app → create folder at the target slot
-      workspace.createFolder(
-          widget.pageIndex, payload.sourceSlot, slot, '');
+      workspace.createFolder(widget.pageIndex, payload.sourceSlot, slot, '');
     } else if (target is AppSlot && payload.sourcePage >= 0) {
-      // Cross-page app-on-app → move (overwrites target)
       workspace.moveItem(
           payload.sourcePage, payload.sourceSlot, widget.pageIndex, slot);
     } else {
-      // Empty slot — move from workspace or place from dock
       if (payload.sourcePage >= 0) {
         workspace.moveItem(
             payload.sourcePage, payload.sourceSlot, widget.pageIndex, slot);
       } else if (payload.sourcePage == -1) {
-        // From dock
         final item = payload.item;
         if (item is WorkspaceItemInfo) {
           workspace.addItem(item, widget.pageIndex, slot);
@@ -145,9 +213,21 @@ class _CellLayoutViewState extends State<CellLayoutView> {
     widget.dragController.cancelDrag();
   }
 
+  bool _willAccept(DragPayload payload, SlotContent? target, int slot) {
+    // Reject same-slot drops
+    if (payload.sourcePage == widget.pageIndex && payload.sourceSlot == slot) {
+      return false;
+    }
+    // Widgets cannot go into folders or onto undisplaced apps
+    if (payload.isWidget) {
+      if (target is FolderSlot) return false;
+      if (target is AppSlot) return false; // app was not displaced
+    }
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Watch AppsCubit so icons refresh when apps finish loading
     final appsState = context.watch<AppsCubit>().state;
     final totalSlots = widget.settings.gridColumns * widget.settings.gridRows;
 
@@ -167,10 +247,16 @@ class _CellLayoutViewState extends State<CellLayoutView> {
       itemBuilder: (context, slot) {
         final content = widget.page.slots[slot];
         return DragTarget<DragPayload>(
-          onWillAcceptWithDetails: (details) =>
-              details.data.sourcePage != widget.pageIndex ||
-              details.data.sourceSlot != slot,
-          onAcceptWithDetails: (details) => _onDrop(context, details, slot),
+          onWillAcceptWithDetails: (d) => _willAccept(d.data, content, slot),
+          onAcceptWithDetails: (d) => _onDrop(context, d, slot),
+          onMove: (details) {
+            if (details.data.isWidget && content is AppSlot) {
+              final workspace = context.read<WorkspaceCubit>();
+              final settings = context.read<SettingsCubit>().state;
+              _startDisplacementTimer(slot, workspace, settings);
+            }
+          },
+          onLeave: (_) => _cancelDisplacementTimer(slot),
           builder: (context, candidateData, _) {
             final isHovered = candidateData.isNotEmpty;
             return AnimatedContainer(
@@ -181,8 +267,7 @@ class _CellLayoutViewState extends State<CellLayoutView> {
                       borderRadius: BorderRadius.circular(12),
                     )
                   : null,
-              child:
-                  _buildSlotContent(context, content, slot, appsState),
+              child: _buildSlotContent(context, content, slot, appsState),
             );
           },
         );
@@ -200,71 +285,210 @@ class _CellLayoutViewState extends State<CellLayoutView> {
       return const SizedBox.shrink();
     }
 
+    if (content is WidgetSlot) {
+      return _buildWidgetSlot(context, content, slot);
+    }
+
+    if (content is WidgetStackSlot) {
+      return _buildWidgetStackSlot(context, content, slot);
+    }
+
     if (content is AppSlot) {
-      final item = content.item;
+      return _buildAppSlot(context, content, slot, appsState);
+    }
 
-      // Always prefer the live icon from AppsCubit (survives restarts);
-      // fall back to cached bytes only if AppsCubit hasn't loaded yet.
-      final liveApp = appsState.apps
-          .where((a) => a.packageName == item.packageName)
-          .firstOrNull;
-      final app = AppInfo(
-        id: item.id,
-        packageName: item.packageName,
-        appComponentName:
-            item.componentName ?? liveApp?.appComponentName ?? item.packageName,
-        title: item.title ?? liveApp?.name,
-        icon: liveApp?.icon ?? item.icon,
-      );
+    if (content is FolderSlot) {
+      return _buildFolderSlot(context, content, slot, appsState);
+    }
 
-      final badge = widget.badgeCounts[item.packageName] ?? 0;
-      final payload =
-          DragPayload(item: item, sourcePage: widget.pageIndex, sourceSlot: slot);
+    return const SizedBox.shrink();
+  }
 
-      return Center(
-        child: LongPressDraggable<DragPayload>(
-          data: payload,
-          delay: const Duration(milliseconds: 350),
-          onDragStarted: () {
-            // Record which slot is being dragged BEFORE the long-press
-            // callback fires (~150ms later at the system threshold).
-            setState(() => _draggingSlot = slot);
-            widget.dragController.startDrag(item, widget.pageIndex, slot, Offset.zero);
-          },
-          onDragEnd: (_) {
-            setState(() => _draggingSlot = null);
-            widget.dragController.cancelDrag();
-          },
-          onDraggableCanceled: (_, __) {
-            setState(() => _draggingSlot = null);
-            widget.dragController.cancelDrag();
-          },
-          feedback: Material(
-            color: Colors.transparent,
-            child: Opacity(
-              opacity: 0.85,
-              child: Transform.scale(
-                scale: 1.15,
-                child: BubbleTextView(
-                  app: app,
-                  iconSize: widget.settings.iconSize,
-                  showLabel: false,
-                  iconShape: widget.settings.iconShape,
-                ),
+  Widget _buildWidgetSlot(BuildContext context, WidgetSlot content, int slot) {
+    final w = content.widget;
+    final payload = DragPayload(
+      item: WorkspaceItemInfo(
+        id: w.id,
+        itemType: ItemType.appWidget,
+        packageName: w.providerPackage,
+        componentName: w.providerClass,
+        title: 'Widget',
+      ),
+      sourcePage: widget.pageIndex,
+      sourceSlot: slot,
+    );
+
+    return LongPressDraggable<DragPayload>(
+      data: payload,
+      delay: const Duration(milliseconds: 350),
+      onDragStarted: () {
+        setState(() => _draggingSlot = slot);
+        widget.dragController.startDrag(payload.item, widget.pageIndex, slot, Offset.zero);
+      },
+      onDragEnd: (_) {
+        setState(() => _draggingSlot = null);
+        widget.dragController.cancelDrag();
+      },
+      onDraggableCanceled: (_, __) {
+        setState(() => _draggingSlot = null);
+        widget.dragController.cancelDrag();
+      },
+      feedback: Material(
+        color: Colors.transparent,
+        child: Opacity(
+          opacity: 0.8,
+          child: Container(
+            width: 120,
+            height: 80,
+            decoration: BoxDecoration(
+              color: Colors.white24,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white38),
+            ),
+            child: const Center(
+              child: Icon(Icons.widgets_outlined, color: Colors.white70, size: 36),
+            ),
+          ),
+        ),
+      ),
+      childWhenDragging: Opacity(
+        opacity: 0.25,
+        child: HomeWidgetSlot(widget: w, page: widget.pageIndex, slot: slot),
+      ),
+      child: HomeWidgetSlot(widget: w, page: widget.pageIndex, slot: slot),
+    );
+  }
+
+  Widget _buildWidgetStackSlot(
+      BuildContext context, WidgetStackSlot content, int slot) {
+    // Use first widget to build a representative drag payload
+    final first = content.widgets.first;
+    final payload = DragPayload(
+      item: WorkspaceItemInfo(
+        id: first.id,
+        itemType: ItemType.appWidget,
+        packageName: first.providerPackage,
+        componentName: first.providerClass,
+        title: 'Widget Stack',
+      ),
+      sourcePage: widget.pageIndex,
+      sourceSlot: slot,
+    );
+
+    return LongPressDraggable<DragPayload>(
+      data: payload,
+      delay: const Duration(milliseconds: 350),
+      onDragStarted: () {
+        setState(() => _draggingSlot = slot);
+        widget.dragController.startDrag(payload.item, widget.pageIndex, slot, Offset.zero);
+      },
+      onDragEnd: (_) {
+        setState(() => _draggingSlot = null);
+        widget.dragController.cancelDrag();
+      },
+      onDraggableCanceled: (_, __) {
+        setState(() => _draggingSlot = null);
+        widget.dragController.cancelDrag();
+      },
+      feedback: Material(
+        color: Colors.transparent,
+        child: Opacity(
+          opacity: 0.8,
+          child: Container(
+            width: 120,
+            height: 80,
+            decoration: BoxDecoration(
+              color: Colors.white24,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white38),
+            ),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.widgets_outlined, color: Colors.white70, size: 28),
+                  Text(
+                    '${content.widgets.length}',
+                    style: const TextStyle(color: Colors.white60, fontSize: 11),
+                  ),
+                ],
               ),
             ),
           ),
-          childWhenDragging: Opacity(
-            opacity: 0.3,
-            child: BubbleTextView(
-              app: app,
-              iconSize: widget.settings.iconSize,
-              showLabel: widget.settings.showLabels,
-              labelSize: widget.settings.labelSize,
-              iconShape: widget.settings.iconShape,
-              badgeCount: badge,
+        ),
+      ),
+      childWhenDragging: Opacity(
+        opacity: 0.25,
+        child: HomeWidgetStackView(
+          widgets: content.widgets,
+          spanX: content.spanX,
+          spanY: content.spanY,
+          page: widget.pageIndex,
+          slot: slot,
+        ),
+      ),
+      child: HomeWidgetStackView(
+        widgets: content.widgets,
+        spanX: content.spanX,
+        spanY: content.spanY,
+        page: widget.pageIndex,
+        slot: slot,
+      ),
+    );
+  }
+
+  Widget _buildAppSlot(
+      BuildContext context, AppSlot content, int slot, AppsState appsState) {
+    final item = content.item;
+    final liveApp = appsState.apps
+        .where((a) => a.packageName == item.packageName)
+        .firstOrNull;
+    final app = AppInfo(
+      id: item.id,
+      packageName: item.packageName,
+      appComponentName:
+          item.componentName ?? liveApp?.appComponentName ?? item.packageName,
+      title: item.title ?? liveApp?.name,
+      icon: liveApp?.icon ?? item.icon,
+    );
+
+    final badge = widget.badgeCounts[item.packageName] ?? 0;
+    final payload =
+        DragPayload(item: item, sourcePage: widget.pageIndex, sourceSlot: slot);
+
+    return Center(
+      child: LongPressDraggable<DragPayload>(
+        data: payload,
+        delay: const Duration(milliseconds: 350),
+        onDragStarted: () {
+          setState(() => _draggingSlot = slot);
+          widget.dragController.startDrag(item, widget.pageIndex, slot, Offset.zero);
+        },
+        onDragEnd: (_) {
+          setState(() => _draggingSlot = null);
+          widget.dragController.cancelDrag();
+        },
+        onDraggableCanceled: (_, __) {
+          setState(() => _draggingSlot = null);
+          widget.dragController.cancelDrag();
+        },
+        feedback: Material(
+          color: Colors.transparent,
+          child: Opacity(
+            opacity: 0.85,
+            child: Transform.scale(
+              scale: 1.15,
+              child: BubbleTextView(
+                app: app,
+                iconSize: widget.settings.iconSize,
+                showLabel: false,
+                iconShape: widget.settings.iconShape,
+              ),
             ),
           ),
+        ),
+        childWhenDragging: Opacity(
+          opacity: 0.3,
           child: BubbleTextView(
             app: app,
             iconSize: widget.settings.iconSize,
@@ -272,106 +496,108 @@ class _CellLayoutViewState extends State<CellLayoutView> {
             labelSize: widget.settings.labelSize,
             iconShape: widget.settings.iconShape,
             badgeCount: badge,
-            onTap: () => widget.onAppTap(app),
-            // Only fire context menu when drag is NOT in progress for this slot.
-            // onDragStarted fires at 350ms; onLongPress fires at ~500ms,
-            // so by the time this callback runs _draggingSlot is already set.
-            onLongPress: _draggingSlot == slot
-                ? null
-                : () {
-                    final box = context.findRenderObject() as RenderBox?;
-                    final center = box == null
-                        ? Offset.zero
-                        : box.localToGlobal(Offset(box.size.width / 2, box.size.height / 2));
-                    widget.onAppLongPress(app, slot, center);
-                  },
           ),
         ),
-      );
-    }
+        child: BubbleTextView(
+          app: app,
+          iconSize: widget.settings.iconSize,
+          showLabel: widget.settings.showLabels,
+          labelSize: widget.settings.labelSize,
+          iconShape: widget.settings.iconShape,
+          badgeCount: badge,
+          onTap: () => widget.onAppTap(app),
+          onLongPress: _draggingSlot == slot
+              ? null
+              : () {
+                  final box = context.findRenderObject() as RenderBox?;
+                  final center = box == null
+                      ? Offset.zero
+                      : box.localToGlobal(
+                          Offset(box.size.width / 2, box.size.height / 2));
+                  widget.onAppLongPress(app, slot, center);
+                },
+        ),
+      ),
+    );
+  }
 
-    if (content is FolderSlot) {
-      final folders = context.watch<WorkspaceCubit>().state.folders;
-      final folder = folders[content.folderId];
-      if (folder == null) return const SizedBox.shrink();
+  Widget _buildFolderSlot(
+      BuildContext context, FolderSlot content, int slot, AppsState appsState) {
+    final folders = context.watch<WorkspaceCubit>().state.folders;
+    final folder = folders[content.folderId];
+    if (folder == null) return const SizedBox.shrink();
 
-      // Resolve live icons for folder preview icons
-      final resolvedFolder = _resolveFolderIcons(folder, appsState);
+    final resolvedFolder = _resolveFolderIcons(folder, appsState);
 
-      return Center(
-        child: LongPressDraggable<DragPayload>(
-          data: DragPayload(
-            item: WorkspaceItemInfo(
-              id: folder.id,
-              itemType: ItemType.folder,
-              packageName: '',
-              title: folder.folderTitle,
-            ),
-            sourcePage: widget.pageIndex,
-            sourceSlot: slot,
+    return Center(
+      child: LongPressDraggable<DragPayload>(
+        data: DragPayload(
+          item: WorkspaceItemInfo(
+            id: folder.id,
+            itemType: ItemType.folder,
+            packageName: '',
+            title: folder.folderTitle,
           ),
-          delay: const Duration(milliseconds: 350),
-          onDragStarted: () {
-            setState(() => _draggingSlot = slot);
-            widget.dragController.startDrag(
-                WorkspaceItemInfo(
-                  id: folder.id,
-                  itemType: ItemType.folder,
-                  packageName: '',
-                  title: folder.folderTitle,
-                ),
-                widget.pageIndex,
-                slot,
-                Offset.zero);
-          },
-          onDragEnd: (_) {
-            setState(() => _draggingSlot = null);
-            widget.dragController.cancelDrag();
-          },
-          onDraggableCanceled: (_, __) {
-            setState(() => _draggingSlot = null);
-            widget.dragController.cancelDrag();
-          },
-          feedback: Material(
-            color: Colors.transparent,
-            child: Opacity(
-              opacity: 0.85,
-              child: Transform.scale(
-                scale: 1.15,
-                child: FolderIconView(
-                  folder: resolvedFolder,
-                  settings: widget.settings,
-                  onTap: () {},
-                  onLongPress: () {},
-                ),
+          sourcePage: widget.pageIndex,
+          sourceSlot: slot,
+        ),
+        delay: const Duration(milliseconds: 350),
+        onDragStarted: () {
+          setState(() => _draggingSlot = slot);
+          widget.dragController.startDrag(
+              WorkspaceItemInfo(
+                id: folder.id,
+                itemType: ItemType.folder,
+                packageName: '',
+                title: folder.folderTitle,
+              ),
+              widget.pageIndex,
+              slot,
+              Offset.zero);
+        },
+        onDragEnd: (_) {
+          setState(() => _draggingSlot = null);
+          widget.dragController.cancelDrag();
+        },
+        onDraggableCanceled: (_, __) {
+          setState(() => _draggingSlot = null);
+          widget.dragController.cancelDrag();
+        },
+        feedback: Material(
+          color: Colors.transparent,
+          child: Opacity(
+            opacity: 0.85,
+            child: Transform.scale(
+              scale: 1.15,
+              child: FolderIconView(
+                folder: resolvedFolder,
+                settings: widget.settings,
+                onTap: () {},
+                onLongPress: () {},
               ),
             ),
           ),
-          childWhenDragging: Opacity(
-            opacity: 0.3,
-            child: FolderIconView(
-              folder: resolvedFolder,
-              settings: widget.settings,
-              onTap: () {},
-              onLongPress: () {},
-            ),
-          ),
+        ),
+        childWhenDragging: Opacity(
+          opacity: 0.3,
           child: FolderIconView(
             folder: resolvedFolder,
             settings: widget.settings,
-            badgeCount: 0,
-            onTap: () => _openFolder(context, content.folderId, slot),
-            onLongPress: _draggingSlot == slot ? () {} : () {},
+            onTap: () {},
+            onLongPress: () {},
           ),
         ),
-      );
-    }
-
-    return const SizedBox.shrink();
+        child: FolderIconView(
+          folder: resolvedFolder,
+          settings: widget.settings,
+          badgeCount: 0,
+          onTap: () => _openFolder(context, content.folderId, slot),
+          onLongPress: _draggingSlot == slot ? () {} : () {},
+        ),
+      ),
+    );
   }
 
-  /// Replaces WorkspaceItemInfo.icon=null with live icons from AppsCubit
-  /// so folder preview icons are visible after a restart.
   FolderInfo _resolveFolderIcons(FolderInfo folder, AppsState appsState) {
     final resolved = folder.contents.map((item) {
       if (item.icon != null) return item;

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../models/app_info.dart';
 import '../models/item_info.dart';
+import '../models/launcher_widget_info.dart';
 import '../models/launcher_settings.dart';
 import '../models/launcher_state.dart' as ls;
 import '../models/workspace_item_info.dart';
@@ -50,6 +51,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       context.read<AppsCubit>().startBadgeListening();
     });
     _dragController.addListener(_onDragChange);
+    _dragController.onRevertDisplacements = (displacements) {
+      final workspace = context.read<WorkspaceCubit>();
+      for (final d in displacements) {
+        workspace.moveItem(d.page, d.toSlot, d.page, d.fromSlot);
+      }
+    };
   }
 
   void _onDragChange() {
@@ -174,6 +181,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  void _addWidgetToHomeScreen(LauncherWidgetInfo widget, int page) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pageController?.animateToPage(
+        page,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
   void _handleGesture(GestureAction action) {
     switch (action) {
       case GestureAction.openDrawer:
@@ -231,7 +248,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             BlocProvider.value(value: context.read<AppsCubit>()),
             BlocProvider.value(value: context.read<WorkspaceCubit>()),
           ],
-          child: const SettingsRootScreen(),
+          child: SettingsRootScreen(onWidgetAdded: _addWidgetToHomeScreen),
         ),
       ),
     );

@@ -1,6 +1,7 @@
 package com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app
 
 import android.appwidget.AppWidgetHost
+import android.content.Intent
 import android.os.Bundle
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
@@ -15,11 +16,13 @@ import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.NotificationChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.SystemChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.WallpaperChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.WidgetsChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.widget.WidgetHostViewFactory
 
 class MainActivity : FlutterActivity() {
 
     private val appWidgetHost by lazy { AppWidgetHost(this, 1024) }
+    private var widgetsChannel: WidgetsChannel? = null
 
     override fun getRenderMode(): RenderMode = RenderMode.texture
     override fun getTransparencyMode(): TransparencyMode = TransparencyMode.transparent
@@ -47,11 +50,18 @@ class MainActivity : FlutterActivity() {
         CalendarChannel(this).register(messenger)
         AlarmChannel(this).register(messenger)
         AppInstallEventChannel(this).register(messenger)
+        widgetsChannel = WidgetsChannel(this, appWidgetHost).also { it.register(messenger) }
 
         flutterEngine.platformViewsController.registry.registerViewFactory(
             "com.genrevibes.smartlauncher/widget_host_view",
             WidgetHostViewFactory(this, appWidgetHost),
         )
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        widgetsChannel?.onActivityResult(requestCode, resultCode, data)
+        super.onActivityResult(requestCode, resultCode, data)
     }
 
     @Deprecated("Deprecated in Java")
