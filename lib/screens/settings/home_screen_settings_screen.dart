@@ -24,7 +24,8 @@ class HomeScreenSettingsScreen extends StatelessWidget {
                 max: 8,
                 divisions: 5,
                 label: '${s.gridColumns}',
-                onChanged: (v) => cubit.update(s.copyWith(gridColumns: v.round())),
+                onChanged: (v) =>
+                    cubit.update(s.copyWith(gridColumns: v.round())),
               ),
               _SliderTile(
                 icon: Icons.table_rows_outlined,
@@ -84,7 +85,8 @@ class HomeScreenSettingsScreen extends StatelessWidget {
                 title: const Text('Infinite Scrolling'),
                 secondary: const Icon(Icons.all_inclusive),
                 value: s.infiniteScrolling,
-                onChanged: (v) => cubit.update(s.copyWith(infiniteScrolling: v)),
+                onChanged: (v) =>
+                    cubit.update(s.copyWith(infiniteScrolling: v)),
               ),
               _SectionHeader('Status Bar'),
               SwitchListTile(
@@ -113,13 +115,15 @@ class HomeScreenSettingsScreen extends StatelessWidget {
                 subtitle: const Text('Parallax effect on page swipe'),
                 secondary: const Icon(Icons.panorama_outlined),
                 value: s.wallpaperScrolling,
-                onChanged: (v) => cubit.update(s.copyWith(wallpaperScrolling: v)),
+                onChanged: (v) =>
+                    cubit.update(s.copyWith(wallpaperScrolling: v)),
               ),
               SwitchListTile(
                 title: const Text('Depth Effect'),
                 secondary: const Icon(Icons.layers_outlined),
                 value: s.wallpaperDepthEffect,
-                onChanged: (v) => cubit.update(s.copyWith(wallpaperDepthEffect: v)),
+                onChanged: (v) =>
+                    cubit.update(s.copyWith(wallpaperDepthEffect: v)),
               ),
               SwitchListTile(
                 title: const Text('Blur Wallpaper'),
@@ -152,7 +156,8 @@ class HomeScreenSettingsScreen extends StatelessWidget {
         TextColorMode.dark => 'Dark',
       };
 
-  void _pickTextColor(BuildContext context, SettingsCubit cubit, LauncherSettings s) {
+  void _pickTextColor(
+      BuildContext context, SettingsCubit cubit, LauncherSettings s) {
     showDialog(
       context: context,
       builder: (_) => SimpleDialog(

@@ -36,6 +36,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _drawerOpen = false;
   bool _drawerDraggingToHome = false;
   bool _editMode = false;
+  bool _didEnsureDefaultClock = false;
   PageController? _pageController;
 
   @override
@@ -96,29 +97,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void _exitEditMode() => setState(() => _editMode = false);
 
   void _navigateToBestDragPage() {
-    final workspaceState = context.read<WorkspaceCubit>().state;
+    final workspace = context.read<WorkspaceCubit>();
     final settings = context.read<SettingsCubit>().state;
-    final slotsPerPage = settings.gridColumns * settings.gridRows;
-
-    for (int p = 0; p < workspaceState.pages.length; p++) {
-      for (int s = 0; s < slotsPerPage; s++) {
-        if (workspaceState.pages[p].slots[s] == null) {
-          _pageController?.animateToPage(
-            p,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-          );
-          return;
-        }
-      }
-    }
-
-    // All pages full — create a new one and navigate to it.
-    context.read<WorkspaceCubit>().addPage();
+    final placement = workspace.ensureAppPlacement(
+      settings.gridColumns,
+      settings.gridRows,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final newPage = context.read<WorkspaceCubit>().state.pages.length - 1;
       _pageController?.animateToPage(
-        newPage,
+        placement.page,
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
@@ -126,44 +113,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _addAppToHomeScreen(AppInfo app) {
-    final workspaceState = context.read<WorkspaceCubit>().state;
+    final workspace = context.read<WorkspaceCubit>();
     final settings = context.read<SettingsCubit>().state;
-    final slotsPerPage = settings.gridColumns * settings.gridRows;
-
-    int targetPage = -1;
-    int targetSlot = -1;
-
-    for (int p = 0; p < workspaceState.pages.length; p++) {
-      for (int s = 0; s < slotsPerPage; s++) {
-        if (workspaceState.pages[p].slots[s] == null) {
-          targetPage = p;
-          targetSlot = s;
-          break;
-        }
-      }
-      if (targetPage >= 0) break;
-    }
-
-    if (targetPage < 0) {
-      context.read<WorkspaceCubit>().addPage();
-      targetPage = workspaceState.pages.length;
-      targetSlot = 0;
-    }
-
-    final item = WorkspaceItemInfo(
-      id: app.id,
-      itemType: ItemType.application,
-      packageName: app.packageName,
-      componentName: app.appComponentName,
-      title: app.name,
-      icon: app.icon,
-      screenId: targetPage,
+    final placement = workspace.addAppToFirstAvailableSlot(
+      WorkspaceItemInfo(
+        id: app.id,
+        itemType: ItemType.application,
+        packageName: app.packageName,
+        componentName: app.appComponentName,
+        title: app.name,
+        icon: app.icon,
+        screenId: 0,
+      ),
+      settings.gridColumns,
+      settings.gridRows,
     );
 
-    context.read<WorkspaceCubit>().addItem(item, targetPage, targetSlot);
-
     // Navigate to the page where the app was placed.
-    final page = targetPage;
+    final page = placement.page;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _pageController?.animateToPage(
         page,
@@ -188,6 +155,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
+    });
+  }
+
+  void _ensureDefaultClockWidget(
+    WorkspaceState workspaceState,
+    LauncherSettings settings,
+  ) {
+    if (_didEnsureDefaultClock || workspaceState.pages.isEmpty) return;
+    _didEnsureDefaultClock = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<WorkspaceCubit>().ensureDefaultClockWidget(
+            settings.gridColumns,
+            settings.gridRows,
+          );
     });
   }
 
@@ -280,6 +262,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return BlocBuilder<SettingsCubit, LauncherSettings>(
       builder: (context, settings) {
+        _ensureDefaultClockWidget(
+          context.watch<WorkspaceCubit>().state,
+          settings,
+        );
         return BlocListener<LauncherCubit, ls.LauncherState>(
           listener: (context, state) {
             if (state == ls.LauncherState.allApps) _openDrawer();
@@ -298,13 +284,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       pageController: _pageController,
                       child: WorkspaceTouchListener(
                         settings: settings,
-                        onDoubleTap: () => _handleGesture(settings.doubleTapAction),
+                        onDoubleTap: () =>
+                            _handleGesture(settings.doubleTapAction),
                         onSwipeUp: () => _handleGesture(settings.swipeUpAction),
-                        onSwipeDown: () => _handleGesture(settings.swipeDownAction),
+                        onSwipeDown: () =>
+                            _handleGesture(settings.swipeDownAction),
                         onLongPress: _enterEditMode,
                         child: Column(
                           children: [
-                            SizedBox(height: MediaQuery.of(context).padding.top + 8),
+                            SizedBox(
+                                height: MediaQuery.of(context).padding.top + 8),
                             Expanded(
                               child: Visibility(
                                 // Reveal workspace when dragging from drawer so
@@ -317,7 +306,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   dragController: _dragController,
                                   settings: settings,
                                   badgeCounts: appsState.badgeCounts,
-                                  onAppTap: (app) => LauncherService.launchApp(app.packageName),
+                                  onAppTap: (app) => LauncherService.launchApp(
+                                      app.packageName),
                                   onAppLongPress: (app, page, slot, center) =>
                                       _showAppInfoTooltip(app, center),
                                   onPageChanged: (offset) {
@@ -339,16 +329,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   padding: EdgeInsets.only(
                                     left: 12,
                                     right: 12,
-                                    bottom: MediaQuery.of(context).padding.bottom + 12,
+                                    bottom:
+                                        MediaQuery.of(context).padding.bottom +
+                                            12,
                                   ),
                                   child: HotseatView(
                                     apps: dockApps,
                                     settings: settings,
                                     badgeCounts: appsState.badgeCounts,
                                     dragController: _dragController,
-                                    onSwipeUp: () => _handleGesture(settings.swipeUpAction),
+                                    onSwipeUp: () =>
+                                        _handleGesture(settings.swipeUpAction),
                                     onAppTap: (app) =>
-                                        LauncherService.launchApp(app.packageName),
+                                        LauncherService.launchApp(
+                                            app.packageName),
                                     onAppLongPress: (app) =>
                                         _showAppInfoTooltip(app, Offset.zero),
                                   ),
@@ -398,7 +392,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  List<AppInfo?> _resolveDockApps(AppsState appsState, LauncherSettings settings) {
+  List<AppInfo?> _resolveDockApps(
+      AppsState appsState, LauncherSettings settings) {
     if (settings.dockPackages.isNotEmpty) {
       // Preserve slot positions: empty-string entries become null so the dock
       // displays an empty slot rather than shifting subsequent apps left.
@@ -414,8 +409,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       'com.android.chrome',
       'com.android.camera2',
     ];
-    final pinned = appsState.apps.where((a) => defaults.contains(a.packageName)).toList();
-    final resolved = pinned.isEmpty ? appsState.apps.take(settings.dockSize).toList() : pinned;
+    final pinned =
+        appsState.apps.where((a) => defaults.contains(a.packageName)).toList();
+    final resolved = pinned.isEmpty
+        ? appsState.apps.take(settings.dockSize).toList()
+        : pinned;
     return resolved.map<AppInfo?>((a) => a).toList();
   }
 }
@@ -442,13 +440,17 @@ class _AppInfoTooltip extends StatelessWidget {
     const tooltipH = 48.0;
 
     // Position above the icon; clamp to screen bounds
-    double left = (iconCenter.dx - tooltipW / 2).clamp(8.0, screenSize.width - tooltipW - 8);
-    double top = (iconCenter.dy - tooltipH - 12).clamp(8.0, screenSize.height - tooltipH - 8);
+    double left = (iconCenter.dx - tooltipW / 2)
+        .clamp(8.0, screenSize.width - tooltipW - 8);
+    double top = (iconCenter.dy - tooltipH - 12)
+        .clamp(8.0, screenSize.height - tooltipH - 8);
 
     return Stack(
       children: [
         // Tap-outside dismisses
-        Positioned.fill(child: GestureDetector(onTap: onDismiss, behavior: HitTestBehavior.translucent)),
+        Positioned.fill(
+            child: GestureDetector(
+                onTap: onDismiss, behavior: HitTestBehavior.translucent)),
         Positioned(
           left: left,
           top: top,
@@ -460,7 +462,12 @@ class _AppInfoTooltip extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.grey[850]!.withValues(alpha: 0.96),
                 borderRadius: BorderRadius.circular(12),
-                boxShadow: [BoxShadow(color: Colors.black45, blurRadius: 8, offset: Offset(0, 3))],
+                boxShadow: [
+                  BoxShadow(
+                      color: Colors.black45,
+                      blurRadius: 8,
+                      offset: Offset(0, 3))
+                ],
               ),
               child: InkWell(
                 borderRadius: BorderRadius.circular(12),
@@ -468,9 +475,13 @@ class _AppInfoTooltip extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.info_outline, color: Colors.white70, size: 18),
+                    const Icon(Icons.info_outline,
+                        color: Colors.white70, size: 18),
                     const SizedBox(width: 8),
-                    Text(app.name, style: const TextStyle(color: Colors.white, fontSize: 13), overflow: TextOverflow.ellipsis),
+                    Text(app.name,
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 13),
+                        overflow: TextOverflow.ellipsis),
                   ],
                 ),
               ),
@@ -481,4 +492,3 @@ class _AppInfoTooltip extends StatelessWidget {
     );
   }
 }
-

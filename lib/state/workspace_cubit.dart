@@ -6,6 +6,7 @@ import '../models/workspace_item_info.dart';
 import '../models/folder_info.dart';
 import '../models/launcher_widget_info.dart';
 import '../models/item_info.dart';
+import '../widgets/workspace/widget_grid_math.dart';
 
 sealed class SlotContent {}
 
@@ -76,6 +77,9 @@ class WorkspaceState extends Equatable {
 
 class WorkspaceCubit extends Cubit<WorkspaceState> {
   static const _key = 'workspace_layout_v1';
+  static const defaultClockProviderPackage = 'com.genrevibes.smartlauncher';
+  static const defaultClockProviderClass = 'builtin.clock';
+  static const defaultClockWidgetId = -1001;
 
   WorkspaceCubit() : super(const WorkspaceState());
 
@@ -83,14 +87,14 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     final prefs = await SharedPreferences.getInstance();
     final json = prefs.getString(_key);
     if (json == null) {
-      emit(state.copyWith(pages: [WorkspacePage({})]));
+      emit(state.copyWith(pages: [_pageWithDefaultClock()]));
       return;
     }
     try {
       final data = jsonDecode(json) as Map<String, dynamic>;
-      emit(_deserialize(data));
+      emit(_withDefaultClock(_deserialize(data)));
     } catch (_) {
-      emit(state.copyWith(pages: [WorkspacePage({})]));
+      emit(state.copyWith(pages: [_pageWithDefaultClock()]));
     }
   }
 
@@ -112,6 +116,101 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     saveLayout();
   }
 
+  WorkspacePage _emptyPage() => WorkspacePage({});
+
+  LauncherWidgetInfo _defaultClockWidget() => LauncherWidgetInfo(
+        id: defaultClockWidgetId,
+        appWidgetId: defaultClockWidgetId,
+        providerPackage: defaultClockProviderPackage,
+        providerClass: defaultClockProviderClass,
+        isCustomWidget: true,
+        spanX: 4,
+        spanY: 2,
+      );
+
+  bool _isDefaultClockSlot(SlotContent content) {
+    return content is WidgetSlot &&
+        content.widget.isCustomWidget &&
+        content.widget.providerPackage == defaultClockProviderPackage &&
+        content.widget.providerClass == defaultClockProviderClass;
+  }
+
+  WorkspacePage _pageWithDefaultClock() {
+    return WorkspacePage({0: WidgetSlot(_defaultClockWidget())});
+  }
+
+  WorkspaceState _withDefaultClock(WorkspaceState loadedState) {
+    final pages = loadedState.pages.isEmpty
+        ? <WorkspacePage>[_emptyPage()]
+        : loadedState.pages;
+    final hasClock =
+        pages.any((page) => page.slots.values.any(_isDefaultClockSlot));
+    if (hasClock) return loadedState.copyWith(pages: pages);
+
+    final pageZeroSlots = Map<int, SlotContent>.from(pages.first.slots);
+    final pageZero = WorkspacePage(pageZeroSlots);
+    final clock = _defaultClockWidget();
+    final slot = findFirstWidgetFit(
+      pageZero,
+      clock.spanX,
+      clock.spanY,
+      5,
+      6,
+    );
+    if (slot == null) return loadedState.copyWith(pages: pages);
+
+    pageZeroSlots[slot] = WidgetSlot(clock);
+    final updatedPages = List<WorkspacePage>.from(pages)
+      ..[0] = WorkspacePage(pageZeroSlots);
+    return loadedState.copyWith(pages: updatedPages);
+  }
+
+  bool ensureDefaultClockWidget(int columns, int rows) {
+    final pages = state.pages.isEmpty
+        ? <WorkspacePage>[_emptyPage()]
+        : List<WorkspacePage>.from(state.pages);
+    final hasClock =
+        pages.any((page) => page.slots.values.any(_isDefaultClockSlot));
+    if (hasClock) return false;
+
+    final clock = _defaultClockWidget().copyWith(
+      spanX: _defaultClockWidget().spanX.clamp(1, columns),
+      spanY: _defaultClockWidget().spanY.clamp(1, rows),
+    );
+    final firstPage =
+        WorkspacePage(Map<int, SlotContent>.from(pages.first.slots));
+    final slot = findFirstWidgetFit(
+      firstPage,
+      clock.spanX,
+      clock.spanY,
+      columns,
+      rows,
+    );
+    if (slot == null) return false;
+
+    final slots = Map<int, SlotContent>.from(firstPage.slots)
+      ..[slot] = WidgetSlot(clock);
+    pages[0] = WorkspacePage(slots);
+    emit(state.copyWith(pages: pages, clockPage: 0));
+    saveLayout();
+    return true;
+  }
+
+  int _firstFreeAppSlotInPage(
+    WorkspacePage page,
+    int columns,
+    int rows, {
+    int? ignoreSlot,
+  }) {
+    return findFirstAppFit(
+          page,
+          columns,
+          rows,
+          ignoreSlot: ignoreSlot,
+        ) ??
+        0;
+  }
+
   void removePage(int index) {
     if (state.pages.length <= 1) return;
     final pages = List<WorkspacePage>.from(state.pages)..removeAt(index);
@@ -127,6 +226,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     while (pages.length <= page) {
       pages.add(WorkspacePage({}));
     }
+    item.screenId = page;
     final slots = Map<int, SlotContent>.from(pages[page].slots);
     slots[slot] = AppSlot(item);
     pages[page] = WorkspacePage(slots);
@@ -134,11 +234,103 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     saveLayout();
   }
 
+  ({int page, int slot})? findFirstAvailableAppSlot(int columns, int rows) {
+    for (int page = 0; page < state.pages.length; page++) {
+      final slot = findFirstAppFit(state.pages[page], columns, rows);
+      if (slot != null) return (page: page, slot: slot);
+    }
+    return null;
+  }
+
+  ({int page, int slot}) ensureAppPlacement(int columns, int rows) {
+    final existing = findFirstAvailableAppSlot(columns, rows);
+    if (existing != null) return existing;
+
+    final pages = List<WorkspacePage>.from(state.pages)..add(_emptyPage());
+    final targetPage = pages.length - 1;
+    emit(state.copyWith(pages: pages));
+    saveLayout();
+    return (
+      page: targetPage,
+      slot: _firstFreeAppSlotInPage(pages[targetPage], columns, rows),
+    );
+  }
+
+  ({int page, int slot})? findFirstAvailableWidgetSlot(
+    int spanX,
+    int spanY,
+    int columns,
+    int rows,
+  ) {
+    for (int page = 0; page < state.pages.length; page++) {
+      final slot = findFirstWidgetFit(
+        state.pages[page],
+        spanX,
+        spanY,
+        columns,
+        rows,
+      );
+      if (slot != null) return (page: page, slot: slot);
+    }
+    return null;
+  }
+
+  ({int page, int slot}) ensureWidgetPlacement(
+    int spanX,
+    int spanY,
+    int columns,
+    int rows,
+  ) {
+    final existing = findFirstAvailableWidgetSlot(
+      spanX,
+      spanY,
+      columns,
+      rows,
+    );
+    if (existing != null) return existing;
+
+    final pages = List<WorkspacePage>.from(state.pages)..add(_emptyPage());
+    final targetPage = pages.length - 1;
+    emit(state.copyWith(pages: pages));
+    saveLayout();
+    return (page: targetPage, slot: 0);
+  }
+
+  ({int page, int slot}) addAppToFirstAvailableSlot(
+    WorkspaceItemInfo item,
+    int columns,
+    int rows,
+  ) {
+    final placement = ensureAppPlacement(columns, rows);
+    addItem(item, placement.page, placement.slot);
+    return placement;
+  }
+
+  ({int page, int slot}) addWidgetToFirstAvailableSlot(
+    LauncherWidgetInfo widget,
+    int columns,
+    int rows,
+  ) {
+    final placeableWidget = widget.copyWith(
+      spanX: widget.spanX.clamp(1, columns),
+      spanY: widget.spanY.clamp(1, rows),
+    );
+    final placement = ensureWidgetPlacement(
+      placeableWidget.spanX,
+      placeableWidget.spanY,
+      columns,
+      rows,
+    );
+    addWidget(placeableWidget, placement.page, placement.slot);
+    return placement;
+  }
+
   void addWidget(LauncherWidgetInfo widget, int page, int slot) {
     final pages = List<WorkspacePage>.from(state.pages);
     while (pages.length <= page) {
       pages.add(WorkspacePage({}));
     }
+    widget.screenId = page;
     final slots = Map<int, SlotContent>.from(pages[page].slots);
     slots[slot] = WidgetSlot(widget);
     pages[page] = WorkspacePage(slots);
@@ -178,6 +370,246 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     }
     emit(state.copyWith(pages: pages));
     saveLayout();
+  }
+
+  void normalizeLayout(int columns, int rows) {
+    final originalPages = state.pages.isEmpty ? [_emptyPage()] : state.pages;
+    final normalizedPages = <WorkspacePage>[];
+    final overflowItems = <SlotContent>[];
+
+    for (final page in originalPages) {
+      final slots = Map<int, SlotContent>.from(page.slots);
+      final normalized = <int, SlotContent>{};
+      final widgetAnchors = slots.entries.where((entry) {
+        final content = entry.value;
+        return content is WidgetSlot || content is WidgetStackSlot;
+      }).toList()
+        ..sort((a, b) => a.key.compareTo(b.key));
+
+      for (final entry in widgetAnchors) {
+        final anchor = entry.key;
+        final content = entry.value;
+        final canKeep = switch (content) {
+          WidgetSlot(:final widget) => canPlaceWidgetAt(
+              WorkspacePage(normalized),
+              anchor,
+              widget.spanX,
+              widget.spanY,
+              columns,
+              rows,
+            ),
+          WidgetStackSlot(:final spanX, :final spanY) => canPlaceWidgetAt(
+              WorkspacePage(normalized),
+              anchor,
+              spanX,
+              spanY,
+              columns,
+              rows,
+            ),
+          _ => false,
+        };
+
+        if (canKeep) {
+          normalized[anchor] = content;
+        } else {
+          overflowItems.add(content);
+        }
+      }
+
+      final blockedByWidgets = occupiedWidgetSlots(
+        WorkspacePage(normalized),
+        columns,
+        rows,
+      );
+
+      final nonWidgets = slots.entries.where((entry) {
+        final content = entry.value;
+        return content is! WidgetSlot && content is! WidgetStackSlot;
+      }).toList()
+        ..sort((a, b) => a.key.compareTo(b.key));
+
+      for (final entry in nonWidgets) {
+        final slot = entry.key;
+        final content = entry.value;
+        if (blockedByWidgets.contains(slot)) {
+          overflowItems.add(content);
+          continue;
+        }
+        if (slot >= columns * rows) {
+          overflowItems.add(content);
+          continue;
+        }
+        if (!normalized.containsKey(slot)) {
+          normalized[slot] = content;
+          continue;
+        }
+        overflowItems.add(content);
+      }
+
+      normalizedPages.add(WorkspacePage(normalized));
+    }
+
+    if (normalizedPages.isEmpty) {
+      normalizedPages.add(_emptyPage());
+    }
+
+    for (final content in overflowItems) {
+      if (content is WidgetSlot) {
+        final placement = _findWidgetPlacementInPages(
+          normalizedPages,
+          content.widget.spanX,
+          content.widget.spanY,
+          columns,
+          rows,
+        );
+        final slots =
+            Map<int, SlotContent>.from(normalizedPages[placement.page].slots)
+              ..[placement.slot] = content;
+        normalizedPages[placement.page] = WorkspacePage(slots);
+        continue;
+      }
+
+      if (content is WidgetStackSlot) {
+        final placement = _findWidgetPlacementInPages(
+          normalizedPages,
+          content.spanX,
+          content.spanY,
+          columns,
+          rows,
+        );
+        final slots =
+            Map<int, SlotContent>.from(normalizedPages[placement.page].slots)
+              ..[placement.slot] = content;
+        normalizedPages[placement.page] = WorkspacePage(slots);
+        continue;
+      }
+
+      final placement =
+          _findAppPlacementInPages(normalizedPages, columns, rows);
+      final slots =
+          Map<int, SlotContent>.from(normalizedPages[placement.page].slots)
+            ..[placement.slot] = content;
+      normalizedPages[placement.page] = WorkspacePage(slots);
+    }
+
+    final currentPage = state.currentPage.clamp(0, normalizedPages.length - 1);
+    emit(state.copyWith(pages: normalizedPages, currentPage: currentPage));
+    saveLayout();
+  }
+
+  ({int page, int slot}) _findAppPlacementInPages(
+    List<WorkspacePage> pages,
+    int columns,
+    int rows,
+  ) {
+    for (int page = 0; page < pages.length; page++) {
+      final slot = findFirstAppFit(pages[page], columns, rows);
+      if (slot != null) return (page: page, slot: slot);
+    }
+    pages.add(_emptyPage());
+    return (page: pages.length - 1, slot: 0);
+  }
+
+  ({int page, int slot}) _findWidgetPlacementInPages(
+    List<WorkspacePage> pages,
+    int spanX,
+    int spanY,
+    int columns,
+    int rows,
+  ) {
+    for (int page = 0; page < pages.length; page++) {
+      final slot = findFirstWidgetFit(
+        pages[page],
+        spanX,
+        spanY,
+        columns,
+        rows,
+      );
+      if (slot != null) return (page: page, slot: slot);
+    }
+    pages.add(_emptyPage());
+    return (page: pages.length - 1, slot: 0);
+  }
+
+  bool shiftItemsAlongPath(int page, List<int> path) {
+    if (page < 0 || page >= state.pages.length) return false;
+    if (path.length < 2) return false;
+
+    final pages = List<WorkspacePage>.from(state.pages);
+    final slots = Map<int, SlotContent>.from(pages[page].slots);
+
+    final destination = slots[path.last];
+    if (destination != null && destination is! EmptySlot) {
+      return false;
+    }
+
+    for (int i = path.length - 1; i > 0; i--) {
+      final fromSlot = path[i - 1];
+      final toSlot = path[i];
+      final content = slots[fromSlot];
+      if (content == null || content is EmptySlot) {
+        slots.remove(toSlot);
+      } else {
+        slots[toSlot] = content;
+      }
+    }
+
+    slots.remove(path.first);
+    pages[page] = WorkspacePage(slots);
+    emit(state.copyWith(pages: pages));
+    saveLayout();
+    return true;
+  }
+
+  bool moveItemWithDisplacement(
+    int fromPage,
+    int fromSlot,
+    int toPage,
+    int toSlot,
+    List<int> displacementPath,
+  ) {
+    if (fromPage < 0 || toPage < 0) return false;
+    if (displacementPath.length < 2 || displacementPath.first != toSlot) {
+      return false;
+    }
+
+    final pages = List<WorkspacePage>.from(state.pages);
+    if (fromPage >= pages.length || toPage >= pages.length) return false;
+
+    final moving = pages[fromPage].slots[fromSlot];
+    if (moving == null || moving is EmptySlot) return false;
+
+    final fromSlots = Map<int, SlotContent>.from(pages[fromPage].slots)
+      ..remove(fromSlot);
+    final toSlots = fromPage == toPage
+        ? fromSlots
+        : Map<int, SlotContent>.from(pages[toPage].slots);
+
+    final destination = toSlots[displacementPath.last];
+    if (destination != null && destination is! EmptySlot) return false;
+
+    for (int i = displacementPath.length - 1; i > 0; i--) {
+      final from = displacementPath[i - 1];
+      final to = displacementPath[i];
+      final content = toSlots[from];
+      if (content == null || content is EmptySlot) {
+        toSlots.remove(to);
+      } else {
+        toSlots[to] = content;
+      }
+    }
+
+    toSlots[toSlot] = moving;
+    if (fromPage == toPage) {
+      pages[fromPage] = WorkspacePage(toSlots);
+    } else {
+      pages[fromPage] = WorkspacePage(fromSlots);
+      pages[toPage] = WorkspacePage(toSlots);
+    }
+
+    emit(state.copyWith(pages: pages));
+    saveLayout();
+    return true;
   }
 
   // Creates a widget stack from two widget slots (or a widget and a stack).
@@ -343,7 +775,9 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
   void movePage(int from, int to) {
     if (from == to) return;
     final pages = List<WorkspacePage>.from(state.pages);
-    if (from < 0 || from >= pages.length || to < 0 || to >= pages.length) return;
+    if (from < 0 || from >= pages.length || to < 0 || to >= pages.length) {
+      return;
+    }
     final page = pages.removeAt(from);
     pages.insert(to, page);
     final cur = state.currentPage == from
@@ -355,8 +789,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
 
   void collapseEmptyPages() {
     if (state.pages.length <= 1) return;
-    final nonEmpty =
-        state.pages.where((p) => p.slots.isNotEmpty).toList();
+    final nonEmpty = state.pages.where((p) => p.slots.isNotEmpty).toList();
     if (nonEmpty.length == state.pages.length) return;
     final retained = nonEmpty.isEmpty ? [WorkspacePage({})] : nonEmpty;
     final cur = state.currentPage.clamp(0, retained.length - 1);
@@ -380,7 +813,8 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     final slots = Map<int, SlotContent>.from(pages[page].slots);
     final current = slots[slot];
     if (current is WidgetStackSlot) {
-      slots[slot] = WidgetStackSlot(current.widgets, spanX: spanX, spanY: spanY);
+      slots[slot] =
+          WidgetStackSlot(current.widgets, spanX: spanX, spanY: spanY);
       pages[page] = WorkspacePage(slots);
       emit(state.copyWith(pages: pages));
       saveLayout();
@@ -393,8 +827,8 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
         'isLocked': s.isLocked,
         'pages': s.pages
             .map((p) => {
-                  'slots': p.slots.map(
-                      (k, v) => MapEntry(k.toString(), _serializeSlot(v))),
+                  'slots': p.slots
+                      .map((k, v) => MapEntry(k.toString(), _serializeSlot(v))),
                 })
             .toList(),
         'folders': s.folders.map((k, v) => MapEntry(k, {
@@ -427,6 +861,11 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
         'appWidgetId': slot.widget.appWidgetId,
         'providerPackage': slot.widget.providerPackage,
         'providerClass': slot.widget.providerClass,
+        'isCustomWidget': slot.widget.isCustomWidget,
+        'minWidth': slot.widget.minWidth,
+        'minHeight': slot.widget.minHeight,
+        'minResizeWidth': slot.widget.minResizeWidth,
+        'minResizeHeight': slot.widget.minResizeHeight,
         'spanX': slot.widget.spanX,
         'spanY': slot.widget.spanY,
       };
@@ -440,6 +879,11 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
                   'appWidgetId': w.appWidgetId,
                   'providerPackage': w.providerPackage,
                   'providerClass': w.providerClass,
+                  'isCustomWidget': w.isCustomWidget,
+                  'minWidth': w.minWidth,
+                  'minHeight': w.minHeight,
+                  'minResizeWidth': w.minResizeWidth,
+                  'minResizeHeight': w.minResizeHeight,
                   'spanX': w.spanX,
                   'spanY': w.spanY,
                 })
@@ -485,7 +929,8 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     return WorkspaceState(
       pages: loadedPages,
       currentPage: data['currentPage'] as int? ?? 0,
-      clockPage: (data['clockPage'] as int? ?? 0).clamp(0, loadedPages.length - 1),
+      clockPage:
+          (data['clockPage'] as int? ?? 0).clamp(0, loadedPages.length - 1),
       isLocked: data['isLocked'] as bool? ?? false,
       folders: foldersMap,
     );
@@ -509,6 +954,11 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
           appWidgetId: data['appWidgetId'] as int? ?? 0,
           providerPackage: data['providerPackage'] as String? ?? '',
           providerClass: data['providerClass'] as String? ?? '',
+          isCustomWidget: data['isCustomWidget'] as bool? ?? false,
+          minWidth: data['minWidth'] as int? ?? 0,
+          minHeight: data['minHeight'] as int? ?? 0,
+          minResizeWidth: data['minResizeWidth'] as int? ?? 0,
+          minResizeHeight: data['minResizeHeight'] as int? ?? 0,
           spanX: data['spanX'] as int? ?? 1,
           spanY: data['spanY'] as int? ?? 1,
         ));
@@ -520,6 +970,11 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
             appWidgetId: wMap['appWidgetId'] as int? ?? 0,
             providerPackage: wMap['providerPackage'] as String? ?? '',
             providerClass: wMap['providerClass'] as String? ?? '',
+            isCustomWidget: wMap['isCustomWidget'] as bool? ?? false,
+            minWidth: wMap['minWidth'] as int? ?? 0,
+            minHeight: wMap['minHeight'] as int? ?? 0,
+            minResizeWidth: wMap['minResizeWidth'] as int? ?? 0,
+            minResizeHeight: wMap['minResizeHeight'] as int? ?? 0,
             spanX: wMap['spanX'] as int? ?? 1,
             spanY: wMap['spanY'] as int? ?? 1,
           );

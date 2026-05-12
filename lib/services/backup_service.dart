@@ -76,6 +76,7 @@ class BackupService {
         'lockHomeScreen': s.lockHomeScreen,
         'autoAddShortcuts': s.autoAddShortcuts,
         'infiniteScrolling': s.infiniteScrolling,
+        'showGridDebugOverlay': s.showGridDebugOverlay,
         'iconSize': s.iconSize,
         'showLabels': s.showLabels,
         'labelSize': s.labelSize,
@@ -128,32 +129,39 @@ class BackupService {
       iconShape: d['iconShape'] as String? ?? 'squircle',
       iconPackPackage: d['iconPackPackage'] as String? ?? '',
       themedIconsEnabled: d['themedIconsEnabled'] as bool? ?? false,
-      notificationBadgesEnabled: d['notificationBadgesEnabled'] as bool? ?? true,
+      notificationBadgesEnabled:
+          d['notificationBadgesEnabled'] as bool? ?? true,
       badgeShowCount: d['badgeShowCount'] as bool? ?? true,
       gridColumns: d['gridColumns'] as int? ?? 5,
       gridRows: d['gridRows'] as int? ?? 6,
       lockHomeScreen: d['lockHomeScreen'] as bool? ?? false,
       autoAddShortcuts: d['autoAddShortcuts'] as bool? ?? true,
       infiniteScrolling: d['infiniteScrolling'] as bool? ?? false,
+      showGridDebugOverlay: d['showGridDebugOverlay'] as bool? ?? false,
       iconSize: (d['iconSize'] as num?)?.toDouble() ?? 56,
       showLabels: d['showLabels'] as bool? ?? true,
       labelSize: (d['labelSize'] as num?)?.toDouble() ?? 12,
       showStatusBar: d['showStatusBar'] as bool? ?? true,
       darkStatusBar: d['darkStatusBar'] as bool? ?? false,
-      textColorMode: enumAt(TextColorMode.values, 'textColorMode', TextColorMode.auto),
+      textColorMode:
+          enumAt(TextColorMode.values, 'textColorMode', TextColorMode.auto),
       wallpaperScrolling: d['wallpaperScrolling'] as bool? ?? true,
       wallpaperDepthEffect: d['wallpaperDepthEffect'] as bool? ?? false,
       wallpaperBlur: d['wallpaperBlur'] as bool? ?? false,
-      wallpaperBlurIntensity: (d['wallpaperBlurIntensity'] as num?)?.toDouble() ?? 0.3,
+      wallpaperBlurIntensity:
+          (d['wallpaperBlurIntensity'] as num?)?.toDouble() ?? 0.3,
       showDock: d['showDock'] as bool? ?? true,
       dockSize: d['dockSize'] as int? ?? 5,
       dockShowBackground: d['dockShowBackground'] as bool? ?? true,
-      dockBackgroundOpacity: (d['dockBackgroundOpacity'] as num?)?.toDouble() ?? 0.4,
+      dockBackgroundOpacity:
+          (d['dockBackgroundOpacity'] as num?)?.toDouble() ?? 0.4,
       showDockLabels: d['showDockLabels'] as bool? ?? false,
       dockIconSize: (d['dockIconSize'] as num?)?.toDouble() ?? 48,
       dockPackages: (d['dockPackages'] as List?)?.cast<String>() ?? [],
-      drawerLayout: enumAt(DrawerLayout.values, 'drawerLayout', DrawerLayout.standard),
-      drawerBackgroundOpacity: (d['drawerBackgroundOpacity'] as num?)?.toDouble() ?? 0.85,
+      drawerLayout:
+          enumAt(DrawerLayout.values, 'drawerLayout', DrawerLayout.standard),
+      drawerBackgroundOpacity:
+          (d['drawerBackgroundOpacity'] as num?)?.toDouble() ?? 0.85,
       drawerColumns: d['drawerColumns'] as int? ?? 4,
       drawerIconSize: (d['drawerIconSize'] as num?)?.toDouble() ?? 56,
       showDrawerLabels: d['showDrawerLabels'] as bool? ?? true,
@@ -166,13 +174,20 @@ class BackupService {
       folderMaxColumns: d['folderMaxColumns'] as int? ?? 3,
       folderMaxRows: d['folderMaxRows'] as int? ?? 3,
       showFolderLabels: d['showFolderLabels'] as bool? ?? true,
-      doubleTapAction: enumAt(GestureAction.values, 'doubleTapAction', GestureAction.sleepScreen),
-      swipeUpAction: enumAt(GestureAction.values, 'swipeUpAction', GestureAction.openDrawer),
-      swipeDownAction: enumAt(GestureAction.values, 'swipeDownAction', GestureAction.openNotifications),
-      twoFingerSwipeUpAction: enumAt(GestureAction.values, 'twoFingerSwipeUpAction', GestureAction.none),
-      twoFingerSwipeDownAction: enumAt(GestureAction.values, 'twoFingerSwipeDownAction', GestureAction.openQuickSettings),
-      homeBtnAction: enumAt(GestureAction.values, 'homeBtnAction', GestureAction.none),
-      backBtnAction: enumAt(GestureAction.values, 'backBtnAction', GestureAction.none),
+      doubleTapAction: enumAt(
+          GestureAction.values, 'doubleTapAction', GestureAction.sleepScreen),
+      swipeUpAction: enumAt(
+          GestureAction.values, 'swipeUpAction', GestureAction.openDrawer),
+      swipeDownAction: enumAt(GestureAction.values, 'swipeDownAction',
+          GestureAction.openNotifications),
+      twoFingerSwipeUpAction: enumAt(
+          GestureAction.values, 'twoFingerSwipeUpAction', GestureAction.none),
+      twoFingerSwipeDownAction: enumAt(GestureAction.values,
+          'twoFingerSwipeDownAction', GestureAction.openQuickSettings),
+      homeBtnAction:
+          enumAt(GestureAction.values, 'homeBtnAction', GestureAction.none),
+      backBtnAction:
+          enumAt(GestureAction.values, 'backBtnAction', GestureAction.none),
     );
   }
 

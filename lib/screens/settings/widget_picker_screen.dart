@@ -1,10 +1,14 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/launcher_widget_info.dart';
 import '../../models/widget_provider_info.dart';
 import '../../services/launcher_service.dart';
+import '../../state/apps_cubit.dart';
 import '../../state/settings_cubit.dart';
 import '../../state/workspace_cubit.dart';
+import '../../widgets/icons/shaped_icon.dart';
 
 class WidgetPickerScreen extends StatefulWidget {
   /// Called after a widget is activated and placed on the home screen.
@@ -63,8 +67,8 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
   }
 
   Future<void> _activateWidget(WidgetProviderInfo provider) async {
-    final appWidgetId =
-        await LauncherService.bindWidget(provider.packageName, provider.providerClass);
+    final appWidgetId = await LauncherService.bindWidget(
+        provider.packageName, provider.providerClass);
     if (!mounted) return;
     if (appWidgetId < 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -78,29 +82,7 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
 
     final workspace = context.read<WorkspaceCubit>();
     final settings = context.read<SettingsCubit>().state;
-    final slotsPerPage = settings.gridColumns * settings.gridRows;
-    final workspaceState = workspace.state;
-
-    int targetPage = -1;
-    int targetSlot = -1;
-
-    for (int p = 0; p < workspaceState.pages.length; p++) {
-      for (int s = 0; s < slotsPerPage; s++) {
-        final slot = workspaceState.pages[p].slots[s];
-        if (slot == null || slot is EmptySlot) {
-          targetPage = p;
-          targetSlot = s;
-          break;
-        }
-      }
-      if (targetPage >= 0) break;
-    }
-
-    if (targetPage < 0) {
-      workspace.addPage();
-      targetPage = workspaceState.pages.length;
-      targetSlot = 0;
-    }
+    final initialSpan = _initialSpanForProvider(provider);
 
     final info = LauncherWidgetInfo(
       id: appWidgetId,
@@ -109,16 +91,47 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
       providerClass: provider.providerClass,
       minWidth: provider.minWidth,
       minHeight: provider.minHeight,
-      spanX: 2,
-      spanY: 1,
+      minResizeWidth: provider.minResizeWidth,
+      minResizeHeight: provider.minResizeHeight,
+      spanX: initialSpan.$1,
+      spanY: initialSpan.$2,
     );
 
-    workspace.addWidget(info, targetPage, targetSlot);
-    widget.onWidgetAdded?.call(info, targetPage);
+    final placement = workspace.addWidgetToFirstAvailableSlot(
+      info,
+      settings.gridColumns,
+      settings.gridRows,
+    );
+    widget.onWidgetAdded?.call(info, placement.page);
 
     if (!mounted) return;
     // Pop settings stack back to home
     Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
+  (int, int) _initialSpanForProvider(WidgetProviderInfo provider) {
+    final settings = context.read<SettingsCubit>().state;
+    final media = MediaQuery.of(context).size;
+    const gap = 8.0;
+    const horizontalPadding = 16.0;
+
+    final cellWidth =
+        (media.width - horizontalPadding - (settings.gridColumns - 1) * gap) /
+            settings.gridColumns;
+    final estimatedCellHeight =
+        (media.height * 0.62 - (settings.gridRows - 1) * gap) /
+            settings.gridRows;
+
+    final spanX = provider.minWidth <= 0
+        ? 2
+        : (provider.minWidth / cellWidth).ceil().clamp(1, settings.gridColumns);
+    final spanY = provider.minHeight <= 0
+        ? 1
+        : (provider.minHeight / estimatedCellHeight)
+            .ceil()
+            .clamp(1, settings.gridRows);
+
+    return (spanX, spanY);
   }
 
   @override
@@ -139,6 +152,8 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
   }
 
   Widget _buildBody() {
+    final apps = context.watch<AppsCubit>().state.apps;
+    final settings = context.watch<SettingsCubit>().state;
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -178,6 +193,9 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
         final pkg = packages[i];
         final providers = grouped[pkg]!;
         final isExpanded = _expanded.contains(pkg);
+        final appIcon =
+            apps.where((a) => a.packageName == pkg).firstOrNull?.icon ??
+                providers.first.appIcon;
         final appName = providers.first.appName.isNotEmpty
             ? providers.first.appName
             : pkg.split('.').last;
@@ -187,7 +205,10 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
           children: [
             // App header row
             ListTile(
-              leading: const Icon(Icons.apps, size: 36),
+              leading: _WidgetAppIcon(
+                iconBytes: appIcon,
+                shape: settings.iconShape,
+              ),
               title: Text(
                 appName,
                 style: const TextStyle(fontWeight: FontWeight.w600),
@@ -214,6 +235,10 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
             if (isExpanded)
               ...providers.map((p) => _WidgetTile(
                     provider: p,
+                    appIcon: appIcon,
+                    iconShape: settings.iconShape,
+                    gridColumns: settings.gridColumns,
+                    gridRows: settings.gridRows,
                     onActivate: () => _activateWidget(p),
                   )),
             const Divider(height: 1, indent: 16, endIndent: 16),
@@ -226,12 +251,27 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
 
 class _WidgetTile extends StatelessWidget {
   final WidgetProviderInfo provider;
+  final Uint8List? appIcon;
+  final String iconShape;
+  final int gridColumns;
+  final int gridRows;
   final VoidCallback onActivate;
 
-  const _WidgetTile({required this.provider, required this.onActivate});
+  const _WidgetTile({
+    required this.provider,
+    required this.appIcon,
+    required this.iconShape,
+    required this.gridColumns,
+    required this.gridRows,
+    required this.onActivate,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final minCellsX =
+        _cellsForSize(provider.minWidth, gridColumns, fallback: 2);
+    final minCellsY = _cellsForSize(provider.minHeight, gridRows, fallback: 1);
+
     return Padding(
       padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
       child: Card(
@@ -253,12 +293,39 @@ class _WidgetTile extends StatelessWidget {
                 child: provider.previewImage != null
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: Image.memory(provider.previewImage!,
-                            fit: BoxFit.cover),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Image.memory(provider.previewImage!,
+                                fit: BoxFit.cover),
+                            Positioned(
+                              right: 4,
+                              bottom: 4,
+                              child: _WidgetAppIcon(
+                                iconBytes: appIcon,
+                                shape: iconShape,
+                                size: 16,
+                              ),
+                            ),
+                          ],
+                        ),
                       )
-                    : const Center(
-                        child: Icon(Icons.widgets_outlined,
-                            color: Colors.white38, size: 28),
+                    : Stack(
+                        children: [
+                          const Center(
+                            child: Icon(Icons.widgets_outlined,
+                                color: Colors.white38, size: 28),
+                          ),
+                          Positioned(
+                            right: 4,
+                            bottom: 4,
+                            child: _WidgetAppIcon(
+                              iconBytes: appIcon,
+                              shape: iconShape,
+                              size: 16,
+                            ),
+                          ),
+                        ],
                       ),
               ),
               const SizedBox(width: 12),
@@ -273,12 +340,11 @@ class _WidgetTile extends StatelessWidget {
                         fontSize: 14,
                       ),
                     ),
-                    if (provider.minWidth > 0 || provider.minHeight > 0)
-                      Text(
-                        '${provider.minWidth}×${provider.minHeight} dp',
-                        style: const TextStyle(
-                            fontSize: 11, color: Colors.white38),
-                      ),
+                    Text(
+                      '$minCellsX x $minCellsY cells',
+                      style:
+                          const TextStyle(fontSize: 11, color: Colors.white38),
+                    ),
                   ],
                 ),
               ),
@@ -294,6 +360,45 @@ class _WidgetTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  int _cellsForSize(int size, int max, {required int fallback}) {
+    if (size <= 0) return fallback.clamp(1, max);
+    return (size / 110).ceil().clamp(1, max);
+  }
+}
+
+class _WidgetAppIcon extends StatelessWidget {
+  final Uint8List? iconBytes;
+  final String shape;
+  final double size;
+
+  const _WidgetAppIcon({
+    required this.iconBytes,
+    required this.shape,
+    this.size = 40,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: iconBytes != null
+          ? ShapedIcon(iconBytes: iconBytes, shape: shape, size: size)
+          : DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(size * 0.28),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Icon(
+                Icons.apps_rounded,
+                size: size * 0.55,
+                color: Colors.white54,
+              ),
+            ),
     );
   }
 }

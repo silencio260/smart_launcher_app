@@ -40,13 +40,14 @@ class BubbleTextView extends StatelessWidget {
             Stack(
               clipBehavior: Clip.none,
               children: [
-                ShapedIcon(iconBytes: app.icon, shape: iconShape, size: iconSize),
+                ShapedIcon(
+                    iconBytes: app.icon, shape: iconShape, size: iconSize),
                 if (badgeCount > 0)
                   DotRenderer(count: badgeCount, iconSize: iconSize),
               ],
             ),
             if (showLabel) ...[
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               SizedBox(
                 width: iconSize + 8,
                 child: Text(
@@ -54,7 +55,10 @@ class BubbleTextView extends StatelessWidget {
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: labelSize,
-                    shadows: const [Shadow(blurRadius: 4, color: Colors.black54)],
+                    height: 1.0,
+                    shadows: const [
+                      Shadow(blurRadius: 4, color: Colors.black54)
+                    ],
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../models/launcher_settings.dart';
 import '../../models/launcher_widget_info.dart';
 import '../../state/settings_cubit.dart';
 import 'general_settings_screen.dart';
@@ -135,11 +136,36 @@ class SettingsRootScreen extends StatelessWidget {
   }
 
   void _showDeveloperOptions(BuildContext context) {
+    final cubit = context.read<SettingsCubit>();
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Developer Options'),
-        content: const Text('Experimental features are not yet available.'),
+        content: BlocBuilder<SettingsCubit, LauncherSettings>(
+          bloc: cubit,
+          builder: (context, state) {
+            return SizedBox(
+              width: 360,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    secondary: const Icon(Icons.bug_report_outlined),
+                    title: const Text('Grid Debug Overlay'),
+                    subtitle: const Text(
+                      'Show free cells in green and blocked or occupied cells in red',
+                    ),
+                    value: state.showGridDebugOverlay,
+                    onChanged: (value) => cubit.update(
+                      state.copyWith(showGridDebugOverlay: value),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),

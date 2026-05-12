@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../services/drag/drag_controller.dart';
 import '../../state/settings_cubit.dart';
 import '../../state/workspace_cubit.dart';
+import '../workspace/widget_grid_math.dart';
 
 class DragLayer extends StatelessWidget {
   final Widget child;
@@ -41,12 +42,20 @@ class DragLayer extends StatelessWidget {
               // Left edge zone — hover 600 ms to go to previous page
               Positioned(
                 left: 0, top: 0, bottom: 80,
-                child: _EdgePageZone(direction: -1, pageController: pageController),
+                child: _EdgePageZone(
+                  direction: -1,
+                  pageController: pageController,
+                  dragController: dragController,
+                ),
               ),
               // Right edge zone — hover 600 ms to go to next page (creates page if needed)
               Positioned(
                 right: 0, top: 0, bottom: 80,
-                child: _EdgePageZone(direction: 1, pageController: pageController),
+                child: _EdgePageZone(
+                  direction: 1,
+                  pageController: pageController,
+                  dragController: dragController,
+                ),
               ),
               // Trash zone at the bottom — drop here to remove from home/dock
               Positioned(
@@ -66,8 +75,13 @@ class DragLayer extends StatelessWidget {
 class _EdgePageZone extends StatefulWidget {
   final int direction; // -1 = previous, +1 = next
   final PageController? pageController;
+  final DragController dragController;
 
-  const _EdgePageZone({required this.direction, required this.pageController});
+  const _EdgePageZone({
+    required this.direction,
+    required this.pageController,
+    required this.dragController,
+  });
 
   @override
   State<_EdgePageZone> createState() => _EdgePageZoneState();
@@ -92,6 +106,8 @@ class _EdgePageZoneState extends State<_EdgePageZone> {
             duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
       } else {
         final workspaceState = context.read<WorkspaceCubit>().state;
+        final settings = context.read<SettingsCubit>().state;
+        final payload = widget.dragController.activeDrag;
         final currentPage = pc.page?.round() ?? workspaceState.currentPage;
         final lastPageIndex = workspaceState.pages.length - 1;
         if (currentPage < lastPageIndex) {
@@ -99,9 +115,28 @@ class _EdgePageZoneState extends State<_EdgePageZone> {
           pc.nextPage(
               duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
         } else {
-          // On last page — only create a new page if the last page has content
+          // On the last page, create a new page only if the dragged item
+          // cannot fit anywhere on the current last page.
           final lastPage = workspaceState.pages[lastPageIndex];
-          if (lastPage.slots.isNotEmpty) {
+          final canFitOnLastPage = payload?.isWidget == true
+              ? _canFitWidgetOnPage(
+                  workspaceState,
+                  payload!,
+                  settings.gridColumns,
+                  settings.gridRows,
+                )
+              : findFirstAppFit(
+                    lastPage,
+                    settings.gridColumns,
+                    settings.gridRows,
+                    ignoreSlot:
+                        payload != null && payload.sourcePage == lastPageIndex
+                            ? payload.sourceSlot
+                            : null,
+                  ) !=
+                  null;
+
+          if (!canFitOnLastPage) {
             context.read<WorkspaceCubit>().addPage();
             // After addPage, pages.length increases; navigate to the new last page
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -110,10 +145,42 @@ class _EdgePageZoneState extends State<_EdgePageZone> {
                   duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
             });
           }
-          // If last page is empty, don't create another empty page
         }
       }
     });
+  }
+
+  bool _canFitWidgetOnPage(
+    WorkspaceState workspaceState,
+    DragPayload payload,
+    int columns,
+    int rows,
+  ) {
+    if (payload.sourcePage < 0 || payload.sourcePage >= workspaceState.pages.length) {
+      return false;
+    }
+
+    final sourceContent =
+        workspaceState.pages[payload.sourcePage].slots[payload.sourceSlot];
+    final (spanX, spanY) = switch (sourceContent) {
+      WidgetSlot(:final widget) => (widget.spanX, widget.spanY),
+      WidgetStackSlot(:final spanX, :final spanY) => (spanX, spanY),
+      _ => (1, 1),
+    };
+
+    final lastPage = workspaceState.pages.last;
+    return findFirstWidgetFit(
+          lastPage,
+          spanX,
+          spanY,
+          columns,
+          rows,
+          ignoreAnchorSlot:
+              payload.sourcePage == workspaceState.pages.length - 1
+                  ? payload.sourceSlot
+                  : null,
+        ) !=
+        null;
   }
 
   void _cancelTimer() {

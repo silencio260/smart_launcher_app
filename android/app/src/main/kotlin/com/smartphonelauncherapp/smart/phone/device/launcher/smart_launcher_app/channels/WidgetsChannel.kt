@@ -11,6 +11,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.os.Bundle
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
@@ -38,6 +39,12 @@ class WidgetsChannel(
                     val packageName = call.argument<String>("packageName") ?: ""
                     val providerClass = call.argument<String>("providerClass") ?: ""
                     bindWidget(packageName, providerClass, result)
+                }
+                "updateWidgetSize" -> {
+                    val appWidgetId = call.argument<Int>("appWidgetId") ?: -1
+                    val width = call.argument<Int>("width") ?: 0
+                    val height = call.argument<Int>("height") ?: 0
+                    updateWidgetSize(appWidgetId, width, height, result)
                 }
                 else -> result.notImplemented()
             }
@@ -90,6 +97,12 @@ class WidgetsChannel(
                         null
                     }
 
+                    val appIconBytes: ByteArray? = try {
+                        pm.getApplicationIcon(info.provider.packageName)?.let { drawableToBytes(it) }
+                    } catch (_: Exception) {
+                        null
+                    }
+
                     val map = mutableMapOf<String, Any?>(
                         "packageName" to info.provider.packageName,
                         "providerClass" to info.provider.className,
@@ -97,7 +110,10 @@ class WidgetsChannel(
                         "label" to label,
                         "minWidth" to info.minWidth,
                         "minHeight" to info.minHeight,
+                        "minResizeWidth" to info.minResizeWidth,
+                        "minResizeHeight" to info.minResizeHeight,
                     )
+                    if (appIconBytes != null) map["appIcon"] = appIconBytes
                     if (previewBytes != null) map["previewImage"] = previewBytes
                     map
                 } catch (_: Exception) {
@@ -136,6 +152,31 @@ class WidgetsChannel(
             }
         } catch (e: Exception) {
             result.error("BIND_ERROR", e.message, null)
+        }
+    }
+
+    private fun updateWidgetSize(
+        appWidgetId: Int,
+        width: Int,
+        height: Int,
+        result: MethodChannel.Result,
+    ) {
+        if (appWidgetId <= 0 || width <= 0 || height <= 0) {
+            result.success(false)
+            return
+        }
+
+        try {
+            val options = Bundle().apply {
+                putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, width)
+                putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, width)
+                putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, height)
+                putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, height)
+            }
+            AppWidgetManager.getInstance(context).updateAppWidgetOptions(appWidgetId, options)
+            result.success(true)
+        } catch (e: Exception) {
+            result.error("WIDGET_RESIZE_ERROR", e.message, null)
         }
     }
 

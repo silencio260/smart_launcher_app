@@ -9,15 +9,14 @@ class LauncherService {
 
   static Future<List<AppInfo>> getInstalledApps() async {
     final List<dynamic> raw = await _apps.invokeMethod('getApps');
-    final apps = raw
-        .map((e) => AppInfo.fromMap(e as Map))
-        .toList();
+    final apps = raw.map((e) => AppInfo.fromMap(e as Map)).toList();
     apps.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     return apps;
   }
 
   static Future<bool> launchApp(String packageName) async {
-    final result = await _apps.invokeMethod<bool>('launchApp', {'packageName': packageName});
+    final result = await _apps
+        .invokeMethod<bool>('launchApp', {'packageName': packageName});
     return result ?? false;
   }
 
@@ -57,5 +56,19 @@ class LauncherService {
     } catch (_) {
       return -1;
     }
+  }
+
+  static Future<void> updateWidgetSize(
+    int appWidgetId,
+    int width,
+    int height,
+  ) async {
+    try {
+      await _widgets.invokeMethod('updateWidgetSize', {
+        'appWidgetId': appWidgetId,
+        'width': width,
+        'height': height,
+      });
+    } catch (_) {}
   }
 }
