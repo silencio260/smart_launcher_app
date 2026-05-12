@@ -17,6 +17,10 @@ class HomeWidgetStackView extends StatefulWidget {
   final int maxSpanX;
   final int maxSpanY;
   final int gridColumns;
+  final double resizeStepX;
+  final double resizeStepY;
+  final bool isSelected;
+  final VoidCallback onDismissResize;
   final void Function(int slot, int spanX, int spanY) onResize;
 
   const HomeWidgetStackView({
@@ -31,6 +35,10 @@ class HomeWidgetStackView extends StatefulWidget {
     required this.maxSpanX,
     required this.maxSpanY,
     required this.gridColumns,
+    required this.resizeStepX,
+    required this.resizeStepY,
+    required this.isSelected,
+    required this.onDismissResize,
     required this.onResize,
   });
 
@@ -42,7 +50,7 @@ class _HomeWidgetStackViewState extends State<HomeWidgetStackView> {
   late PageController _pageController;
   int _currentIndex = 0;
   static const double _frameInset = 6;
-  static const double _handleSize = 22;
+  static const double _handleSize = 40;
 
   @override
   void initState() {
@@ -83,29 +91,39 @@ class _HomeWidgetStackViewState extends State<HomeWidgetStackView> {
               current: _currentIndex,
             ),
           ),
-        Positioned.fill(
-          child: IgnorePointer(
-            child: Padding(
-              padding: const EdgeInsets.all(_frameInset),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.88),
-                    width: 1.6,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.18),
-                      blurRadius: 10,
+        if (widget.isSelected)
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.onDismissResize,
+              onPanStart: (_) => widget.onDismissResize(),
+              child: const ColoredBox(color: Colors.transparent),
+            ),
+          ),
+        if (widget.isSelected)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Padding(
+                padding: const EdgeInsets.all(_frameInset),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.88),
+                      width: 1.6,
                     ),
-                  ],
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.18),
+                        blurRadius: 10,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-        ..._buildResizeHandles(),
+        if (widget.isSelected) ..._buildResizeHandles(),
       ],
     );
   }
@@ -137,7 +155,8 @@ class _HomeWidgetStackViewState extends State<HomeWidgetStackView> {
           return _WidgetResizeHandle(
             cursor: direction.cursor,
             alignment: direction.alignment,
-            size: Size(constraints.maxWidth, constraints.maxHeight),
+            stepX: widget.resizeStepX,
+            stepY: widget.resizeStepY,
             onDrag: (dxSteps, dySteps) =>
                 _applyResize(direction, dxSteps, dySteps),
           );
@@ -264,13 +283,15 @@ enum _ResizeDirection {
 class _WidgetResizeHandle extends StatefulWidget {
   final SystemMouseCursor cursor;
   final Alignment alignment;
-  final Size size;
+  final double stepX;
+  final double stepY;
   final void Function(int dxSteps, int dySteps) onDrag;
 
   const _WidgetResizeHandle({
     required this.cursor,
     required this.alignment,
-    required this.size,
+    required this.stepX,
+    required this.stepY,
     required this.onDrag,
   });
 
@@ -281,34 +302,34 @@ class _WidgetResizeHandle extends StatefulWidget {
 class _WidgetResizeHandleState extends State<_WidgetResizeHandle> {
   double _dx = 0;
   double _dy = 0;
+  bool _hasDragged = false;
 
   @override
   Widget build(BuildContext context) {
-    final stepX = (widget.size.width.clamp(44, 120)) / 2;
-    final stepY = (widget.size.height.clamp(44, 120)) / 2;
+    final stepX = widget.stepX.clamp(24, double.infinity).toDouble();
+    final stepY = widget.stepY.clamp(24, double.infinity).toDouble();
     return MouseRegion(
       cursor: widget.cursor,
       child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
+        behavior: HitTestBehavior.opaque,
         onPanStart: (_) {
           _dx = 0;
           _dy = 0;
+          _hasDragged = false;
         },
         onPanUpdate: (details) {
           _dx += details.delta.dx;
           _dy += details.delta.dy;
-          final dxSteps = (_dx / stepX).truncate();
-          final dySteps = (_dy / stepY).truncate();
-          if (dxSteps == 0 && dySteps == 0) return;
-          _dx -= dxSteps * stepX;
-          _dy -= dySteps * stepY;
-          widget.onDrag(dxSteps, dySteps);
+          _emitResizeSteps(stepX, stepY, useSnapThreshold: false);
         },
+        onPanEnd: (_) => _emitResizeSteps(stepX, stepY, useSnapThreshold: true),
+        onPanCancel: () =>
+            _emitResizeSteps(stepX, stepY, useSnapThreshold: true),
         child: Align(
           alignment: widget.alignment,
           child: Container(
-            width: 14,
-            height: 14,
+            width: 18,
+            height: 18,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(999),
@@ -323,6 +344,28 @@ class _WidgetResizeHandleState extends State<_WidgetResizeHandle> {
         ),
       ),
     );
+  }
+
+  void _emitResizeSteps(
+    double stepX,
+    double stepY, {
+    required bool useSnapThreshold,
+  }) {
+    final dxSteps = _stepsForDelta(_dx, stepX, useSnapThreshold);
+    final dySteps = _stepsForDelta(_dy, stepY, useSnapThreshold);
+    if (dxSteps == 0 && dySteps == 0) return;
+
+    _hasDragged = true;
+    _dx -= dxSteps * stepX;
+    _dy -= dySteps * stepY;
+    widget.onDrag(dxSteps, dySteps);
+  }
+
+  int _stepsForDelta(double delta, double step, bool useSnapThreshold) {
+    if (step <= 0) return 0;
+    if (!useSnapThreshold) return (delta / step).truncate();
+    if (!_hasDragged && delta.abs() < step * 0.22) return 0;
+    return (delta / step).round();
   }
 }
 

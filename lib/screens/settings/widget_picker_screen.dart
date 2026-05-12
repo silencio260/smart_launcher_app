@@ -111,6 +111,13 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
 
   (int, int) _initialSpanForProvider(WidgetProviderInfo provider) {
     final settings = context.read<SettingsCubit>().state;
+    if (provider.targetCellWidth > 0 &&
+        provider.targetCellHeight > 0 &&
+        provider.targetCellWidth <= settings.gridColumns &&
+        provider.targetCellHeight <= settings.gridRows) {
+      return (provider.targetCellWidth, provider.targetCellHeight);
+    }
+
     final media = MediaQuery.of(context).size;
     const gap = 8.0;
     const horizontalPadding = 16.0;

@@ -9,6 +9,8 @@ class WidgetProviderInfo {
   final int minHeight;
   final int minResizeWidth;
   final int minResizeHeight;
+  final int targetCellWidth;
+  final int targetCellHeight;
   final Uint8List? appIcon;
   final Uint8List? previewImage;
 
@@ -21,6 +23,8 @@ class WidgetProviderInfo {
     this.minHeight = 0,
     this.minResizeWidth = 0,
     this.minResizeHeight = 0,
+    this.targetCellWidth = 0,
+    this.targetCellHeight = 0,
     this.appIcon,
     this.previewImage,
   });
@@ -37,6 +41,8 @@ class WidgetProviderInfo {
       minHeight: map['minHeight'] as int? ?? 0,
       minResizeWidth: map['minResizeWidth'] as int? ?? 0,
       minResizeHeight: map['minResizeHeight'] as int? ?? 0,
+      targetCellWidth: map['targetCellWidth'] as int? ?? 0,
+      targetCellHeight: map['targetCellHeight'] as int? ?? 0,
       appIcon: appIcon is Uint8List ? appIcon : null,
       previewImage: preview is Uint8List ? preview : null,
     );

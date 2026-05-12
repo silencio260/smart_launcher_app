@@ -11,6 +11,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.os.Build
 import android.os.Bundle
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
@@ -113,6 +114,10 @@ class WidgetsChannel(
                         "minResizeWidth" to info.minResizeWidth,
                         "minResizeHeight" to info.minResizeHeight,
                     )
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        map["targetCellWidth"] = info.targetCellWidth
+                        map["targetCellHeight"] = info.targetCellHeight
+                    }
                     if (appIconBytes != null) map["appIcon"] = appIconBytes
                     if (previewBytes != null) map["previewImage"] = previewBytes
                     map
