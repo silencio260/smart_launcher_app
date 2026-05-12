@@ -80,6 +80,10 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
   static const defaultClockProviderPackage = 'com.genrevibes.smartlauncher';
   static const defaultClockProviderClass = 'builtin.clock';
   static const defaultClockWidgetId = -1001;
+  static const defaultClockMinSpanX = 2;
+  static const defaultClockMinSpanY = 1;
+  static const defaultClockMaxSpanX = 4;
+  static const defaultClockMaxSpanY = 2;
 
   WorkspaceCubit() : super(const WorkspaceState());
 
@@ -124,8 +128,12 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
         providerPackage: defaultClockProviderPackage,
         providerClass: defaultClockProviderClass,
         isCustomWidget: true,
-        spanX: 4,
-        spanY: 2,
+        minResizeWidth: defaultClockMinSpanX * 110,
+        minResizeHeight: defaultClockMinSpanY * 110,
+        maxResizeWidth: defaultClockMaxSpanX * 110,
+        maxResizeHeight: defaultClockMaxSpanY * 110,
+        spanX: defaultClockMaxSpanX,
+        spanY: defaultClockMaxSpanY,
       );
 
   bool _isDefaultClockSlot(SlotContent content) {
@@ -612,6 +620,47 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     return true;
   }
 
+  bool swapItems(int fromPage, int fromSlot, int toPage, int toSlot) {
+    if (fromPage < 0 || toPage < 0) return false;
+
+    final pages = List<WorkspacePage>.from(state.pages);
+    if (fromPage >= pages.length || toPage >= pages.length) return false;
+    if (fromPage == toPage && fromSlot == toSlot) return false;
+
+    final fromContent = pages[fromPage].slots[fromSlot];
+    final toContent = pages[toPage].slots[toSlot];
+    if (fromContent == null ||
+        fromContent is EmptySlot ||
+        toContent == null ||
+        toContent is EmptySlot) {
+      return false;
+    }
+    if (fromContent is WidgetSlot ||
+        fromContent is WidgetStackSlot ||
+        toContent is WidgetSlot ||
+        toContent is WidgetStackSlot) {
+      return false;
+    }
+
+    if (fromPage == toPage) {
+      final slots = Map<int, SlotContent>.from(pages[fromPage].slots)
+        ..[fromSlot] = toContent
+        ..[toSlot] = fromContent;
+      pages[fromPage] = WorkspacePage(slots);
+    } else {
+      final fromSlots = Map<int, SlotContent>.from(pages[fromPage].slots)
+        ..[fromSlot] = toContent;
+      final toSlots = Map<int, SlotContent>.from(pages[toPage].slots)
+        ..[toSlot] = fromContent;
+      pages[fromPage] = WorkspacePage(fromSlots);
+      pages[toPage] = WorkspacePage(toSlots);
+    }
+
+    emit(state.copyWith(pages: pages));
+    saveLayout();
+    return true;
+  }
+
   // Creates a widget stack from two widget slots (or a widget and a stack).
   void createWidgetStack(int fromPage, int fromSlot, int toPage, int toSlot) {
     final pages = List<WorkspacePage>.from(state.pages);
@@ -866,6 +915,8 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
         'minHeight': slot.widget.minHeight,
         'minResizeWidth': slot.widget.minResizeWidth,
         'minResizeHeight': slot.widget.minResizeHeight,
+        'maxResizeWidth': slot.widget.maxResizeWidth,
+        'maxResizeHeight': slot.widget.maxResizeHeight,
         'spanX': slot.widget.spanX,
         'spanY': slot.widget.spanY,
       };
@@ -884,6 +935,8 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
                   'minHeight': w.minHeight,
                   'minResizeWidth': w.minResizeWidth,
                   'minResizeHeight': w.minResizeHeight,
+                  'maxResizeWidth': w.maxResizeWidth,
+                  'maxResizeHeight': w.maxResizeHeight,
                   'spanX': w.spanX,
                   'spanY': w.spanY,
                 })
@@ -959,6 +1012,8 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
           minHeight: data['minHeight'] as int? ?? 0,
           minResizeWidth: data['minResizeWidth'] as int? ?? 0,
           minResizeHeight: data['minResizeHeight'] as int? ?? 0,
+          maxResizeWidth: data['maxResizeWidth'] as int? ?? 0,
+          maxResizeHeight: data['maxResizeHeight'] as int? ?? 0,
           spanX: data['spanX'] as int? ?? 1,
           spanY: data['spanY'] as int? ?? 1,
         ));
@@ -975,6 +1030,8 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
             minHeight: wMap['minHeight'] as int? ?? 0,
             minResizeWidth: wMap['minResizeWidth'] as int? ?? 0,
             minResizeHeight: wMap['minResizeHeight'] as int? ?? 0,
+            maxResizeWidth: wMap['maxResizeWidth'] as int? ?? 0,
+            maxResizeHeight: wMap['maxResizeHeight'] as int? ?? 0,
             spanX: wMap['spanX'] as int? ?? 1,
             spanY: wMap['spanY'] as int? ?? 1,
           );

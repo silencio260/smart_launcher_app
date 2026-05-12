@@ -61,7 +61,8 @@ class HotseatView extends StatelessWidget {
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                   decoration: BoxDecoration(
                     color: settings.dockBackgroundColor
                         .withValues(alpha: settings.dockBackgroundOpacity),
@@ -105,7 +106,9 @@ class _DockSlot extends StatelessWidget {
   void _setDockSlot(BuildContext context, String packageName) {
     final s = context.read<SettingsCubit>().state;
     final packages = _ensureInitialized(s.dockPackages);
-    while (packages.length <= slot) { packages.add(''); }
+    while (packages.length <= slot) {
+      packages.add('');
+    }
     packages[slot] = packageName;
     context.read<SettingsCubit>().update(s.copyWith(dockPackages: packages));
   }
@@ -131,6 +134,9 @@ class _DockSlot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final current = app;
+    final slotWidth = settings.dockIconSize + 16;
+    final slotHeight = settings.dockIconSize +
+        (settings.showDockLabels ? settings.dockIconSize * 0.6 : 16);
 
     if (current == null) {
       // Empty dock slot — accepts drops from workspace or other dock slots.
@@ -156,7 +162,9 @@ class _DockSlot extends StatelessWidget {
           if (payload.sourcePage == -1 && payload.sourceSlot != slot) {
             final s = context.read<SettingsCubit>().state;
             final packages = _ensureInitialized(s.dockPackages);
-            while (packages.length <= payload.sourceSlot) { packages.add(''); }
+            while (packages.length <= payload.sourceSlot) {
+              packages.add('');
+            }
             packages[payload.sourceSlot] = '';
             context
                 .read<SettingsCubit>()
@@ -165,9 +173,8 @@ class _DockSlot extends StatelessWidget {
         },
         builder: (_, candidateData, __) {
           return SizedBox(
-            width: settings.dockIconSize + 16,
-            height: settings.dockIconSize +
-                (settings.showDockLabels ? 28 : 16),
+            width: slotWidth,
+            height: slotHeight,
             child: candidateData.isNotEmpty
                 ? Container(
                     margin: const EdgeInsets.all(4),
@@ -225,20 +232,27 @@ class _DockSlot extends StatelessWidget {
             title: current.name,
             icon: current.icon,
           );
-          workspaceCubit.addItem(displacedItem, incoming.sourcePage, incoming.sourceSlot);
+          workspaceCubit.addItem(
+              displacedItem, incoming.sourcePage, incoming.sourceSlot);
         } else if (incoming.sourcePage == -1 && incoming.sourceSlot != slot) {
           // From a different dock slot — swap: put displaced app at source dock slot
           final s = context.read<SettingsCubit>().state;
           final packages = List<String>.from(s.dockPackages);
-          while (packages.length <= incoming.sourceSlot) { packages.add(''); }
+          while (packages.length <= incoming.sourceSlot) {
+            packages.add('');
+          }
           packages[incoming.sourceSlot] = displacedPkg;
-          context.read<SettingsCubit>().update(s.copyWith(dockPackages: packages));
+          context
+              .read<SettingsCubit>()
+              .update(s.copyWith(dockPackages: packages));
         }
       },
       builder: (_, candidateData, __) {
         final isHovered = candidateData.isNotEmpty;
         return AnimatedContainer(
           duration: const Duration(milliseconds: 120),
+          width: slotWidth,
+          height: slotHeight,
           decoration: isHovered
               ? BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.2),

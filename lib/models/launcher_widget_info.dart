@@ -8,6 +8,8 @@ class LauncherWidgetInfo extends ItemInfo {
   int minHeight;
   int minResizeWidth;
   int minResizeHeight;
+  int maxResizeWidth;
+  int maxResizeHeight;
   bool isCustomWidget;
 
   LauncherWidgetInfo({
@@ -19,6 +21,8 @@ class LauncherWidgetInfo extends ItemInfo {
     this.minHeight = 0,
     this.minResizeWidth = 0,
     this.minResizeHeight = 0,
+    this.maxResizeWidth = 0,
+    this.maxResizeHeight = 0,
     this.isCustomWidget = false,
     super.screenId,
     super.cellX,
@@ -36,6 +40,8 @@ class LauncherWidgetInfo extends ItemInfo {
     int? minHeight,
     int? minResizeWidth,
     int? minResizeHeight,
+    int? maxResizeWidth,
+    int? maxResizeHeight,
     bool? isCustomWidget,
     int? spanX,
     int? spanY,
@@ -49,6 +55,8 @@ class LauncherWidgetInfo extends ItemInfo {
       minHeight: minHeight ?? this.minHeight,
       minResizeWidth: minResizeWidth ?? this.minResizeWidth,
       minResizeHeight: minResizeHeight ?? this.minResizeHeight,
+      maxResizeWidth: maxResizeWidth ?? this.maxResizeWidth,
+      maxResizeHeight: maxResizeHeight ?? this.maxResizeHeight,
       isCustomWidget: isCustomWidget ?? this.isCustomWidget,
       screenId: screenId,
       cellX: cellX,

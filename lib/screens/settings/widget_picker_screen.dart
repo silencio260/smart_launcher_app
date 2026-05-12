@@ -93,6 +93,8 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
       minHeight: provider.minHeight,
       minResizeWidth: provider.minResizeWidth,
       minResizeHeight: provider.minResizeHeight,
+      maxResizeWidth: provider.maxResizeWidth,
+      maxResizeHeight: provider.maxResizeHeight,
       spanX: initialSpan.$1,
       spanY: initialSpan.$2,
     );

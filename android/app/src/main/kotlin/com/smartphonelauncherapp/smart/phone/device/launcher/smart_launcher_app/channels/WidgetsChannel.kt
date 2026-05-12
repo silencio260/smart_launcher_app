@@ -117,6 +117,8 @@ class WidgetsChannel(
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                         map["targetCellWidth"] = info.targetCellWidth
                         map["targetCellHeight"] = info.targetCellHeight
+                        map["maxResizeWidth"] = info.maxResizeWidth
+                        map["maxResizeHeight"] = info.maxResizeHeight
                     }
                     if (appIconBytes != null) map["appIcon"] = appIconBytes
                     if (previewBytes != null) map["previewImage"] = previewBytes

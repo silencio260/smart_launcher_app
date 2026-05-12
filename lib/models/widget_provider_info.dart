@@ -9,6 +9,8 @@ class WidgetProviderInfo {
   final int minHeight;
   final int minResizeWidth;
   final int minResizeHeight;
+  final int maxResizeWidth;
+  final int maxResizeHeight;
   final int targetCellWidth;
   final int targetCellHeight;
   final Uint8List? appIcon;
@@ -23,6 +25,8 @@ class WidgetProviderInfo {
     this.minHeight = 0,
     this.minResizeWidth = 0,
     this.minResizeHeight = 0,
+    this.maxResizeWidth = 0,
+    this.maxResizeHeight = 0,
     this.targetCellWidth = 0,
     this.targetCellHeight = 0,
     this.appIcon,
@@ -41,6 +45,8 @@ class WidgetProviderInfo {
       minHeight: map['minHeight'] as int? ?? 0,
       minResizeWidth: map['minResizeWidth'] as int? ?? 0,
       minResizeHeight: map['minResizeHeight'] as int? ?? 0,
+      maxResizeWidth: map['maxResizeWidth'] as int? ?? 0,
+      maxResizeHeight: map['maxResizeHeight'] as int? ?? 0,
       targetCellWidth: map['targetCellWidth'] as int? ?? 0,
       targetCellHeight: map['targetCellHeight'] as int? ?? 0,
       appIcon: appIcon is Uint8List ? appIcon : null,
