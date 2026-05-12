@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/launcher_widget_info.dart';
+import '../../services/gestures/widget_resize_gesture_guard.dart';
 import '../../services/launcher_service.dart';
 
 /// Shows a swipeable stack of widgets. Long-press dragging is handled by the
@@ -310,35 +311,42 @@ class _WidgetResizeHandleState extends State<_WidgetResizeHandle> {
     final stepY = widget.stepY.clamp(24, double.infinity).toDouble();
     return MouseRegion(
       cursor: widget.cursor,
-      child: GestureDetector(
+      child: Listener(
         behavior: HitTestBehavior.opaque,
-        onPanStart: (_) {
-          _dx = 0;
-          _dy = 0;
-          _hasDragged = false;
-        },
-        onPanUpdate: (details) {
-          _dx += details.delta.dx;
-          _dy += details.delta.dy;
-          _emitResizeSteps(stepX, stepY, useSnapThreshold: false);
-        },
-        onPanEnd: (_) => _emitResizeSteps(stepX, stepY, useSnapThreshold: true),
-        onPanCancel: () =>
-            _emitResizeSteps(stepX, stepY, useSnapThreshold: true),
-        child: Align(
-          alignment: widget.alignment,
-          child: Container(
-            width: 18,
-            height: 18,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(999),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.25),
-                  blurRadius: 4,
-                ),
-              ],
+        onPointerDown: (_) => WidgetResizeGestureGuard.begin(),
+        onPointerUp: (_) => WidgetResizeGestureGuard.end(),
+        onPointerCancel: (_) => WidgetResizeGestureGuard.end(),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onPanStart: (_) {
+            _dx = 0;
+            _dy = 0;
+            _hasDragged = false;
+          },
+          onPanUpdate: (details) {
+            _dx += details.delta.dx;
+            _dy += details.delta.dy;
+            _emitResizeSteps(stepX, stepY, useSnapThreshold: false);
+          },
+          onPanEnd: (_) =>
+              _emitResizeSteps(stepX, stepY, useSnapThreshold: true),
+          onPanCancel: () =>
+              _emitResizeSteps(stepX, stepY, useSnapThreshold: true),
+          child: Align(
+            alignment: widget.alignment,
+            child: Container(
+              width: 18,
+              height: 18,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(999),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.25),
+                    blurRadius: 4,
+                  ),
+                ],
+              ),
             ),
           ),
         ),

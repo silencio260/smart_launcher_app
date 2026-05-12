@@ -9,6 +9,7 @@ import '../../models/launcher_settings.dart';
 import '../../models/launcher_widget_info.dart';
 import '../../models/workspace_item_info.dart';
 import '../../services/drag/drag_controller.dart';
+import '../../services/gestures/widget_resize_gesture_guard.dart';
 import '../../services/launcher_service.dart';
 import '../../state/apps_cubit.dart';
 import '../../state/settings_cubit.dart';
@@ -283,14 +284,40 @@ class _CellLayoutViewState extends State<CellLayoutView> {
 
     // ── Widget drag ────────────────────────────────────────────────────────────
     if (payload.isWidget) {
-      if (target is WidgetSlot || target is WidgetStackSlot) {
+      final settings = context.read<SettingsCubit>().state;
+      final sourceContent = payload.sourcePage >= 0 &&
+              payload.sourcePage < workspace.state.pages.length
+          ? workspace.state.pages[payload.sourcePage].slots[payload.sourceSlot]
+          : null;
+      final (spanX, spanY) = _spanForWidgetContent(sourceContent);
+      final resolvedSlot = _resolveWidgetAnchorSlot(
+        payload: payload,
+        pointerSlot: slot,
+        spanX: spanX,
+        spanY: spanY,
+        workspace: workspace,
+      );
+      if (resolvedSlot == null) {
+        widget.dragController.cancelDrag();
+        return;
+      }
+      final targetPage = widget.pageIndex >= 0 &&
+              widget.pageIndex < workspace.state.pages.length
+          ? workspace.state.pages[widget.pageIndex]
+          : widget.page;
+      final resolvedTarget = targetPage.slots[resolvedSlot];
+
+      if (resolvedTarget is WidgetSlot || resolvedTarget is WidgetStackSlot) {
         // Stack the two widgets together
         workspace.createWidgetStack(
-            payload.sourcePage, payload.sourceSlot, widget.pageIndex, slot);
-      } else if (target is AppSlot) {
-        final settings = context.read<SettingsCubit>().state;
+          payload.sourcePage,
+          payload.sourceSlot,
+          widget.pageIndex,
+          resolvedSlot,
+        );
+      } else if (resolvedTarget is AppSlot) {
         final path = _findDisplacementPath(
-          slot,
+          resolvedSlot,
           settings.gridColumns,
           settings.gridRows,
           ignoreSlot: payload.sourcePage == widget.pageIndex
@@ -302,7 +329,7 @@ class _CellLayoutViewState extends State<CellLayoutView> {
               payload.sourcePage,
               payload.sourceSlot,
               widget.pageIndex,
-              slot,
+              resolvedSlot,
               path,
             )) {
           widget.dragController.cancelDrag();
@@ -312,20 +339,12 @@ class _CellLayoutViewState extends State<CellLayoutView> {
         // Empty slot (or a slot that was in the source widget's coverage).
         // First displace any apps that sit inside the widget's target span —
         // this handles the case where _willAccept accepted a span with apps.
-        final settings = context.read<SettingsCubit>().state;
         final cols = settings.gridColumns;
         final rows = settings.gridRows;
-        final sourceContent =
-            workspace.state.pages[payload.sourcePage].slots[payload.sourceSlot];
-        final (spanX, spanY) = switch (sourceContent) {
-          WidgetSlot(:final widget) => (widget.spanX, widget.spanY),
-          WidgetStackSlot(:final spanX, :final spanY) => (spanX, spanY),
-          _ => (1, 1),
-        };
         final ignoreSource =
             payload.sourcePage == widget.pageIndex ? payload.sourceSlot : null;
         final targetCovered =
-            slotsForSpan(slot, spanX, spanY, cols, rows) ?? const [];
+            slotsForSpan(resolvedSlot, spanX, spanY, cols, rows) ?? const [];
         for (final targetSlot in targetCovered) {
           if (targetSlot == ignoreSource) continue;
           // Re-read the live page each iteration because earlier iterations
@@ -350,12 +369,16 @@ class _CellLayoutViewState extends State<CellLayoutView> {
           }
         }
         workspace.moveItem(
-            payload.sourcePage, payload.sourceSlot, widget.pageIndex, slot);
+          payload.sourcePage,
+          payload.sourceSlot,
+          widget.pageIndex,
+          resolvedSlot,
+        );
       }
       workspace.collapseEmptyPages();
       widget.dragController.cancelDrag();
       if (mounted) {
-        setState(() => _selectedWidgetSlot = slot);
+        setState(() => _selectedWidgetSlot = resolvedSlot);
       }
       return;
     }
@@ -487,17 +510,6 @@ class _CellLayoutViewState extends State<CellLayoutView> {
 
     if (payload.isWidget) {
       if (target is FolderSlot) return false;
-      if (target is AppSlot) {
-        return _findDisplacementPath(
-              slot,
-              widget.settings.gridColumns,
-              widget.settings.gridRows,
-              ignoreSlot: payload.sourcePage == widget.pageIndex
-                  ? payload.sourceSlot
-                  : null,
-            ) !=
-            null;
-      }
       if (isWidgetAnchor) return true;
 
       final sourcePage = payload.sourcePage >= 0 &&
@@ -505,22 +517,16 @@ class _CellLayoutViewState extends State<CellLayoutView> {
           ? workspace.state.pages[payload.sourcePage]
           : null;
       final sourceContent = sourcePage?.slots[payload.sourceSlot];
-      final (spanX, spanY) = switch (sourceContent) {
-        WidgetSlot(:final widget) => (widget.spanX, widget.spanY),
-        WidgetStackSlot(:final spanX, :final spanY) => (spanX, spanY),
-        _ => (1, 1),
-      };
+      final (spanX, spanY) = _spanForWidgetContent(sourceContent);
 
-      // More permissive than canPlaceWidgetAt: apps in the target span are OK
-      // because they will be displaced at drop time. Only other widgets and
-      // folders are hard blockers.
-      return _canPlaceWidgetAllowingAppDisplacement(
-        anchorSlot: slot,
-        spanX: spanX,
-        spanY: spanY,
-        ignoreAnchorSlot:
-            payload.sourcePage == widget.pageIndex ? payload.sourceSlot : null,
-      );
+      return _resolveWidgetAnchorSlot(
+            payload: payload,
+            pointerSlot: slot,
+            spanX: spanX,
+            spanY: spanY,
+            workspace: workspace,
+          ) !=
+          null;
     }
     if (target is AppSlot) {
       return _findDisplacementPath(
@@ -577,6 +583,83 @@ class _CellLayoutViewState extends State<CellLayoutView> {
       // AppSlot and empty are fine — apps displaced at drop time.
     }
     return true;
+  }
+
+  (int, int) _spanForWidgetContent(SlotContent? content) {
+    return switch (content) {
+      WidgetSlot(:final widget) => (widget.spanX, widget.spanY),
+      WidgetStackSlot(:final spanX, :final spanY) => (spanX, spanY),
+      _ => (1, 1),
+    };
+  }
+
+  int? _resolveWidgetAnchorSlot({
+    required DragPayload payload,
+    required int pointerSlot,
+    required int spanX,
+    required int spanY,
+    required WorkspaceCubit workspace,
+  }) {
+    final cols = widget.settings.gridColumns;
+    final rows = widget.settings.gridRows;
+    final pointerCol = pointerSlot % cols;
+    final pointerRow = pointerSlot ~/ cols;
+    final ignoreSource =
+        payload.sourcePage == widget.pageIndex ? payload.sourceSlot : null;
+    final targetPage =
+        widget.pageIndex >= 0 && widget.pageIndex < workspace.state.pages.length
+            ? workspace.state.pages[widget.pageIndex]
+            : widget.page;
+
+    final candidates = <({int slot, int distance})>[];
+    for (int dy = 0; dy < spanY; dy++) {
+      for (int dx = 0; dx < spanX; dx++) {
+        final anchorCol = pointerCol - dx;
+        final anchorRow = pointerRow - dy;
+        if (anchorCol < 0 || anchorRow < 0) continue;
+        if (anchorCol + spanX > cols || anchorRow + spanY > rows) continue;
+        candidates.add((
+          slot: anchorRow * cols + anchorCol,
+          distance: dx + dy,
+        ));
+      }
+    }
+    candidates.sort((a, b) => a.distance.compareTo(b.distance));
+
+    for (final candidate in candidates) {
+      final anchorSlot = candidate.slot;
+      if (payload.sourcePage == widget.pageIndex &&
+          payload.sourceSlot == anchorSlot) {
+        continue;
+      }
+
+      final target = targetPage.slots[anchorSlot];
+      if (target is WidgetSlot || target is WidgetStackSlot) {
+        return anchorSlot;
+      }
+      if (target is FolderSlot) continue;
+      if (target is AppSlot) {
+        final path = _findDisplacementPath(
+          anchorSlot,
+          cols,
+          rows,
+          ignoreSlot: ignoreSource,
+        );
+        if (path != null) return anchorSlot;
+        continue;
+      }
+
+      if (_canPlaceWidgetAllowingAppDisplacement(
+        anchorSlot: anchorSlot,
+        spanX: spanX,
+        spanY: spanY,
+        ignoreAnchorSlot: ignoreSource,
+      )) {
+        return anchorSlot;
+      }
+    }
+
+    return null;
   }
 
   @override
@@ -738,11 +821,70 @@ class _CellLayoutViewState extends State<CellLayoutView> {
                   );
                 },
               ),
+              if (_selectedWidgetSlot != null &&
+                  !widget.dragController.isDragging)
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _clearWidgetResizeSelection,
+                    onVerticalDragStart: (_) {},
+                    onVerticalDragUpdate: (_) {},
+                    onVerticalDragEnd: (_) => _clearWidgetResizeSelection(),
+                    onVerticalDragCancel: _clearWidgetResizeSelection,
+                    onHorizontalDragStart: (_) {},
+                    onHorizontalDragUpdate: (_) {},
+                    onHorizontalDragEnd: (_) => _clearWidgetResizeSelection(),
+                    onHorizontalDragCancel: _clearWidgetResizeSelection,
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+              if (!widget.dragController.isDragging)
+                ..._buildSelectedWidgetResizeFrame(cellWidth, cellHeight),
             ],
           );
         },
       ),
     );
+  }
+
+  List<Widget> _buildSelectedWidgetResizeFrame(
+    double cellWidth,
+    double cellHeight,
+  ) {
+    final slot = _selectedWidgetSlot;
+    if (slot == null) return const [];
+    final content = widget.page.slots[slot];
+    final (spanX, spanY) = switch (content) {
+      WidgetSlot(:final widget) => (widget.spanX, widget.spanY),
+      WidgetStackSlot(:final spanX, :final spanY) => (spanX, spanY),
+      _ => (0, 0),
+    };
+    if (spanX <= 0 || spanY <= 0) return const [];
+
+    final safeSpanX = spanX.clamp(1, widget.settings.gridColumns).toInt();
+    final safeSpanY = spanY.clamp(1, widget.settings.gridRows).toInt();
+    final rect = _slotRect(slot, cellWidth, cellHeight);
+    final width = cellWidth * safeSpanX + _gridGap * (safeSpanX - 1);
+    final height = cellHeight * safeSpanY + _gridGap * (safeSpanY - 1);
+    const resizeTouchOutset = _WorkspaceWidgetResizeFrame.touchOutset;
+
+    return [
+      Positioned(
+        left: rect.left - resizeTouchOutset,
+        top: rect.top - resizeTouchOutset,
+        width: width + resizeTouchOutset * 2,
+        height: height + resizeTouchOutset * 2,
+        child: _WorkspaceWidgetResizeFrame(
+          contentOutset: resizeTouchOutset,
+          stepX: cellWidth + _gridGap,
+          stepY: cellHeight + _gridGap,
+          showDebugHitZones: widget.settings.showGridDebugOverlay,
+          onDismiss: _clearWidgetResizeSelection,
+          onResizeEnded: _clearWidgetResizeSelection,
+          onResizeSteps: _resizeSelectedWidgetBySteps,
+        ),
+      ),
+    ];
   }
 
   List<Widget> _buildPositionedContent(
@@ -915,7 +1057,7 @@ class _CellLayoutViewState extends State<CellLayoutView> {
     return LongPressDraggable<DragPayload>(
       data: payload,
       rootOverlay: true,
-      dragAnchorStrategy: childDragAnchorStrategy,
+      dragAnchorStrategy: pointerDragAnchorStrategy,
       delay: const Duration(milliseconds: 350),
       onDragStarted: () => _armWidgetDrag(slot),
       onDragUpdate: (details) => _maybeActivateWidgetDrag(
@@ -1030,7 +1172,7 @@ class _CellLayoutViewState extends State<CellLayoutView> {
     return LongPressDraggable<DragPayload>(
       data: payload,
       rootOverlay: true,
-      dragAnchorStrategy: childDragAnchorStrategy,
+      dragAnchorStrategy: pointerDragAnchorStrategy,
       delay: const Duration(milliseconds: 350),
       onDragStarted: () => _armWidgetDrag(slot),
       onDragUpdate: (details) => _maybeActivateWidgetDrag(
@@ -1154,7 +1296,24 @@ class _CellLayoutViewState extends State<CellLayoutView> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(18),
-                child: child,
+                child: Stack(
+                  children: [
+                    Positioned.fill(child: child),
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.92),
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1414,6 +1573,114 @@ class _CellLayoutViewState extends State<CellLayoutView> {
     return (sourceHeight / 110).ceil().clamp(1, widget.settings.gridRows);
   }
 
+  void _resizeSelectedWidgetBySteps(
+    _WorkspaceResizeDirection direction,
+    int dxSteps,
+    int dySteps,
+  ) {
+    final slot = _selectedWidgetSlot;
+    if (slot == null || (dxSteps == 0 && dySteps == 0)) return;
+    final content = widget.page.slots[slot];
+
+    switch (content) {
+      case WidgetSlot(:final widget):
+        final candidate = _resizeCandidateFromSteps(
+          direction: direction,
+          currentSlot: slot,
+          currentSpanX: widget.spanX,
+          currentSpanY: widget.spanY,
+          minSpanX: _minSpanXForWidget(widget),
+          minSpanY: _minSpanYForWidget(widget),
+          dxSteps: dxSteps,
+          dySteps: dySteps,
+        );
+        if (candidate == null) return;
+        final (nextSlot, nextSpanX, nextSpanY) = candidate;
+        _resizeWidget(slot, widget, nextSlot, nextSpanX, nextSpanY);
+      case WidgetStackSlot(:final widgets, :final spanX, :final spanY):
+        final minSpanX = widgets.fold<int>(
+          1,
+          (value, widget) => math.max(value, _minSpanXForWidget(widget)),
+        );
+        final minSpanY = widgets.fold<int>(
+          1,
+          (value, widget) => math.max(value, _minSpanYForWidget(widget)),
+        );
+        final candidate = _resizeCandidateFromSteps(
+          direction: direction,
+          currentSlot: slot,
+          currentSpanX: spanX,
+          currentSpanY: spanY,
+          minSpanX: minSpanX,
+          minSpanY: minSpanY,
+          dxSteps: dxSteps,
+          dySteps: dySteps,
+        );
+        if (candidate == null) return;
+        final (nextSlot, nextSpanX, nextSpanY) = candidate;
+        _resizeWidgetStack(slot, content, nextSlot, nextSpanX, nextSpanY);
+      default:
+        break;
+    }
+  }
+
+  (int slot, int spanX, int spanY)? _resizeCandidateFromSteps({
+    required _WorkspaceResizeDirection direction,
+    required int currentSlot,
+    required int currentSpanX,
+    required int currentSpanY,
+    required int minSpanX,
+    required int minSpanY,
+    required int dxSteps,
+    required int dySteps,
+  }) {
+    var nextSlot = currentSlot;
+    var nextSpanX = currentSpanX;
+    var nextSpanY = currentSpanY;
+
+    if (direction.affectsLeft && dxSteps != 0) {
+      final candidateSlot = nextSlot + dxSteps;
+      final candidateSpanX = nextSpanX - dxSteps;
+      final sameRow = candidateSlot >= 0 &&
+          candidateSlot ~/ widget.settings.gridColumns ==
+              nextSlot ~/ widget.settings.gridColumns;
+      if (sameRow &&
+          candidateSpanX >= minSpanX &&
+          candidateSpanX <= widget.settings.gridColumns) {
+        nextSlot = candidateSlot;
+        nextSpanX = candidateSpanX;
+      }
+    }
+
+    if (direction.affectsRight && dxSteps != 0) {
+      nextSpanX =
+          (nextSpanX + dxSteps).clamp(minSpanX, widget.settings.gridColumns);
+    }
+
+    if (direction.affectsTop && dySteps != 0) {
+      final candidateSlot = nextSlot + dySteps * widget.settings.gridColumns;
+      final candidateSpanY = nextSpanY - dySteps;
+      if (candidateSlot >= 0 &&
+          candidateSpanY >= minSpanY &&
+          candidateSpanY <= widget.settings.gridRows) {
+        nextSlot = candidateSlot;
+        nextSpanY = candidateSpanY;
+      }
+    }
+
+    if (direction.affectsBottom && dySteps != 0) {
+      nextSpanY =
+          (nextSpanY + dySteps).clamp(minSpanY, widget.settings.gridRows);
+    }
+
+    if (nextSlot == currentSlot &&
+        nextSpanX == currentSpanX &&
+        nextSpanY == currentSpanY) {
+      return null;
+    }
+    return (nextSlot, nextSpanX, nextSpanY);
+  }
+
   void _resizeWidget(
     int currentSlot,
     LauncherWidgetInfo widgetInfo,
@@ -1520,5 +1787,382 @@ class _CellLayoutViewState extends State<CellLayoutView> {
     }
 
     return null;
+  }
+}
+
+enum _WorkspaceResizeDirection {
+  left,
+  top,
+  right,
+  bottom,
+  topLeft,
+  topRight,
+  bottomLeft,
+  bottomRight;
+
+  bool get affectsLeft => this == left || this == topLeft || this == bottomLeft;
+  bool get affectsTop => this == top || this == topLeft || this == topRight;
+  bool get affectsRight =>
+      this == right || this == topRight || this == bottomRight;
+  bool get affectsBottom =>
+      this == bottom || this == bottomLeft || this == bottomRight;
+}
+
+class _WorkspaceWidgetResizeFrame extends StatefulWidget {
+  static const double _edgeHitSize = 34;
+  static const double _cornerHitSize = 54;
+  static const double _cornerDotSize = 18;
+  static const double touchOutset = _cornerHitSize / 2;
+
+  final double contentOutset;
+  final double stepX;
+  final double stepY;
+  final bool showDebugHitZones;
+  final VoidCallback onDismiss;
+  final VoidCallback onResizeEnded;
+  final void Function(
+    _WorkspaceResizeDirection direction,
+    int dxSteps,
+    int dySteps,
+  ) onResizeSteps;
+
+  const _WorkspaceWidgetResizeFrame({
+    required this.contentOutset,
+    required this.stepX,
+    required this.stepY,
+    required this.showDebugHitZones,
+    required this.onDismiss,
+    required this.onResizeEnded,
+    required this.onResizeSteps,
+  });
+
+  @override
+  State<_WorkspaceWidgetResizeFrame> createState() =>
+      _WorkspaceWidgetResizeFrameState();
+}
+
+class _WorkspaceWidgetResizeFrameState
+    extends State<_WorkspaceWidgetResizeFrame> {
+  _WorkspaceResizeDirection? _previewDirection;
+  double _previewDx = 0;
+  double _previewDy = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final preview = _previewInsets();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final contentRect = Rect.fromLTWH(
+          widget.contentOutset,
+          widget.contentOutset,
+          math.max(0, constraints.maxWidth - widget.contentOutset * 2),
+          math.max(0, constraints.maxHeight - widget.contentOutset * 2),
+        );
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fromRect(
+              rect: contentRect,
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: widget.onDismiss,
+                child: const SizedBox.expand(),
+              ),
+            ),
+            Positioned(
+              left: contentRect.left + preview.left,
+              top: contentRect.top + preview.top,
+              width: math.max(
+                0,
+                contentRect.width - preview.left - preview.right,
+              ),
+              height: math.max(
+                0,
+                contentRect.height - preview.top - preview.bottom,
+              ),
+              child: IgnorePointer(
+                child: AnimatedContainer(
+                  duration: _previewDirection == null
+                      ? const Duration(milliseconds: 120)
+                      : Duration.zero,
+                  curve: Curves.easeOutCubic,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.95),
+                      width: 2.4,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.35),
+                        blurRadius: 14,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            _edge(_WorkspaceResizeDirection.left, contentRect),
+            _edge(_WorkspaceResizeDirection.top, contentRect),
+            _edge(_WorkspaceResizeDirection.right, contentRect),
+            _edge(_WorkspaceResizeDirection.bottom, contentRect),
+            _corner(_WorkspaceResizeDirection.topLeft, contentRect),
+            _corner(_WorkspaceResizeDirection.topRight, contentRect),
+            _corner(_WorkspaceResizeDirection.bottomLeft, contentRect),
+            _corner(_WorkspaceResizeDirection.bottomRight, contentRect),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _edge(_WorkspaceResizeDirection direction, Rect contentRect) {
+    final isVertical = direction == _WorkspaceResizeDirection.left ||
+        direction == _WorkspaceResizeDirection.right;
+    final child = _WorkspaceResizeDragTarget(
+      direction: direction,
+      stepX: widget.stepX,
+      stepY: widget.stepY,
+      showDebugHitZone: widget.showDebugHitZones,
+      onPreviewChanged: _setPreview,
+      onPreviewEnded: _clearPreview,
+      onResizeEnded: widget.onResizeEnded,
+      onResizeSteps: widget.onResizeSteps,
+      child: const SizedBox.expand(),
+    );
+
+    final left = switch (direction) {
+      _WorkspaceResizeDirection.left =>
+        contentRect.left - _WorkspaceWidgetResizeFrame._edgeHitSize / 2,
+      _WorkspaceResizeDirection.right =>
+        contentRect.right - _WorkspaceWidgetResizeFrame._edgeHitSize / 2,
+      _ => contentRect.left,
+    };
+    final top = switch (direction) {
+      _WorkspaceResizeDirection.top =>
+        contentRect.top - _WorkspaceWidgetResizeFrame._edgeHitSize / 2,
+      _WorkspaceResizeDirection.bottom =>
+        contentRect.bottom - _WorkspaceWidgetResizeFrame._edgeHitSize / 2,
+      _ => contentRect.top,
+    };
+
+    return Positioned(
+      left: left,
+      top: top,
+      width: isVertical
+          ? _WorkspaceWidgetResizeFrame._edgeHitSize
+          : contentRect.width,
+      height: isVertical
+          ? contentRect.height
+          : _WorkspaceWidgetResizeFrame._edgeHitSize,
+      child: child,
+    );
+  }
+
+  Widget _corner(_WorkspaceResizeDirection direction, Rect contentRect) {
+    final hitSize = _WorkspaceWidgetResizeFrame._cornerHitSize;
+    return Positioned(
+      left: direction.affectsLeft
+          ? contentRect.left - hitSize / 2
+          : contentRect.right - hitSize / 2,
+      top: direction.affectsTop
+          ? contentRect.top - hitSize / 2
+          : contentRect.bottom - hitSize / 2,
+      width: hitSize,
+      height: hitSize,
+      child: _WorkspaceResizeDragTarget(
+        direction: direction,
+        stepX: widget.stepX,
+        stepY: widget.stepY,
+        showDebugHitZone: widget.showDebugHitZones,
+        onPreviewChanged: _setPreview,
+        onPreviewEnded: _clearPreview,
+        onResizeEnded: widget.onResizeEnded,
+        onResizeSteps: widget.onResizeSteps,
+        child: Center(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(999),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  blurRadius: 6,
+                ),
+              ],
+            ),
+            child: const SizedBox(
+              width: _WorkspaceWidgetResizeFrame._cornerDotSize,
+              height: _WorkspaceWidgetResizeFrame._cornerDotSize,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  EdgeInsets _previewInsets() {
+    final direction = _previewDirection;
+    if (direction == null) return EdgeInsets.zero;
+    return EdgeInsets.only(
+      left: direction.affectsLeft ? _previewDx : 0,
+      right: direction.affectsRight ? -_previewDx : 0,
+      top: direction.affectsTop ? _previewDy : 0,
+      bottom: direction.affectsBottom ? -_previewDy : 0,
+    );
+  }
+
+  void _setPreview(
+    _WorkspaceResizeDirection direction,
+    double dx,
+    double dy,
+  ) {
+    final nextDx =
+        (direction.affectsLeft || direction.affectsRight ? dx : 0).toDouble();
+    final nextDy =
+        (direction.affectsTop || direction.affectsBottom ? dy : 0).toDouble();
+    if (_previewDirection == direction &&
+        _previewDx == nextDx &&
+        _previewDy == nextDy) {
+      return;
+    }
+    setState(() {
+      _previewDirection = direction;
+      _previewDx = nextDx;
+      _previewDy = nextDy;
+    });
+  }
+
+  void _clearPreview() {
+    if (_previewDirection == null && _previewDx == 0 && _previewDy == 0) {
+      return;
+    }
+    setState(() {
+      _previewDirection = null;
+      _previewDx = 0;
+      _previewDy = 0;
+    });
+  }
+}
+
+class _WorkspaceResizeDragTarget extends StatefulWidget {
+  final _WorkspaceResizeDirection direction;
+  final double stepX;
+  final double stepY;
+  final bool showDebugHitZone;
+  final void Function(
+    _WorkspaceResizeDirection direction,
+    int dxSteps,
+    int dySteps,
+  ) onResizeSteps;
+  final void Function(
+    _WorkspaceResizeDirection direction,
+    double dx,
+    double dy,
+  ) onPreviewChanged;
+  final VoidCallback onPreviewEnded;
+  final VoidCallback onResizeEnded;
+  final Widget child;
+
+  const _WorkspaceResizeDragTarget({
+    required this.direction,
+    required this.stepX,
+    required this.stepY,
+    required this.showDebugHitZone,
+    required this.onResizeSteps,
+    required this.onPreviewChanged,
+    required this.onPreviewEnded,
+    required this.onResizeEnded,
+    required this.child,
+  });
+
+  @override
+  State<_WorkspaceResizeDragTarget> createState() =>
+      _WorkspaceResizeDragTargetState();
+}
+
+class _WorkspaceResizeDragTargetState
+    extends State<_WorkspaceResizeDragTarget> {
+  double _dx = 0;
+  double _dy = 0;
+  int? _activePointer;
+
+  @override
+  void dispose() {
+    if (_activePointer != null) {
+      WidgetResizeGestureGuard.end();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final stepX = widget.stepX.clamp(24, double.infinity).toDouble();
+    final stepY = widget.stepY.clamp(24, double.infinity).toDouble();
+
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (event) {
+        if (_activePointer != null) return;
+        _activePointer = event.pointer;
+        _dx = 0;
+        _dy = 0;
+        WidgetResizeGestureGuard.begin();
+        widget.onPreviewChanged(widget.direction, 0, 0);
+      },
+      onPointerMove: (event) {
+        if (_activePointer != event.pointer) return;
+        _dx += event.delta.dx;
+        _dy += event.delta.dy;
+        widget.onPreviewChanged(widget.direction, _dx, _dy);
+      },
+      onPointerUp: (event) {
+        if (_activePointer != event.pointer) return;
+        _finishResize(stepX, stepY);
+      },
+      onPointerCancel: (event) {
+        if (_activePointer != event.pointer) return;
+        _finishResize(stepX, stepY);
+      },
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: widget.showDebugHitZone
+              ? Colors.yellow.withValues(alpha: 0.28)
+              : Colors.transparent,
+          border: widget.showDebugHitZone
+              ? Border.all(
+                  color: Colors.yellowAccent.withValues(alpha: 0.9),
+                  width: 1.4,
+                )
+              : null,
+        ),
+        child: widget.child,
+      ),
+    );
+  }
+
+  void _finishResize(double stepX, double stepY) {
+    _commitSteps(stepX, stepY);
+    widget.onPreviewEnded();
+    widget.onResizeEnded();
+    WidgetResizeGestureGuard.end();
+    _activePointer = null;
+  }
+
+  void _commitSteps(double stepX, double stepY) {
+    final dxSteps = _stepsForDelta(_dx, stepX);
+    final dySteps = _stepsForDelta(_dy, stepY);
+    if (dxSteps != 0 || dySteps != 0) {
+      widget.onResizeSteps(widget.direction, dxSteps, dySteps);
+    }
+    _dx = 0;
+    _dy = 0;
+  }
+
+  int _stepsForDelta(double delta, double step) {
+    if (step <= 0) return 0;
+    if (delta.abs() < step * 0.16) return 0;
+    return (delta / step).round();
   }
 }

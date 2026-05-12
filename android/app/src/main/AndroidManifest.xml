@@ -50,7 +50,7 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:taskAffinity=""
-            android:excludeFromRecents="true"
+            android:excludeFromRecents="false"
             android:stateNotNeeded="true"
             android:theme="@style/LauncherTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
