@@ -3,6 +3,7 @@ package com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app
 import android.app.Activity
 import android.content.ComponentName
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.text.TextUtils
@@ -84,6 +85,21 @@ class SystemChannel(private val activity: Activity) {
                     "requestAccessibilityAccess" -> {
                         activity.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                         result.success(true)
+                    }
+                    "launchUrl" -> {
+                        val url = call.argument<String>("url")
+                        if (url != null) {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                activity.startActivity(intent)
+                                result.success(true)
+                            } catch (e: Exception) {
+                                result.error("LAUNCH_URL_ERROR", e.message, null)
+                            }
+                        } else {
+                            result.error("INVALID_URL", "URL is null", null)
+                        }
                     }
                     else -> result.notImplemented()
                 }

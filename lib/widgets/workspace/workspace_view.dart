@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/app_info.dart';
 import '../../models/launcher_settings.dart';
 import '../../services/drag/drag_controller.dart';
+import '../../services/gestures/widget_resize_gesture_guard.dart';
 import '../../state/workspace_cubit.dart';
 import 'cell_layout.dart';
 
@@ -65,24 +66,32 @@ class _WorkspaceViewState extends State<WorkspaceView> {
         if (state.pages.isEmpty) {
           return const SizedBox.shrink();
         }
-        return PageView.builder(
-          controller: _controller,
-          physics: const BouncingScrollPhysics(),
-          onPageChanged: (i) =>
-              context.read<WorkspaceCubit>().setCurrentPage(i),
-          itemCount:
-              widget.settings.infiniteScrolling ? null : state.pages.length,
-          itemBuilder: (context, rawIndex) {
-            final i = rawIndex % state.pages.length;
-            return CellLayoutView(
-              page: state.pages[i],
-              pageIndex: i,
-              settings: widget.settings,
-              dragController: widget.dragController,
-              badgeCounts: widget.badgeCounts,
-              onAppTap: widget.onAppTap,
-              onAppLongPress: (app, slot, center) =>
-                  widget.onAppLongPress(app, i, slot, center),
+        return ValueListenableBuilder<bool>(
+          valueListenable: WidgetResizeGestureGuard.isResizingNotifier,
+          builder: (context, isResizing, _) {
+            return PageView.builder(
+              controller: _controller,
+              physics: isResizing
+                  ? const NeverScrollableScrollPhysics()
+                  : const BouncingScrollPhysics(),
+              onPageChanged: (i) =>
+                  context.read<WorkspaceCubit>().setCurrentPage(i),
+              itemCount: widget.settings.infiniteScrolling
+                  ? null
+                  : state.pages.length,
+              itemBuilder: (context, rawIndex) {
+                final i = rawIndex % state.pages.length;
+                return CellLayoutView(
+                  page: state.pages[i],
+                  pageIndex: i,
+                  settings: widget.settings,
+                  dragController: widget.dragController,
+                  badgeCounts: widget.badgeCounts,
+                  onAppTap: widget.onAppTap,
+                  onAppLongPress: (app, slot, center) =>
+                      widget.onAppLongPress(app, i, slot, center),
+                );
+              },
             );
           },
         );

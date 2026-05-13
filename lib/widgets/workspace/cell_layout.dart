@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/app_info.dart';
@@ -2763,44 +2764,53 @@ class _WorkspaceResizeDragTargetState
     final stepX = widget.stepX.clamp(24, double.infinity).toDouble();
     final stepY = widget.stepY.clamp(24, double.infinity).toDouble();
 
-    return Listener(
-      behavior: HitTestBehavior.opaque,
-      onPointerDown: (event) {
-        if (_activePointer != null) return;
-        _activePointer = event.pointer;
-        _dx = 0;
-        _dy = 0;
-        WidgetResizeGestureGuard.begin();
-        widget.onPreviewChanged(widget.direction, 0, 0);
-      },
-      onPointerMove: (event) {
-        if (_activePointer != event.pointer) return;
-        _dx += event.delta.dx;
-        _dy += event.delta.dy;
-        _commitWholeSteps(stepX, stepY);
-        widget.onPreviewChanged(widget.direction, _dx, _dy);
-      },
-      onPointerUp: (event) {
-        if (_activePointer != event.pointer) return;
-        _finishResize(stepX, stepY);
-      },
-      onPointerCancel: (event) {
-        if (_activePointer != event.pointer) return;
-        _finishResize(stepX, stepY);
-      },
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: widget.showDebugHitZone
-              ? Colors.yellow.withValues(alpha: 0.28)
-              : Colors.transparent,
-          border: widget.showDebugHitZone
-              ? Border.all(
-                  color: Colors.yellowAccent.withValues(alpha: 0.9),
-                  width: 1.4,
-                )
-              : null,
+    return RawGestureDetector(
+      gestures: {
+        EagerGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(
+          () => EagerGestureRecognizer(),
+          (_) {},
         ),
-        child: widget.child,
+      },
+      child: Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: (event) {
+          if (_activePointer != null) return;
+          _activePointer = event.pointer;
+          _dx = 0;
+          _dy = 0;
+          WidgetResizeGestureGuard.begin();
+          widget.onPreviewChanged(widget.direction, 0, 0);
+        },
+        onPointerMove: (event) {
+          if (_activePointer != event.pointer) return;
+          _dx += event.delta.dx;
+          _dy += event.delta.dy;
+          _commitWholeSteps(stepX, stepY);
+          widget.onPreviewChanged(widget.direction, _dx, _dy);
+        },
+        onPointerUp: (event) {
+          if (_activePointer != event.pointer) return;
+          _finishResize(stepX, stepY);
+        },
+        onPointerCancel: (event) {
+          if (_activePointer != event.pointer) return;
+          _finishResize(stepX, stepY);
+        },
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: widget.showDebugHitZone
+                ? Colors.yellow.withValues(alpha: 0.28)
+                : Colors.transparent,
+            border: widget.showDebugHitZone
+                ? Border.all(
+                    color: Colors.yellowAccent.withValues(alpha: 0.9),
+                    width: 1.4,
+                  )
+                : null,
+          ),
+          child: widget.child,
+        ),
       ),
     );
   }

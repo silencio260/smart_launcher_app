@@ -4,12 +4,18 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
 import android.os.UserManager
 import android.provider.Settings
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
+import org.xmlpull.v1.XmlPullParser
+import java.io.ByteArrayOutputStream
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.AppQueryHelper
 
 class AppsChannel(private val activity: Activity) {
@@ -91,6 +97,20 @@ class AppsChannel(private val activity: Activity) {
                             result.success(emptyList<Map<String, Any?>>())
                         }
                     }
+                    "getIconFromPack" -> {
+                        val packPackage = call.argument<String>("packPackage")
+                        val componentName = call.argument<String>("componentName")
+                        if (packPackage != null && componentName != null) {
+                            try {
+                                val bytes = getIconFromPack(packPackage, componentName)
+                                result.success(bytes)
+                            } catch (e: Exception) {
+                                result.success(null)
+                            }
+                        } else {
+                            result.success(null)
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -141,5 +161,61 @@ class AppsChannel(private val activity: Activity) {
                 "label" to info.loadLabel(pm).toString(),
             )
         }
+    }
+
+    private fun getIconFromPack(packPackage: String, componentName: String): ByteArray? {
+        val packRes = try {
+            activity.packageManager.getResourcesForApplication(packPackage)
+        } catch (e: PackageManager.NameNotFoundException) {
+            return null
+        }
+
+        // Parse appfilter.xml to find the drawable name for this component
+        val appFilterId = packRes.getIdentifier("appfilter", "xml", packPackage)
+        if (appFilterId == 0) return null
+
+        val drawableName = try {
+            val xpp: XmlPullParser = packRes.getXml(appFilterId)
+            var found: String? = null
+            while (xpp.eventType != XmlPullParser.END_DOCUMENT) {
+                if (xpp.eventType == XmlPullParser.START_TAG && xpp.name == "item") {
+                    val component = xpp.getAttributeValue(null, "component") ?: ""
+                    // component format: ComponentInfo{pkg/class} — match by package prefix
+                    if (component.contains("{$componentName/") || component.contains("{$componentName}")) {
+                        found = xpp.getAttributeValue(null, "drawable")
+                        break
+                    }
+                }
+                xpp.next()
+            }
+            found
+        } catch (e: Exception) {
+            null
+        } ?: return null
+
+        val drawableId = packRes.getIdentifier(drawableName, "drawable", packPackage)
+        if (drawableId == 0) return null
+
+        val drawable: Drawable = try {
+            packRes.getDrawable(drawableId, null)
+        } catch (e: Exception) {
+            return null
+        }
+
+        val bitmap = if (drawable is BitmapDrawable && drawable.bitmap != null) {
+            drawable.bitmap
+        } else {
+            val w = drawable.intrinsicWidth.takeIf { it > 0 } ?: 108
+            val h = drawable.intrinsicHeight.takeIf { it > 0 } ?: 108
+            val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bmp)
+            drawable.setBounds(0, 0, w, h)
+            drawable.draw(canvas)
+            bmp
+        }
+
+        return ByteArrayOutputStream().also { out ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        }.toByteArray()
     }
 }
