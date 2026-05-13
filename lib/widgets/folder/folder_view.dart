@@ -42,9 +42,11 @@ class _FolderViewState extends State<FolderView>
   late TextEditingController _titleController;
   bool _editingTitle = false;
   bool _closing = false;
+  bool _dragOutAccepted = false;
 
   // Drag state
   bool _dragging = false;
+  WorkspaceItemInfo? _draggedItem;
   // True once the dragged pointer exits the folder container's bounds.
   bool _exitedFolder = false;
 
@@ -89,6 +91,12 @@ class _FolderViewState extends State<FolderView>
         a.user == b.user;
   }
 
+  bool _containsFolderItem(
+    List<WorkspaceItemInfo> items,
+    WorkspaceItemInfo target,
+  ) =>
+      items.any((item) => _sameFolderItem(item, target));
+
   // Called while a drag is live on each pointer-move event.
   // Compares the global pointer position against the folder container's rect
   // and triggers the open/close animation when the pointer crosses the boundary.
@@ -117,9 +125,26 @@ class _FolderViewState extends State<FolderView>
       listenWhen: (prev, next) {
         final wasPresent = prev.folders.containsKey(widget.folderId);
         final isPresent = next.folders.containsKey(widget.folderId);
-        return wasPresent && !isPresent;
+        if (wasPresent && !isPresent) return true;
+
+        final draggedItem = _draggedItem;
+        if (!_dragging || !_exitedFolder || draggedItem == null) {
+          return false;
+        }
+
+        final previousContents = prev.folders[widget.folderId]?.contents;
+        final nextContents = next.folders[widget.folderId]?.contents;
+        if (previousContents == null || nextContents == null) return false;
+
+        return _containsFolderItem(previousContents, draggedItem) &&
+            !_containsFolderItem(nextContents, draggedItem);
       },
-      listener: (context, state) => _close(),
+      listener: (context, state) {
+        if (_dragging && _exitedFolder && !_dragOutAccepted) {
+          setState(() => _dragOutAccepted = true);
+        }
+        _close();
+      },
       child: BlocBuilder<WorkspaceCubit, WorkspaceState>(
         buildWhen: (prev, next) =>
             prev.folders[widget.folderId] != next.folders[widget.folderId],
@@ -128,7 +153,7 @@ class _FolderViewState extends State<FolderView>
           if (folder == null) return const SizedBox.shrink();
           final liveApps = context.watch<AppsCubit>().state.apps;
 
-          if (_dragging && _exitedFolder) {
+          if ((_dragging && _exitedFolder) || _dragOutAccepted) {
             return IgnorePointer(
               child: Opacity(
                 opacity: 0.0,
@@ -286,6 +311,7 @@ class _FolderViewState extends State<FolderView>
           folderId: widget.folderId,
           folderPage: widget.folderPage,
           folderSlot: widget.folderSlot,
+          onFolderDropCompleted: _close,
         );
         final iconView = BubbleTextView(
           app: app,
@@ -323,24 +349,42 @@ class _FolderViewState extends State<FolderView>
                   onDragStarted: () {
                     setState(() {
                       _dragging = true;
+                      _draggedItem = item;
                       _exitedFolder = false;
+                      _dragOutAccepted = false;
                     });
                     // Notify the workspace so its DragTarget overlay renders.
-                    widget.dragController.startDrag(item, -2, -1, Offset.zero);
+                    widget.dragController.startDragPayload(
+                      payload,
+                      Offset.zero,
+                    );
                   },
                   onDragEnd: (details) {
                     if (!mounted) return;
+                    final draggedItem = _draggedItem;
+                    final folderContents = context
+                        .read<WorkspaceCubit>()
+                        .state
+                        .folders[widget.folderId]
+                        ?.contents;
+                    final removedAfterDragOut = _exitedFolder &&
+                        draggedItem != null &&
+                        (folderContents == null ||
+                            !_containsFolderItem(folderContents, draggedItem));
                     setState(() {
-                      _dragging = false;
-                      _exitedFolder = false;
+                      _dragging = removedAfterDragOut;
+                      _exitedFolder = removedAfterDragOut;
+                      _dragOutAccepted = removedAfterDragOut;
+                      _draggedItem = null;
                     });
                     // Always release the drag lock so workspace targets hide.
                     widget.dragController.cancelDrag();
-                    // Folder close is state-driven only: BlocListener fires
-                    // when tryCollapseFolder removes the folder from state
-                    // (i.e. ≤1 app remains).  Never close eagerly here —
-                    // wasAccepted can be false due to a render-timing window
-                    // where workspace DragTargets haven't appeared yet.
+                    if (removedAfterDragOut) {
+                      _close();
+                    }
+                    // Close only after state confirms the dragged item left
+                    // this folder.  DragEnd alone is not enough because failed
+                    // drops can report through this same path.
                   },
                   onDraggableCanceled: (_, __) {
                     // onDragEnd always fires too; state reset is handled there.

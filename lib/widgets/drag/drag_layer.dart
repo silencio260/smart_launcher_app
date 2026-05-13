@@ -274,6 +274,7 @@ class _TrashZone extends StatelessWidget {
             }
           }
           workspace.collapseEmptyPages();
+          payload.onFolderDropCompleted?.call();
         } else if (payload.sourcePage >= 0) {
           // Remove from workspace
           workspace.removeItem(payload.sourcePage, payload.sourceSlot);

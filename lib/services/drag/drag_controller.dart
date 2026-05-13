@@ -9,6 +9,7 @@ class DragPayload {
   final String? folderId;
   final int folderPage;
   final int folderSlot;
+  final VoidCallback? onFolderDropCompleted;
 
   const DragPayload({
     required this.item,
@@ -17,6 +18,7 @@ class DragPayload {
     this.folderId,
     this.folderPage = -1,
     this.folderSlot = -1,
+    this.onFolderDropCompleted,
   });
 
   bool get isWidget => item.itemType == ItemType.appWidget;
@@ -52,8 +54,16 @@ class DragController extends ChangeNotifier {
   void addDropTarget(DropTarget target) => _dropTargets.add(target);
   void removeDropTarget(DropTarget target) => _dropTargets.remove(target);
 
-  void startDrag(ItemInfo item, int sourcePage, int sourceSlot, Offset startPos) {
-    _activeDrag = DragPayload(item: item, sourcePage: sourcePage, sourceSlot: sourceSlot);
+  void startDrag(
+      ItemInfo item, int sourcePage, int sourceSlot, Offset startPos) {
+    _activeDrag =
+        DragPayload(item: item, sourcePage: sourcePage, sourceSlot: sourceSlot);
+    _dragPosition = startPos;
+    notifyListeners();
+  }
+
+  void startDragPayload(DragPayload payload, Offset startPos) {
+    _activeDrag = payload;
     _dragPosition = startPos;
     notifyListeners();
   }

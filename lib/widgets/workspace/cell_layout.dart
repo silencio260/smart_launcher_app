@@ -78,23 +78,43 @@ class _CellLayoutViewState extends State<CellLayoutView>
   // Latest cell dimensions — updated each build, used for overlap math
   double _cellWidth = 0;
   double _cellHeight = 0;
+  OverlayEntry? _openFolderEntry;
+  String? _openFolderId;
 
   @override
   void dispose() {
-    for (final t in _previewTimers.values) t.cancel();
+    _closeOpenFolder();
+    for (final t in _previewTimers.values) {
+      t.cancel();
+    }
     _previewTimers.clear();
-    for (final t in _displacementTimers.values) t.cancel();
+    for (final t in _displacementTimers.values) {
+      t.cancel();
+    }
     _displacementTimers.clear();
-    for (final ctrl in _displacementPreviewControllers.values) ctrl.dispose();
+    for (final ctrl in _displacementPreviewControllers.values) {
+      ctrl.dispose();
+    }
     _displacementPreviewControllers.clear();
     _activeWidgetDragFeedbackSlot.dispose();
     super.dispose();
   }
 
+  void _closeOpenFolder([String? folderId]) {
+    if (folderId != null && _openFolderId != folderId) return;
+    _openFolderEntry?.remove();
+    _openFolderEntry = null;
+    _openFolderId = null;
+  }
+
   void _cancelAllDisplacementTimers() {
-    for (final t in _previewTimers.values) t.cancel();
+    for (final t in _previewTimers.values) {
+      t.cancel();
+    }
     _previewTimers.clear();
-    for (final t in _displacementTimers.values) t.cancel();
+    for (final t in _displacementTimers.values) {
+      t.cancel();
+    }
     _displacementTimers.clear();
     final slots = _displacementPreviewControllers.keys.toList();
     for (final slot in slots) {
@@ -586,6 +606,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
       }
       workspace.collapseEmptyPages();
       widget.dragController.cancelDrag();
+      payload.onFolderDropCompleted?.call();
       return;
     }
 
@@ -2040,6 +2061,8 @@ class _CellLayoutViewState extends State<CellLayoutView>
   }
 
   void _openFolder(BuildContext context, String folderId, int slot) {
+    if (_openFolderId == folderId && _openFolderEntry != null) return;
+    _closeOpenFolder();
     final overlay = Overlay.of(context);
     final workspaceCubit = context.read<WorkspaceCubit>();
     OverlayEntry? entry;
@@ -2054,10 +2077,18 @@ class _CellLayoutViewState extends State<CellLayoutView>
           badgeCounts: widget.badgeCounts,
           dragController: widget.dragController,
           onClose: () {
+            if (_openFolderEntry == entry) {
+              _openFolderEntry = null;
+              _openFolderId = null;
+            }
             entry?.remove();
             entry = null;
           },
           onAppTap: (app) {
+            if (_openFolderEntry == entry) {
+              _openFolderEntry = null;
+              _openFolderId = null;
+            }
             entry?.remove();
             entry = null;
             LauncherService.launchApp(app.packageName);
@@ -2065,6 +2096,8 @@ class _CellLayoutViewState extends State<CellLayoutView>
         ),
       ),
     );
+    _openFolderEntry = entry;
+    _openFolderId = folderId;
     overlay.insert(entry!);
   }
 
