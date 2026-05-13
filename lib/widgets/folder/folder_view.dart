@@ -322,24 +322,25 @@ class _FolderViewState extends State<FolderView>
           badgeCount: widget.badgeCounts[app.packageName] ?? 0,
         );
 
-        return Center(
-          // Per-slot DragTarget enables reordering by hovering one icon over
-          // another — the same hover-to-swap interaction as the workspace grid.
-          child: DragTarget<DragPayload>(
-            onWillAcceptWithDetails: (d) =>
-                d.data.folderId == widget.folderId &&
-                d.data.item is WorkspaceItemInfo &&
-                !_sameFolderItem(d.data.item as WorkspaceItemInfo, item),
-            onAcceptWithDetails: (d) {
-              context.read<WorkspaceCubit>().reorderFolderItem(
-                    widget.folderId,
-                    d.data.item as WorkspaceItemInfo,
-                    item,
-                  );
-            },
-            builder: (context, candidateData, _) {
-              final isHovered = candidateData.isNotEmpty;
-              return Listener(
+        // Per-slot DragTarget enables reordering by hovering one icon over
+        // another — the same hover-to-swap interaction as the workspace grid.
+        return DragTarget<DragPayload>(
+          onWillAcceptWithDetails: (d) =>
+              d.data.folderId == widget.folderId &&
+              d.data.item is WorkspaceItemInfo &&
+              !_sameFolderItem(d.data.item as WorkspaceItemInfo, item),
+          onAcceptWithDetails: (d) {
+            context.read<WorkspaceCubit>().reorderFolderItem(
+                  widget.folderId,
+                  d.data.item as WorkspaceItemInfo,
+                  item,
+                );
+          },
+          builder: (context, candidateData, _) {
+            final isHovered = candidateData.isNotEmpty;
+            return Align(
+              alignment: Alignment.topCenter,
+              child: Listener(
                 // Track pointer position to detect when the drag exits the
                 // folder container's bounds.
                 onPointerMove: _onPointerMove,
@@ -428,9 +429,9 @@ class _FolderViewState extends State<FolderView>
                     ),
                   ),
                 ),
-              );
-            },
-          ),
+              ),
+            );
+          },
         );
       },
     );

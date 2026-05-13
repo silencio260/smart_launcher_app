@@ -80,8 +80,8 @@ class FolderIconView extends StatelessWidget {
       return const SizedBox.shrink();
     }
     if (count == 1) {
-      // Single icon centered
-      return Center(
+      return Align(
+        alignment: Alignment.topCenter,
         child: ShapedIcon(
           iconBytes: folder.contents[0].icon,
           shape: settings.iconShape,
@@ -89,23 +89,23 @@ class FolderIconView extends StatelessWidget {
         ),
       );
     }
-    // 2x2 grid for 2-4 icons; show up to 4
-    return GridView.count(
-      crossAxisCount: 2,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 3,
-      crossAxisSpacing: 3,
-      children: [
-        ...folder.contents.take(4).map((item) => ShapedIcon(
-              iconBytes: item.icon,
-              shape: settings.iconShape,
-              size: miniSize,
-            )),
-        ...List.generate(
-          (4 - count).clamp(0, 4),
-          (_) => const SizedBox.shrink(),
+    return Align(
+      alignment: Alignment.topCenter,
+      child: SizedBox(
+        width: miniSize * 2 + 3,
+        child: Wrap(
+          spacing: 3,
+          runSpacing: 3,
+          children: folder.contents
+              .take(4)
+              .map((item) => ShapedIcon(
+                    iconBytes: item.icon,
+                    shape: settings.iconShape,
+                    size: miniSize,
+                  ))
+              .toList(),
         ),
-      ],
+      ),
     );
   }
 }
