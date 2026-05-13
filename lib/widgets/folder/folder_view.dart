@@ -81,6 +81,14 @@ class _FolderViewState extends State<FolderView>
     });
   }
 
+  bool _sameFolderItem(WorkspaceItemInfo a, WorkspaceItemInfo b) {
+    final aComponent = a.componentName ?? a.packageName;
+    final bComponent = b.componentName ?? b.packageName;
+    return a.packageName == b.packageName &&
+        aComponent == bComponent &&
+        a.user == b.user;
+  }
+
   // Called while a drag is live on each pointer-move event.
   // Compares the global pointer position against the folder container's rect
   // and triggers the open/close animation when the pointer crosses the boundary.
@@ -139,8 +147,7 @@ class _FolderViewState extends State<FolderView>
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
               child: Container(
-                color: Colors.black
-                    .withValues(alpha: _dragging ? 0.0 : 0.5),
+                color: Colors.black.withValues(alpha: _dragging ? 0.0 : 0.5),
                 child: Center(
                   child: GestureDetector(
                     onTap: () {},
@@ -148,11 +155,9 @@ class _FolderViewState extends State<FolderView>
                       scale: _scaleAnim,
                       child: Padding(
                         padding: EdgeInsets.only(
-                          bottom:
-                              MediaQuery.of(context).viewInsets.bottom,
+                          bottom: MediaQuery.of(context).viewInsets.bottom,
                         ),
-                        child: _buildFolderContent(
-                            folder.contents, liveApps),
+                        child: _buildFolderContent(folder.contents, liveApps),
                       ),
                     ),
                   ),
@@ -183,10 +188,12 @@ class _FolderViewState extends State<FolderView>
           const SizedBox(height: 16),
           Flexible(child: _buildGrid(apps, liveApps)),
           const SizedBox(height: 12),
-          _buildTitle(
-              context.read<WorkspaceCubit>().state.folders[widget.folderId]
-                      ?.folderTitle ??
-                  ''),
+          _buildTitle(context
+                  .read<WorkspaceCubit>()
+                  .state
+                  .folders[widget.folderId]
+                  ?.folderTitle ??
+              ''),
           const SizedBox(height: 16),
         ],
       ),
@@ -203,9 +210,7 @@ class _FolderViewState extends State<FolderView>
             controller: _titleController,
             autofocus: true,
             style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w600),
+                color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
             textAlign: TextAlign.center,
             decoration: const InputDecoration(
               border: InputBorder.none,
@@ -234,14 +239,11 @@ class _FolderViewState extends State<FolderView>
             prev.folders[widget.folderId]?.folderTitle !=
             next.folders[widget.folderId]?.folderTitle,
         builder: (context, state) {
-          final title =
-              state.folders[widget.folderId]?.folderTitle ?? '';
+          final title = state.folders[widget.folderId]?.folderTitle ?? '';
           return Text(
             title.isEmpty ? 'Folder' : title,
             style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w600),
+                color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
           );
         },
       ),
@@ -300,12 +302,13 @@ class _FolderViewState extends State<FolderView>
           child: DragTarget<DragPayload>(
             onWillAcceptWithDetails: (d) =>
                 d.data.folderId == widget.folderId &&
-                d.data.item.id != item.id,
+                d.data.item is WorkspaceItemInfo &&
+                !_sameFolderItem(d.data.item as WorkspaceItemInfo, item),
             onAcceptWithDetails: (d) {
               context.read<WorkspaceCubit>().reorderFolderItem(
                     widget.folderId,
-                    d.data.item.id,
-                    item.id,
+                    d.data.item as WorkspaceItemInfo,
+                    item,
                   );
             },
             builder: (context, candidateData, _) {

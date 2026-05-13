@@ -455,10 +455,10 @@ class _CellLayoutViewState extends State<CellLayoutView>
 
     final payload = details.data;
     final workspace = context.read<WorkspaceCubit>();
-    final livePage = widget.pageIndex >= 0 &&
-            widget.pageIndex < workspace.state.pages.length
-        ? workspace.state.pages[widget.pageIndex]
-        : widget.page;
+    final livePage =
+        widget.pageIndex >= 0 && widget.pageIndex < workspace.state.pages.length
+            ? workspace.state.pages[widget.pageIndex]
+            : widget.page;
     final target = livePage.slots[slot];
 
     if (!payload.isWidget) {
@@ -576,7 +576,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
         } else {
           workspace.addItem(item, widget.pageIndex, slot);
         }
-        workspace.removeFromFolder(payload.folderId!, item.id);
+        workspace.removeFromFolder(payload.folderId!, item);
         final remaining =
             workspace.state.folders[payload.folderId!]?.contents.length ?? 0;
         if (remaining <= 1) {
@@ -1198,35 +1198,33 @@ class _CellLayoutViewState extends State<CellLayoutView>
                                     details.data.sourceSlot == slot;
                             if (isSourceSlot) return;
 
-                            if (!details.data.isWidget &&
-                                content is AppSlot) {
+                            if (!details.data.isWidget && content is AppSlot) {
                               // Compute how much of the tile the dragged icon covers.
-                              final localPos = _localPositionInSlot(
-                                  details.offset, slot);
+                              final localPos =
+                                  _localPositionInSlot(details.offset, slot);
                               if (localPos != null) {
                                 final overlap = _overlapFraction(localPos);
                                 if (overlap >= 0.25) {
                                   // Deep hover → folder creation mode
                                   _cancelDisplacementTimer(slot);
                                   if (!_folderPreviewSlots.contains(slot)) {
-                                    setState(() =>
-                                        _folderPreviewSlots.add(slot));
+                                    setState(
+                                        () => _folderPreviewSlots.add(slot));
                                   }
                                   return;
                                 }
                               }
                               // Shallow hover → displacement mode
                               if (_folderPreviewSlots.contains(slot)) {
-                                setState(() =>
-                                    _folderPreviewSlots.remove(slot));
+                                setState(
+                                    () => _folderPreviewSlots.remove(slot));
                               }
                               final settings =
                                   context.read<SettingsCubit>().state;
                               final pushDir = localPos != null
                                   ? _pushDirectionFromLocalPos(localPos)
                                   : Offset.zero;
-                              _startDisplacementTimer(
-                                  slot, workspace, settings,
+                              _startDisplacementTimer(slot, workspace, settings,
                                   withPreview: true,
                                   preferredDirection: pushDir);
                             } else if (!details.data.isWidget &&
@@ -1267,8 +1265,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
                                   color: Colors.orange.withValues(alpha: 0.45),
                                   borderRadius: BorderRadius.circular(16),
                                   border: Border.all(
-                                    color:
-                                        Colors.orange.withValues(alpha: 0.8),
+                                    color: Colors.orange.withValues(alpha: 0.8),
                                     width: 1.5,
                                   ),
                                 ),

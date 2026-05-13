@@ -785,14 +785,32 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     saveLayout();
   }
 
-  void removeFromFolder(String folderId, int itemId) {
+  bool _sameWorkspaceItem(WorkspaceItemInfo a, WorkspaceItemInfo b) {
+    final aComponent = a.componentName ?? a.packageName;
+    final bComponent = b.componentName ?? b.packageName;
+    return a.packageName == b.packageName &&
+        aComponent == bComponent &&
+        a.user == b.user;
+  }
+
+  int _indexOfWorkspaceItem(
+    List<WorkspaceItemInfo> items,
+    WorkspaceItemInfo target,
+  ) =>
+      items.indexWhere((item) => _sameWorkspaceItem(item, target));
+
+  void removeFromFolder(String folderId, WorkspaceItemInfo item) {
     final folders = Map<String, FolderInfo>.from(state.folders);
     final folder = folders[folderId];
     if (folder == null) return;
+    final contents = List<WorkspaceItemInfo>.from(folder.contents);
+    final itemIndex = _indexOfWorkspaceItem(contents, item);
+    if (itemIndex == -1) return;
+    contents.removeAt(itemIndex);
     folders[folderId] = FolderInfo(
       id: folder.id,
       folderTitle: folder.folderTitle,
-      contents: folder.contents.where((i) => i.id != itemId).toList(),
+      contents: contents,
       cellX: folder.cellX,
       cellY: folder.cellY,
       screenId: folder.screenId,
@@ -801,13 +819,17 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     saveLayout();
   }
 
-  void reorderFolderItem(String folderId, int fromId, int toId) {
+  void reorderFolderItem(
+    String folderId,
+    WorkspaceItemInfo fromItem,
+    WorkspaceItemInfo toItem,
+  ) {
     final folders = Map<String, FolderInfo>.from(state.folders);
     final folder = folders[folderId];
     if (folder == null) return;
     final contents = List<WorkspaceItemInfo>.from(folder.contents);
-    final fromIndex = contents.indexWhere((i) => i.id == fromId);
-    final toIndex = contents.indexWhere((i) => i.id == toId);
+    final fromIndex = _indexOfWorkspaceItem(contents, fromItem);
+    final toIndex = _indexOfWorkspaceItem(contents, toItem);
     if (fromIndex == -1 || toIndex == -1) return;
     final item = contents.removeAt(fromIndex);
     contents.insert(toIndex, item);
@@ -911,6 +933,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
               'contents': v.contents
                   .map((i) => {
                         'packageName': i.packageName,
+                        'componentName': i.componentName,
                         'title': i.title,
                       })
                   .toList(),
@@ -922,6 +945,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
       return {
         'type': 'app',
         'packageName': slot.item.packageName,
+        'componentName': slot.item.componentName,
         'title': slot.item.title,
       };
     } else if (slot is FolderSlot) {
@@ -987,6 +1011,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
           id: 0,
           itemType: ItemType.application,
           packageName: cMap['packageName'] as String,
+          componentName: cMap['componentName'] as String?,
           title: cMap['title'] as String?,
         );
       }).toList();
@@ -1020,6 +1045,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
           id: 0,
           itemType: ItemType.application,
           packageName: data['packageName'] as String,
+          componentName: data['componentName'] as String?,
           title: data['title'] as String?,
         );
         return AppSlot(item);
