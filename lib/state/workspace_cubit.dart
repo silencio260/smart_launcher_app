@@ -801,6 +801,28 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     saveLayout();
   }
 
+  void reorderFolderItem(String folderId, int fromId, int toId) {
+    final folders = Map<String, FolderInfo>.from(state.folders);
+    final folder = folders[folderId];
+    if (folder == null) return;
+    final contents = List<WorkspaceItemInfo>.from(folder.contents);
+    final fromIndex = contents.indexWhere((i) => i.id == fromId);
+    final toIndex = contents.indexWhere((i) => i.id == toId);
+    if (fromIndex == -1 || toIndex == -1) return;
+    final item = contents.removeAt(fromIndex);
+    contents.insert(toIndex, item);
+    folders[folderId] = FolderInfo(
+      id: folder.id,
+      folderTitle: folder.folderTitle,
+      contents: contents,
+      cellX: folder.cellX,
+      cellY: folder.cellY,
+      screenId: folder.screenId,
+    );
+    emit(state.copyWith(folders: folders));
+    saveLayout();
+  }
+
   void tryCollapseFolder(String folderId, int page, int slot) {
     final folder = state.folders[folderId];
     if (folder == null) return;

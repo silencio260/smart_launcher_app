@@ -15,6 +15,7 @@ class FolderView extends StatefulWidget {
   final int folderSlot;
   final LauncherSettings settings;
   final Map<String, int> badgeCounts;
+  final DragController dragController;
   final void Function(AppInfo app) onAppTap;
   final VoidCallback onClose;
 
@@ -25,6 +26,7 @@ class FolderView extends StatefulWidget {
     required this.folderSlot,
     required this.settings,
     required this.badgeCounts,
+    required this.dragController,
     required this.onAppTap,
     required this.onClose,
   });
@@ -40,7 +42,14 @@ class _FolderViewState extends State<FolderView>
   late TextEditingController _titleController;
   bool _editingTitle = false;
   bool _closing = false;
-  bool _draggingOut = false;
+
+  // Drag state
+  bool _dragging = false;
+  // True once the dragged pointer exits the folder container's bounds.
+  bool _exitedFolder = false;
+
+  // Key for the folder content container so we can read its screen rect.
+  final GlobalKey _containerKey = GlobalKey();
 
   @override
   void initState() {
@@ -49,8 +58,10 @@ class _FolderViewState extends State<FolderView>
       vsync: this,
       duration: const Duration(milliseconds: 250),
     );
-    _scaleAnim = CurvedAnimation(parent: _animController, curve: Curves.easeOutBack);
-    final folder = context.read<WorkspaceCubit>().state.folders[widget.folderId];
+    _scaleAnim =
+        CurvedAnimation(parent: _animController, curve: Curves.easeOutBack);
+    final folder =
+        context.read<WorkspaceCubit>().state.folders[widget.folderId];
     _titleController = TextEditingController(text: folder?.folderTitle ?? '');
     _animController.forward();
   }
@@ -70,6 +81,28 @@ class _FolderViewState extends State<FolderView>
     });
   }
 
+  // Called while a drag is live on each pointer-move event.
+  // Compares the global pointer position against the folder container's rect
+  // and triggers the open/close animation when the pointer crosses the boundary.
+  void _onPointerMove(PointerMoveEvent event) {
+    // One-way latch: once the pointer exits the folder bounds during a drag,
+    // stay exited for the rest of that drag.  Allowing re-entry causes a
+    // rapid toggle (setState queues a rebuild, but the next pointer event
+    // arrives before the frame flips, sees layout-unchanged bounds, and
+    // immediately un-exits — producing a visible glitch).
+    if (!_dragging || _exitedFolder) return;
+    final renderBox =
+        _containerKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+    final localPos = renderBox.globalToLocal(event.position);
+    final inside = (Offset.zero & renderBox.size).inflate(8).contains(localPos);
+
+    if (!inside) {
+      _exitedFolder = true;
+      setState(() {});
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocListener<WorkspaceCubit, WorkspaceState>(
@@ -87,24 +120,27 @@ class _FolderViewState extends State<FolderView>
           if (folder == null) return const SizedBox.shrink();
           final liveApps = context.watch<AppsCubit>().state.apps;
 
-          // While dragging out: keep draggables alive but hide UI.
-          // Use AbsorbPointer(false) so events pass through to workspace DragTargets.
-          if (_draggingOut) {
-            return AbsorbPointer(
-              absorbing: false,
+          if (_dragging && _exitedFolder) {
+            return IgnorePointer(
               child: Opacity(
                 opacity: 0.0,
-                child: Center(child: _buildGrid(folder.contents, liveApps)),
+                child: _buildFolderContent(folder.contents, liveApps),
               ),
             );
           }
 
+          // Normal (or dragging-inside-folder) render.
+          // While a drag is in progress inside the folder:
+          //   • dim the backdrop to 0 so the workspace shows through
+          //   • disable the tap-to-close gesture on the backdrop
+          //   • keep folder content fully interactive for reorder DragTargets
           return GestureDetector(
-            onTap: _close,
+            onTap: _dragging ? null : _close,
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
               child: Container(
-                color: Colors.black.withValues(alpha: 0.5),
+                color: Colors.black
+                    .withValues(alpha: _dragging ? 0.0 : 0.5),
                 child: Center(
                   child: GestureDetector(
                     onTap: () {},
@@ -112,28 +148,11 @@ class _FolderViewState extends State<FolderView>
                       scale: _scaleAnim,
                       child: Padding(
                         padding: EdgeInsets.only(
-                          bottom: MediaQuery.of(context).viewInsets.bottom,
+                          bottom:
+                              MediaQuery.of(context).viewInsets.bottom,
                         ),
-                        child: Container(
-                          width: MediaQuery.of(context).size.width * 0.82,
-                          constraints: BoxConstraints(
-                            maxHeight: MediaQuery.of(context).size.height * 0.6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[850]!.withValues(alpha: 0.92),
-                            borderRadius: BorderRadius.circular(28),
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const SizedBox(height: 16),
-                              Flexible(child: _buildGrid(folder.contents, liveApps)),
-                              const SizedBox(height: 12),
-                              _buildTitle(folder.folderTitle),
-                              const SizedBox(height: 16),
-                            ],
-                          ),
-                        ),
+                        child: _buildFolderContent(
+                            folder.contents, liveApps),
                       ),
                     ),
                   ),
@@ -142,6 +161,34 @@ class _FolderViewState extends State<FolderView>
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildFolderContent(
+      List<WorkspaceItemInfo> apps, List<AppInfo> liveApps) {
+    return Container(
+      key: _containerKey,
+      width: MediaQuery.of(context).size.width * 0.82,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.6,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.grey[850]!.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 16),
+          Flexible(child: _buildGrid(apps, liveApps)),
+          const SizedBox(height: 12),
+          _buildTitle(
+              context.read<WorkspaceCubit>().state.folders[widget.folderId]
+                      ?.folderTitle ??
+                  ''),
+          const SizedBox(height: 16),
+        ],
       ),
     );
   }
@@ -155,7 +202,10 @@ class _FolderViewState extends State<FolderView>
           child: TextField(
             controller: _titleController,
             autofocus: true,
-            style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600),
             textAlign: TextAlign.center,
             decoration: const InputDecoration(
               border: InputBorder.none,
@@ -164,7 +214,9 @@ class _FolderViewState extends State<FolderView>
             ),
             onSubmitted: (title) {
               setState(() => _editingTitle = false);
-              context.read<WorkspaceCubit>().renameFolder(widget.folderId, title);
+              context
+                  .read<WorkspaceCubit>()
+                  .renameFolder(widget.folderId, title);
             },
           ),
         ),
@@ -172,7 +224,8 @@ class _FolderViewState extends State<FolderView>
     }
     return GestureDetector(
       onTap: () {
-        final folder = context.read<WorkspaceCubit>().state.folders[widget.folderId];
+        final folder =
+            context.read<WorkspaceCubit>().state.folders[widget.folderId];
         _titleController.text = folder?.folderTitle ?? '';
         setState(() => _editingTitle = true);
       },
@@ -181,10 +234,14 @@ class _FolderViewState extends State<FolderView>
             prev.folders[widget.folderId]?.folderTitle !=
             next.folders[widget.folderId]?.folderTitle,
         builder: (context, state) {
-          final title = state.folders[widget.folderId]?.folderTitle ?? '';
+          final title =
+              state.folders[widget.folderId]?.folderTitle ?? '';
           return Text(
             title.isEmpty ? 'Folder' : title,
-            style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600),
           );
         },
       ),
@@ -200,14 +257,19 @@ class _FolderViewState extends State<FolderView>
         crossAxisCount: widget.settings.folderMaxColumns,
         childAspectRatio: widget.settings.iconSize /
             (widget.settings.iconSize +
-                (widget.settings.showFolderLabels ? widget.settings.labelSize + 8 : 0) +
+                (widget.settings.showFolderLabels
+                    ? widget.settings.labelSize + 8
+                    : 0) +
                 8),
       ),
       itemCount: apps.length,
       itemBuilder: (context, i) {
         final item = apps[i];
         final resolvedIcon = item.icon ??
-            liveApps.where((a) => a.packageName == item.packageName).firstOrNull?.icon;
+            liveApps
+                .where((a) => a.packageName == item.packageName)
+                .firstOrNull
+                ?.icon;
         final app = AppInfo(
           id: item.id,
           packageName: item.packageName,
@@ -231,38 +293,96 @@ class _FolderViewState extends State<FolderView>
           iconShape: widget.settings.iconShape,
           badgeCount: widget.badgeCounts[app.packageName] ?? 0,
         );
+
         return Center(
-          child: LongPressDraggable<DragPayload>(
-            data: payload,
-            delay: const Duration(milliseconds: 350),
-            onDragStarted: () => setState(() => _draggingOut = true),
-            onDragEnd: (_) {
-              if (mounted) setState(() => _draggingOut = false);
-              _close();
+          // Per-slot DragTarget enables reordering by hovering one icon over
+          // another — the same hover-to-swap interaction as the workspace grid.
+          child: DragTarget<DragPayload>(
+            onWillAcceptWithDetails: (d) =>
+                d.data.folderId == widget.folderId &&
+                d.data.item.id != item.id,
+            onAcceptWithDetails: (d) {
+              context.read<WorkspaceCubit>().reorderFolderItem(
+                    widget.folderId,
+                    d.data.item.id,
+                    item.id,
+                  );
             },
-            onDraggableCanceled: (_, __) {
-              if (mounted) setState(() => _draggingOut = false);
-            },
-            feedback: Material(
-              color: Colors.transparent,
-              child: Opacity(
-                opacity: 0.85,
-                child: Transform.scale(
-                  scale: 1.15,
-                  child: BubbleTextView(
-                    app: app,
-                    iconSize: widget.settings.iconSize,
-                    showLabel: false,
-                    iconShape: widget.settings.iconShape,
+            builder: (context, candidateData, _) {
+              final isHovered = candidateData.isNotEmpty;
+              return Listener(
+                // Track pointer position to detect when the drag exits the
+                // folder container's bounds.
+                onPointerMove: _onPointerMove,
+                child: LongPressDraggable<DragPayload>(
+                  data: payload,
+                  delay: const Duration(milliseconds: 350),
+                  onDragStarted: () {
+                    setState(() {
+                      _dragging = true;
+                      _exitedFolder = false;
+                    });
+                    // Notify the workspace so its DragTarget overlay renders.
+                    widget.dragController.startDrag(item, -2, -1, Offset.zero);
+                  },
+                  onDragEnd: (details) {
+                    if (!mounted) return;
+                    setState(() {
+                      _dragging = false;
+                      _exitedFolder = false;
+                    });
+                    // Always release the drag lock so workspace targets hide.
+                    widget.dragController.cancelDrag();
+                    // Folder close is state-driven only: BlocListener fires
+                    // when tryCollapseFolder removes the folder from state
+                    // (i.e. ≤1 app remains).  Never close eagerly here —
+                    // wasAccepted can be false due to a render-timing window
+                    // where workspace DragTargets haven't appeared yet.
+                  },
+                  onDraggableCanceled: (_, __) {
+                    // onDragEnd always fires too; state reset is handled there.
+                  },
+                  feedback: Material(
+                    color: Colors.transparent,
+                    child: Opacity(
+                      opacity: 0.85,
+                      child: Transform.scale(
+                        scale: 1.15,
+                        child: BubbleTextView(
+                          app: app,
+                          iconSize: widget.settings.iconSize,
+                          showLabel: false,
+                          iconShape: widget.settings.iconShape,
+                        ),
+                      ),
+                    ),
+                  ),
+                  childWhenDragging: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    decoration: isHovered
+                        ? BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(12),
+                          )
+                        : null,
+                    child: Opacity(opacity: 0.0, child: iconView),
+                  ),
+                  child: GestureDetector(
+                    onTap: () => widget.onAppTap(app),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      decoration: isHovered
+                          ? BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(12),
+                            )
+                          : null,
+                      child: iconView,
+                    ),
                   ),
                 ),
-              ),
-            ),
-            childWhenDragging: Opacity(opacity: 0.0, child: iconView),
-            child: GestureDetector(
-              onTap: () => widget.onAppTap(app),
-              child: iconView,
-            ),
+              );
+            },
           ),
         );
       },

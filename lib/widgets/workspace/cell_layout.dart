@@ -48,7 +48,8 @@ class CellLayoutView extends StatefulWidget {
   State<CellLayoutView> createState() => _CellLayoutViewState();
 }
 
-class _CellLayoutViewState extends State<CellLayoutView> {
+class _CellLayoutViewState extends State<CellLayoutView>
+    with TickerProviderStateMixin {
   static const double _gridGap = 8;
   static const double _widgetDragActivationDistance = 8;
   int? _draggingSlot;
@@ -58,21 +59,53 @@ class _CellLayoutViewState extends State<CellLayoutView> {
   final ValueNotifier<int?> _activeWidgetDragFeedbackSlot =
       ValueNotifier<int?>(null);
 
-  // Tracks per-slot timers for app displacement during widget hover
+  // Commit-displacement timers (widget-over-app: 240ms, app-over-app: 650ms)
   final Map<int, Timer> _displacementTimers = {};
+  // Preview-animation timers (fires at 350ms for app-over-app)
+  final Map<int, Timer> _previewTimers = {};
+  // Per-slot animation controllers driving the pre-displacement slide
+  final Map<int, AnimationController> _displacementPreviewControllers = {};
+  // Direction the icon slides (unit grid vector, e.g. Offset(-1,0) = left)
+  final Map<int, Offset> _displacementPreviewDirections = {};
+  // Maps source slot → destination ghost slot
+  final Map<int, int> _previewDestSlots = {};
+  // Slots that show a ghost "landing zone" outline during preview
+  final Set<int> _ghostDestinationSlots = {};
+  // Slots showing folder-creation color preview (dragged app covers ≥80% of tile)
+  final Set<int> _folderPreviewSlots = {};
+  // Key used to convert global drag coordinates to local Stack space
+  final GlobalKey _stackKey = GlobalKey();
+  // Latest cell dimensions — updated each build, used for overlap math
+  double _cellWidth = 0;
+  double _cellHeight = 0;
 
   @override
   void dispose() {
-    _cancelAllDisplacementTimers();
+    for (final t in _previewTimers.values) t.cancel();
+    _previewTimers.clear();
+    for (final t in _displacementTimers.values) t.cancel();
+    _displacementTimers.clear();
+    for (final ctrl in _displacementPreviewControllers.values) ctrl.dispose();
+    _displacementPreviewControllers.clear();
     _activeWidgetDragFeedbackSlot.dispose();
     super.dispose();
   }
 
   void _cancelAllDisplacementTimers() {
-    for (final t in _displacementTimers.values) {
-      t.cancel();
-    }
+    for (final t in _previewTimers.values) t.cancel();
+    _previewTimers.clear();
+    for (final t in _displacementTimers.values) t.cancel();
     _displacementTimers.clear();
+    final slots = _displacementPreviewControllers.keys.toList();
+    for (final slot in slots) {
+      _reversePreviewAnimation(slot);
+    }
+    if (mounted) {
+      setState(() {
+        _ghostDestinationSlots.clear();
+        _folderPreviewSlots.clear();
+      });
+    }
   }
 
   void _clearWidgetResizeSelection() {
@@ -136,18 +169,151 @@ class _CellLayoutViewState extends State<CellLayoutView> {
     _cancelAllDisplacementTimers();
   }
 
+  // withPreview=true  → 350ms preview slide + 650ms commit (app-over-app)
+  // withPreview=false → 240ms commit only (widget-over-app, existing behaviour)
   void _startDisplacementTimer(
-      int slot, WorkspaceCubit workspace, LauncherSettings settings) {
+    int slot,
+    WorkspaceCubit workspace,
+    LauncherSettings settings, {
+    bool withPreview = false,
+    Offset preferredDirection = Offset.zero,
+  }) {
     if (_displacementTimers.containsKey(slot)) return;
-    _displacementTimers[slot] = Timer(const Duration(milliseconds: 240), () {
-      _displacementTimers.remove(slot);
-      _tryDisplaceApp(slot, workspace, settings);
-    });
+
+    if (withPreview) {
+      final path = _findDisplacementPath(
+        slot,
+        settings.gridColumns,
+        settings.gridRows,
+        preferredDirection: preferredDirection,
+      );
+      if (path == null) return; // no room — skip entirely
+
+      final direction =
+          _displacementDirectionFromPath(slot, path, settings.gridColumns);
+      final destSlot = path[path.length - 2];
+
+      _previewTimers[slot] = Timer(const Duration(milliseconds: 350), () {
+        _previewTimers.remove(slot);
+        if (mounted) _startPreviewAnimation(slot, direction, destSlot);
+      });
+
+      _displacementTimers[slot] = Timer(const Duration(milliseconds: 650), () {
+        _displacementTimers.remove(slot);
+        _stopPreviewAnimation(slot);
+        _tryDisplaceApp(slot, workspace, settings,
+            preferredDirection: preferredDirection);
+      });
+    } else {
+      _displacementTimers[slot] = Timer(const Duration(milliseconds: 240), () {
+        _displacementTimers.remove(slot);
+        _tryDisplaceApp(slot, workspace, settings);
+      });
+    }
   }
 
   void _cancelDisplacementTimer(int slot) {
+    _previewTimers[slot]?.cancel();
+    _previewTimers.remove(slot);
     _displacementTimers[slot]?.cancel();
     _displacementTimers.remove(slot);
+    _reversePreviewAnimation(slot);
+    if (_folderPreviewSlots.contains(slot) && mounted) {
+      setState(() => _folderPreviewSlots.remove(slot));
+    }
+  }
+
+  // Returns the unit direction an app at [slot] should slide given [path].
+  // path is [emptySlot, ..., slot] so path[length-2] is the immediate neighbour
+  // the app moves toward.
+  Offset _displacementDirectionFromPath(int slot, List<int> path, int cols) {
+    if (path.length < 2) return Offset.zero;
+    final nextSlot = path[path.length - 2];
+    final dx = ((nextSlot % cols) - (slot % cols)).toDouble();
+    final dy = ((nextSlot ~/ cols) - (slot ~/ cols)).toDouble();
+    return Offset(dx, dy);
+  }
+
+  void _startPreviewAnimation(int slot, Offset direction, int destSlot) {
+    if (!mounted) return;
+    final ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
+    _displacementPreviewControllers[slot] = ctrl;
+    _displacementPreviewDirections[slot] = direction;
+    _previewDestSlots[slot] = destSlot;
+    setState(() => _ghostDestinationSlots.add(destSlot));
+    ctrl.forward();
+  }
+
+  // Called when displacement commits: remove preview state without reversing.
+  void _stopPreviewAnimation(int slot) {
+    final ctrl = _displacementPreviewControllers.remove(slot);
+    _displacementPreviewDirections.remove(slot);
+    final dest = _previewDestSlots.remove(slot);
+    ctrl?.dispose();
+    if (dest != null && mounted) {
+      setState(() => _ghostDestinationSlots.remove(dest));
+    }
+  }
+
+  // Called when drag leaves or is cancelled: reverse the slide animation first.
+  void _reversePreviewAnimation(int slot) {
+    final ctrl = _displacementPreviewControllers.remove(slot);
+    _displacementPreviewDirections.remove(slot);
+    final dest = _previewDestSlots.remove(slot);
+    if (ctrl != null) {
+      ctrl.reverse().whenComplete(ctrl.dispose);
+    }
+    if (dest != null && mounted) {
+      setState(() => _ghostDestinationSlots.remove(dest));
+    }
+  }
+
+  // Converts a global drag pointer position to local coordinates inside the
+  // slot tile. Returns null if the Stack RenderBox is not yet available.
+  Offset? _localPositionInSlot(Offset globalPos, int slot) {
+    if (_cellWidth <= 0 || _cellHeight <= 0) return null;
+    final box = _stackKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return null;
+    final localInStack = box.globalToLocal(globalPos);
+    final tileOrigin = _slotRect(slot, _cellWidth, _cellHeight).topLeft;
+    return localInStack - tileOrigin;
+  }
+
+  // Fraction of the app icon area (iconSize × iconSize) that the dragged icon
+  // covers when the pointer is at [localPos] in tile-local coordinates.
+  // Both icons are iconSize × iconSize; the target icon is centred in the tile.
+  double _overlapFraction(Offset localPos) {
+    final iconSize = widget.settings.iconSize.toDouble();
+    final dx = (localPos.dx - _cellWidth / 2).abs();
+    final dy = (localPos.dy - _cellHeight / 2).abs();
+    final overlapX = (iconSize - dx).clamp(0.0, iconSize);
+    final overlapY = (iconSize - dy).clamp(0.0, iconSize);
+    return (overlapX * overlapY) / (iconSize * iconSize);
+  }
+
+  // Direction the displaced app should move, derived from where the drag entered.
+  // The drag entered from the side closest to localPos, so push the existing app
+  // in the direction from localPos toward the tile center.
+  Offset _pushDirectionFromLocalPos(Offset localPos) {
+    final dx = _cellWidth / 2 - localPos.dx;
+    final dy = _cellHeight / 2 - localPos.dy;
+    if (dx.abs() >= dy.abs()) {
+      return dx > 0 ? const Offset(1, 0) : const Offset(-1, 0);
+    } else {
+      return dy > 0 ? const Offset(0, 1) : const Offset(0, -1);
+    }
+  }
+
+  // True when moving from [fromSlot] to [neighborSlot] matches [direction].
+  bool _matchesDirection(
+      int neighborSlot, int fromSlot, Offset direction, int cols) {
+    final dx = (neighborSlot % cols) - (fromSlot % cols);
+    final dy = (neighborSlot ~/ cols) - (fromSlot ~/ cols);
+    return (direction.dx != 0 && dx.sign == direction.dx.sign) ||
+        (direction.dy != 0 && dy.sign == direction.dy.sign);
   }
 
   bool _tryDisplaceApp(
@@ -155,12 +321,14 @@ class _CellLayoutViewState extends State<CellLayoutView> {
     WorkspaceCubit workspace,
     LauncherSettings settings, {
     int? ignoreSlot,
+    Offset preferredDirection = Offset.zero,
   }) {
     final path = _findDisplacementPath(
       appSlot,
       settings.gridColumns,
       settings.gridRows,
       ignoreSlot: ignoreSlot,
+      preferredDirection: preferredDirection,
     );
     if (path == null) return false;
 
@@ -217,6 +385,9 @@ class _CellLayoutViewState extends State<CellLayoutView> {
     // Pass the live workspace page when calling from _onDrop after earlier
     // displacements have already shifted slots — widget.page is stale then.
     WorkspacePage? page,
+    // When set, neighbors in this direction are explored first so the displaced
+    // app moves in the preferred direction before trying other directions.
+    Offset preferredDirection = Offset.zero,
   }) {
     final sourcePage = page ?? widget.page;
     final coveredSlots = _occupiedWidgetSlots(
@@ -230,7 +401,17 @@ class _CellLayoutViewState extends State<CellLayoutView> {
 
     while (queue.isNotEmpty) {
       final slot = queue.removeAt(0);
-      for (final next in _adjacentSlots(slot, cols, rows)) {
+      final neighbors = _adjacentSlots(slot, cols, rows);
+      // Bias BFS: try the preferred direction first at each step.
+      if (preferredDirection != Offset.zero) {
+        neighbors.sort((a, b) {
+          final aMatch = _matchesDirection(a, slot, preferredDirection, cols);
+          final bMatch = _matchesDirection(b, slot, preferredDirection, cols);
+          if (aMatch == bMatch) return 0;
+          return aMatch ? -1 : 1;
+        });
+      }
+      for (final next in neighbors) {
         if (previous.containsKey(next)) continue;
         if (coveredSlots.contains(next)) continue;
 
@@ -266,13 +447,19 @@ class _CellLayoutViewState extends State<CellLayoutView> {
 
   void _onDrop(
       BuildContext context, DragTargetDetails<DragPayload> details, int slot) {
+    // Capture folder-creation intent BEFORE _cancelAllDisplacementTimers clears it.
+    final isFolderCreationDrop = _folderPreviewSlots.contains(slot);
     // Always commit displacements on any successful drop
     widget.dragController.commitDisplacements();
     _cancelAllDisplacementTimers();
 
     final payload = details.data;
-    final target = widget.page.slots[slot];
     final workspace = context.read<WorkspaceCubit>();
+    final livePage = widget.pageIndex >= 0 &&
+            widget.pageIndex < workspace.state.pages.length
+        ? workspace.state.pages[widget.pageIndex]
+        : widget.page;
+    final target = livePage.slots[slot];
 
     if (!payload.isWidget) {
       _clearWidgetResizeSelection();
@@ -441,31 +628,46 @@ class _CellLayoutViewState extends State<CellLayoutView> {
         }
       }
     } else if (target is AppSlot && payload.sourcePage >= 0) {
-      final settings = context.read<SettingsCubit>().state;
-      final path = _findDisplacementPath(
-        slot,
-        settings.gridColumns,
-        settings.gridRows,
-        ignoreSlot:
-            payload.sourcePage == widget.pageIndex ? payload.sourceSlot : null,
-      );
-      final moved = path == null
-          ? workspace.swapItems(
-              payload.sourcePage,
-              payload.sourceSlot,
-              widget.pageIndex,
-              slot,
-            )
-          : workspace.moveItemWithDisplacement(
-              payload.sourcePage,
-              payload.sourceSlot,
-              widget.pageIndex,
-              slot,
-              path,
-            );
-      if (!moved) {
-        widget.dragController.cancelDrag();
-        return;
+      final item = payload.item;
+      if (isFolderCreationDrop && item is WorkspaceItemInfo) {
+        // Dragged app covered ≥80% of tile — create a folder instead of displacing.
+        if (payload.sourcePage == widget.pageIndex) {
+          workspace.createFolder(
+              widget.pageIndex, payload.sourceSlot, slot, '');
+        } else if (payload.sourcePage == kDrawerSourcePage) {
+          workspace.createFolderFromExternal(item, widget.pageIndex, slot, '');
+        } else {
+          workspace.createFolderFromExternal(item, widget.pageIndex, slot, '');
+          workspace.removeItem(payload.sourcePage, payload.sourceSlot);
+        }
+      } else {
+        final settings = context.read<SettingsCubit>().state;
+        final path = _findDisplacementPath(
+          slot,
+          settings.gridColumns,
+          settings.gridRows,
+          ignoreSlot: payload.sourcePage == widget.pageIndex
+              ? payload.sourceSlot
+              : null,
+        );
+        final moved = path == null
+            ? workspace.swapItems(
+                payload.sourcePage,
+                payload.sourceSlot,
+                widget.pageIndex,
+                slot,
+              )
+            : workspace.moveItemWithDisplacement(
+                payload.sourcePage,
+                payload.sourceSlot,
+                widget.pageIndex,
+                slot,
+                path,
+              );
+        if (!moved) {
+          widget.dragController.cancelDrag();
+          return;
+        }
       }
     } else {
       if (payload.sourcePage >= 0) {
@@ -508,10 +710,7 @@ class _CellLayoutViewState extends State<CellLayoutView> {
     if (payload.sourcePage == widget.pageIndex && payload.sourceSlot == slot) {
       return false;
     }
-    if (isCoveredByAnotherWidget) {
-      if (payload.isWidget) return false;
-      return target == null || target is EmptySlot;
-    }
+    if (isCoveredByAnotherWidget) return false;
     if (!payload.isWidget && isWidgetAnchor) return false;
 
     if (payload.isWidget) {
@@ -887,8 +1086,12 @@ class _CellLayoutViewState extends State<CellLayoutView> {
               (constraints.maxWidth - (columns - 1) * _gridGap) / columns;
           final cellHeight =
               (constraints.maxHeight - (rows - 1) * _gridGap) / rows;
+          // Keep instance copies so helpers called from onMove/onDrop can use them.
+          _cellWidth = cellWidth;
+          _cellHeight = cellHeight;
 
           return Stack(
+            key: _stackKey,
             children: [
               Positioned.fill(
                 child: GestureDetector(
@@ -990,7 +1193,50 @@ class _CellLayoutViewState extends State<CellLayoutView> {
                               _willAccept(d.data, content, slot, workspace),
                           onAcceptWithDetails: (d) => _onDrop(context, d, slot),
                           onMove: (details) {
-                            if (details.data.isWidget && content is AppSlot) {
+                            final isSourceSlot =
+                                details.data.sourcePage == widget.pageIndex &&
+                                    details.data.sourceSlot == slot;
+                            if (isSourceSlot) return;
+
+                            if (!details.data.isWidget &&
+                                content is AppSlot) {
+                              // Compute how much of the tile the dragged icon covers.
+                              final localPos = _localPositionInSlot(
+                                  details.offset, slot);
+                              if (localPos != null) {
+                                final overlap = _overlapFraction(localPos);
+                                if (overlap >= 0.25) {
+                                  // Deep hover → folder creation mode
+                                  _cancelDisplacementTimer(slot);
+                                  if (!_folderPreviewSlots.contains(slot)) {
+                                    setState(() =>
+                                        _folderPreviewSlots.add(slot));
+                                  }
+                                  return;
+                                }
+                              }
+                              // Shallow hover → displacement mode
+                              if (_folderPreviewSlots.contains(slot)) {
+                                setState(() =>
+                                    _folderPreviewSlots.remove(slot));
+                              }
+                              final settings =
+                                  context.read<SettingsCubit>().state;
+                              final pushDir = localPos != null
+                                  ? _pushDirectionFromLocalPos(localPos)
+                                  : Offset.zero;
+                              _startDisplacementTimer(
+                                  slot, workspace, settings,
+                                  withPreview: true,
+                                  preferredDirection: pushDir);
+                            } else if (!details.data.isWidget &&
+                                content is FolderSlot) {
+                              final settings =
+                                  context.read<SettingsCubit>().state;
+                              _startDisplacementTimer(slot, workspace, settings,
+                                  withPreview: true);
+                            } else if (details.data.isWidget &&
+                                content is AppSlot) {
                               final settings =
                                   context.read<SettingsCubit>().state;
                               _startDisplacementTimer(
@@ -998,8 +1244,50 @@ class _CellLayoutViewState extends State<CellLayoutView> {
                             }
                           },
                           onLeave: (_) => _cancelDisplacementTimer(slot),
-                          builder: (context, candidateData, _) {
+                          builder: (context, candidateData, rejectData) {
                             final isHovered = candidateData.isNotEmpty;
+                            final isRejected = rejectData.isNotEmpty;
+                            final isGhost =
+                                _ghostDestinationSlots.contains(slot);
+                            final isFolderPreview =
+                                _folderPreviewSlots.contains(slot);
+                            if (isRejected) {
+                              return AnimatedContainer(
+                                duration: const Duration(milliseconds: 100),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              );
+                            }
+                            if (isFolderPreview) {
+                              return AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withValues(alpha: 0.45),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color:
+                                        Colors.orange.withValues(alpha: 0.8),
+                                    width: 1.5,
+                                  ),
+                                ),
+                              );
+                            }
+                            if (isGhost && !isHovered) {
+                              return IgnorePointer(
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.35),
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
                             return AnimatedContainer(
                               duration: const Duration(milliseconds: 150),
                               decoration: isHovered
@@ -1122,13 +1410,29 @@ class _CellLayoutViewState extends State<CellLayoutView> {
       ];
     }
 
+    final previewCtrl = _displacementPreviewControllers[slot];
+    final previewDir = _displacementPreviewDirections[slot];
+    Widget slotWidget = _buildSlotContent(context, content, slot, appsState);
+    if (previewCtrl != null && previewDir != null) {
+      slotWidget = AnimatedBuilder(
+        animation: previewCtrl,
+        builder: (ctx, child) => Transform.translate(
+          offset: Offset(
+            previewDir.dx * cellWidth * 0.35 * previewCtrl.value,
+            previewDir.dy * cellHeight * 0.35 * previewCtrl.value,
+          ),
+          child: child,
+        ),
+        child: slotWidget,
+      );
+    }
     return [
       Positioned(
         left: _slotRect(slot, cellWidth, cellHeight).left,
         top: _slotRect(slot, cellWidth, cellHeight).top,
         width: cellWidth,
         height: cellHeight,
-        child: _buildSlotContent(context, content, slot, appsState),
+        child: slotWidget,
       ),
     ];
   }
@@ -1751,6 +2055,7 @@ class _CellLayoutViewState extends State<CellLayoutView> {
           folderSlot: slot,
           settings: widget.settings,
           badgeCounts: widget.badgeCounts,
+          dragController: widget.dragController,
           onClose: () {
             entry?.remove();
             entry = null;
