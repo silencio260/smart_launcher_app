@@ -180,6 +180,7 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
   Widget _buildBody() {
     final apps = context.watch<AppsCubit>().state.apps;
     final settings = context.watch<SettingsCubit>().state;
+    final mediaQuery = MediaQuery.of(context);
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -278,6 +279,9 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
                     iconShape: settings.iconShape,
                     gridColumns: settings.gridColumns,
                     gridRows: settings.gridRows,
+                    cellWidth: (mediaQuery.size.width - 16.0 - (settings.gridColumns - 1) * 8.0) / settings.gridColumns,
+                    cellHeight: ((mediaQuery.size.height - mediaQuery.padding.top - 8.0 - (settings.showDock ? (settings.dockIconSize + (settings.showDockLabels ? settings.dockIconSize * 0.6 : 16.0) + 24.0 + mediaQuery.padding.bottom + 12.0) : 0.0) - 16.0) - (settings.gridRows - 1) * 8.0) / settings.gridRows,
+                    showDebugOverlay: settings.showGridDebugOverlay,
                     onActivate: () => _activateWidget(p),
                   )),
             const Divider(height: 1, indent: 16, endIndent: 16),
@@ -294,6 +298,9 @@ class _WidgetTile extends StatelessWidget {
   final String iconShape;
   final int gridColumns;
   final int gridRows;
+  final double cellWidth;
+  final double cellHeight;
+  final bool showDebugOverlay;
   final VoidCallback onActivate;
 
   const _WidgetTile({
@@ -302,6 +309,9 @@ class _WidgetTile extends StatelessWidget {
     required this.iconShape,
     required this.gridColumns,
     required this.gridRows,
+    required this.cellWidth,
+    required this.cellHeight,
+    required this.showDebugOverlay,
     required this.onActivate,
   });
 
@@ -322,9 +332,15 @@ class _WidgetTile extends StatelessWidget {
         color: Colors.white.withValues(alpha: 0.06),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         clipBehavior: Clip.antiAlias,
-        child: useExpandedPreview
-            ? _buildExpandedPreview(minCellsX, minCellsY)
-            : _buildCompactRow(minCellsX, minCellsY),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            useExpandedPreview
+                ? _buildExpandedPreview(minCellsX, minCellsY)
+                : _buildCompactRow(minCellsX, minCellsY),
+            if (showDebugOverlay) _buildDebugInfo(minCellsX, minCellsY),
+          ],
+        ),
       ),
     );
   }
@@ -479,6 +495,70 @@ class _WidgetTile extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildDebugInfo(int spanX, int spanY) {
+    final gap = 8.0;
+    final defaultW = spanX * cellWidth + (spanX - 1) * gap;
+    final defaultH = spanY * cellHeight + (spanY - 1) * gap;
+
+    final minSpanX = provider.minSpanX.clamp(1, gridColumns);
+    final minSpanY = provider.minSpanY.clamp(1, gridRows);
+    final maxSpanX = provider.maxSpanX.clamp(1, gridColumns);
+    final maxSpanY = provider.maxSpanY.clamp(1, gridRows);
+    final minW = minSpanX * cellWidth + (minSpanX - 1) * gap;
+    final minH = minSpanY * cellHeight + (minSpanY - 1) * gap;
+    final maxW = maxSpanX * cellWidth + (maxSpanX - 1) * gap;
+    final maxH = maxSpanY * cellHeight + (maxSpanY - 1) * gap;
+
+    const labelStyle = TextStyle(fontSize: 10, color: Colors.amber, fontFamily: 'monospace');
+    const valueStyle = TextStyle(fontSize: 10, color: Colors.white70, fontFamily: 'monospace');
+
+    Widget row(String label, String value) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 1),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 120,
+                child: Text(label, style: labelStyle),
+              ),
+              Expanded(child: Text(value, style: valueStyle)),
+            ],
+          ),
+        );
+
+    return Container(
+      width: double.infinity,
+      color: Colors.black.withValues(alpha: 0.55),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('── DEBUG ──', style: labelStyle.copyWith(color: Colors.amber.withValues(alpha: 0.6))),
+          const SizedBox(height: 4),
+          row('default span', '${spanX}c × ${spanY}r'),
+          row('default dp', '${defaultW.toStringAsFixed(1)} × ${defaultH.toStringAsFixed(1)} dp'),
+          row('minWidth/Height', '${provider.minWidth} × ${provider.minHeight} dp'),
+          row('min span', '${minSpanX}c × ${minSpanY}r'),
+          row('min dp', '${minW.toStringAsFixed(1)} × ${minH.toStringAsFixed(1)} dp'),
+          row('max span', '${maxSpanX}c × ${maxSpanY}r'),
+          row('max dp', '${maxW.toStringAsFixed(1)} × ${maxH.toStringAsFixed(1)} dp'),
+          if (provider.targetCellWidth > 0 || provider.targetCellHeight > 0)
+            row('targetCell (API31)', '${provider.targetCellWidth}c × ${provider.targetCellHeight}r'),
+          row('resizeMode', _resizeModeLabel(provider.resizeMode)),
+          row('cell size', '${cellWidth.toStringAsFixed(1)} × ${cellHeight.toStringAsFixed(1)} dp'),
+          row('grid', '${gridColumns}col × ${gridRows}row'),
+        ],
+      ),
+    );
+  }
+
+  String _resizeModeLabel(int mode) => switch (mode) {
+        0 => 'none',
+        1 => 'horizontal',
+        2 => 'vertical',
+        3 => 'both',
+        _ => 'unknown ($mode)',
+      };
 }
 
 (int, int) _preferredCellsForProvider(
