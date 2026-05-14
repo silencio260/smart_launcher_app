@@ -21,6 +21,7 @@ import android.appwidget.AppWidgetHostView
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
+import org.xmlpull.v1.XmlPullParser
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -193,6 +194,38 @@ class WidgetsChannel(
         return drawableBytes to (drawableBytes != null)
     }
 
+    private fun previewLayoutUsesOnlyRemoteViewsSafeTags(
+        info: android.appwidget.AppWidgetProviderInfo,
+    ): Boolean {
+        return try {
+            val resources = context.packageManager.getResourcesForApplication(info.provider.packageName)
+            val parser = resources.getXml(info.previewLayout)
+            parser.use {
+                var event = it.eventType
+                while (event != XmlPullParser.END_DOCUMENT) {
+                    if (event == XmlPullParser.START_TAG) {
+                        val tagName = it.name ?: return@use false
+                        val className = if (tagName == "view") {
+                            it.getAttributeValue(null, "class").orEmpty()
+                        } else {
+                            tagName
+                        }
+                        if (className.contains('.') &&
+                            !className.startsWith("android.view.") &&
+                            !className.startsWith("android.widget.")
+                        ) {
+                            return@use false
+                        }
+                    }
+                    event = it.next()
+                }
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private fun renderPreviewLayoutBytes(
         info: android.appwidget.AppWidgetProviderInfo,
         sizing: WidgetSizing,
@@ -200,6 +233,7 @@ class WidgetsChannel(
         mainHandler: android.os.Handler,
     ): ByteArray? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || info.previewLayout == 0) return null
+        if (!previewLayoutUsesOnlyRemoteViewsSafeTags(info)) return null
 
         var preview: ByteArray? = null
         val latch = CountDownLatch(1)
@@ -384,11 +418,27 @@ class WidgetsChannel(
 
                 var resizeMinSpanX = 0
                 var resizeMinSpanY = 0
-                var defaultSpanX = 0
-                var defaultSpanY = 0
                 var maxSpanX = columns
                 var maxSpanY = rows
 
+                // Initial placement span uses only the current (portrait) profile so
+                // the widget isn't over-inflated by a landscape profile's smaller cells.
+                val placementProfile = profiles.first()
+                val defaultSpanX = spanForSize(
+                    padding.left + padding.right,
+                    info.minWidth,
+                    placementProfile.gapDp,
+                    placementProfile.cellWidthDp,
+                ).coerceIn(1, columns)
+                val defaultSpanY = spanForSize(
+                    padding.top + padding.bottom,
+                    info.minHeight,
+                    placementProfile.gapDp,
+                    placementProfile.cellHeightDp,
+                ).coerceIn(1, rows)
+
+                // Resize bounds and maxSpan still use the worst-case across all profiles
+                // so the widget is constrained correctly in every orientation.
                 profiles.forEach { current ->
                     resizeMinSpanX = maxOf(
                         resizeMinSpanX,
@@ -404,24 +454,6 @@ class WidgetsChannel(
                         spanForSize(
                             padding.top + padding.bottom,
                             info.minResizeHeight,
-                            current.gapDp,
-                            current.cellHeightDp,
-                        ),
-                    )
-                    defaultSpanX = maxOf(
-                        defaultSpanX,
-                        spanForSize(
-                            padding.left + padding.right,
-                            info.minWidth,
-                            current.gapDp,
-                            current.cellWidthDp,
-                        ),
-                    )
-                    defaultSpanY = maxOf(
-                        defaultSpanY,
-                        spanForSize(
-                            padding.top + padding.bottom,
-                            info.minHeight,
                             current.gapDp,
                             current.cellHeightDp,
                         ),
