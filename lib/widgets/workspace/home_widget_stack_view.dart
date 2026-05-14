@@ -17,8 +17,10 @@ class HomeWidgetStackView extends StatefulWidget {
   final int maxSpanX;
   final int maxSpanY;
   final int gridColumns;
+  final int gridRows;
   final double resizeStepX;
   final double resizeStepY;
+  final double gridGap;
   final bool isSelected;
   final VoidCallback onDismissResize;
   final void Function(int slot, int spanX, int spanY) onResize;
@@ -35,8 +37,10 @@ class HomeWidgetStackView extends StatefulWidget {
     required this.maxSpanX,
     required this.maxSpanY,
     required this.gridColumns,
+    required this.gridRows,
     required this.resizeStepX,
     required this.resizeStepY,
+    required this.gridGap,
     required this.isSelected,
     required this.onDismissResize,
     required this.onResize,
@@ -67,15 +71,27 @@ class _HomeWidgetStackViewState extends State<HomeWidgetStackView> {
     return Stack(
       children: [
         Positioned.fill(
-          child: PageView.builder(
-            controller: _pageController,
-            physics: const BouncingScrollPhysics(),
-            onPageChanged: (i) => setState(() => _currentIndex = i),
-            itemCount: widget.widgets.length,
-            itemBuilder: (_, i) {
-              final w = widget.widgets[i];
-              return _WidgetStackItem(appWidgetId: w.appWidgetId);
-            },
+          child: IgnorePointer(
+            ignoring: widget.isSelected,
+            child: PageView.builder(
+              controller: _pageController,
+              physics: const BouncingScrollPhysics(),
+              onPageChanged: (i) => setState(() => _currentIndex = i),
+              itemCount: widget.widgets.length,
+              itemBuilder: (_, i) {
+                final w = widget.widgets[i];
+                return _WidgetStackItem(
+                  widgetInfo: w,
+                  stackSpanX: widget.spanX,
+                  stackSpanY: widget.spanY,
+                  gridColumns: widget.gridColumns,
+                  gridRows: widget.gridRows,
+                  cellWidth: widget.resizeStepX - widget.gridGap,
+                  cellHeight: widget.resizeStepY - widget.gridGap,
+                  gap: widget.gridGap,
+                );
+              },
+            ),
           ),
         ),
         // Page dots
@@ -95,42 +111,70 @@ class _HomeWidgetStackViewState extends State<HomeWidgetStackView> {
 }
 
 class _WidgetStackItem extends StatelessWidget {
-  final int appWidgetId;
-  const _WidgetStackItem({required this.appWidgetId});
+  final LauncherWidgetInfo widgetInfo;
+  final int stackSpanX;
+  final int stackSpanY;
+  final int gridColumns;
+  final int gridRows;
+  final double cellWidth;
+  final double cellHeight;
+  final double gap;
+
+  const _WidgetStackItem({
+    required this.widgetInfo,
+    required this.stackSpanX,
+    required this.stackSpanY,
+    required this.gridColumns,
+    required this.gridRows,
+    required this.cellWidth,
+    required this.cellHeight,
+    required this.gap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return _MeasuredStackWidgetView(
-          appWidgetId: appWidgetId,
-          width: constraints.maxWidth,
-          height: constraints.maxHeight,
-        );
-      },
+    return _SpanSyncedStackWidgetView(
+      widgetInfo: widgetInfo,
+      stackSpanX: stackSpanX,
+      stackSpanY: stackSpanY,
+      gridColumns: gridColumns,
+      gridRows: gridRows,
+      cellWidth: cellWidth,
+      cellHeight: cellHeight,
+      gap: gap,
     );
   }
 }
 
-class _MeasuredStackWidgetView extends StatefulWidget {
-  final int appWidgetId;
-  final double width;
-  final double height;
+class _SpanSyncedStackWidgetView extends StatefulWidget {
+  final LauncherWidgetInfo widgetInfo;
+  final int stackSpanX;
+  final int stackSpanY;
+  final int gridColumns;
+  final int gridRows;
+  final double cellWidth;
+  final double cellHeight;
+  final double gap;
 
-  const _MeasuredStackWidgetView({
-    required this.appWidgetId,
-    required this.width,
-    required this.height,
+  const _SpanSyncedStackWidgetView({
+    required this.widgetInfo,
+    required this.stackSpanX,
+    required this.stackSpanY,
+    required this.gridColumns,
+    required this.gridRows,
+    required this.cellWidth,
+    required this.cellHeight,
+    required this.gap,
   });
 
   @override
-  State<_MeasuredStackWidgetView> createState() =>
-      _MeasuredStackWidgetViewState();
+  State<_SpanSyncedStackWidgetView> createState() =>
+      _SpanSyncedStackWidgetViewState();
 }
 
-class _MeasuredStackWidgetViewState extends State<_MeasuredStackWidgetView> {
-  int? _lastWidth;
-  int? _lastHeight;
+class _SpanSyncedStackWidgetViewState
+    extends State<_SpanSyncedStackWidgetView> {
+  String? _lastSizeKey;
 
   @override
   void initState() {
@@ -139,7 +183,7 @@ class _MeasuredStackWidgetViewState extends State<_MeasuredStackWidgetView> {
   }
 
   @override
-  void didUpdateWidget(covariant _MeasuredStackWidgetView oldWidget) {
+  void didUpdateWidget(covariant _SpanSyncedStackWidgetView oldWidget) {
     super.didUpdateWidget(oldWidget);
     _scheduleSizeSync();
   }
@@ -147,14 +191,32 @@ class _MeasuredStackWidgetViewState extends State<_MeasuredStackWidgetView> {
   void _scheduleSizeSync() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final width = widget.width.round();
-      final height = widget.height.round();
-      if (width <= 0 || height <= 0) return;
-      if (_lastWidth == width && _lastHeight == height) return;
+      if (widget.stackSpanX <= 0 || widget.stackSpanY <= 0) return;
+      final sizeKey = [
+        widget.widgetInfo.appWidgetId,
+        widget.stackSpanX,
+        widget.stackSpanY,
+        widget.gridColumns,
+        widget.gridRows,
+        widget.cellWidth.round(),
+        widget.cellHeight.round(),
+        widget.gap.round(),
+      ].join(':');
+      if (_lastSizeKey == sizeKey) return;
 
-      _lastWidth = width;
-      _lastHeight = height;
-      LauncherService.updateWidgetSize(widget.appWidgetId, width, height);
+      _lastSizeKey = sizeKey;
+      LauncherService.updateWidgetSize(
+        widget.widgetInfo.appWidgetId,
+        widget.widgetInfo.providerPackage,
+        widget.widgetInfo.providerClass,
+        widget.stackSpanX,
+        widget.stackSpanY,
+        gridColumns: widget.gridColumns,
+        gridRows: widget.gridRows,
+        cellWidth: widget.cellWidth,
+        cellHeight: widget.cellHeight,
+        gap: widget.gap,
+      );
     });
   }
 
@@ -162,7 +224,7 @@ class _MeasuredStackWidgetViewState extends State<_MeasuredStackWidgetView> {
   Widget build(BuildContext context) {
     return AndroidView(
       viewType: 'com.genrevibes.smartlauncher/widget_host_view',
-      creationParams: {'appWidgetId': widget.appWidgetId},
+      creationParams: {'appWidgetId': widget.widgetInfo.appWidgetId},
       creationParamsCodec: const StandardMessageCodec(),
       onPlatformViewCreated: (_) => _scheduleSizeSync(),
     );

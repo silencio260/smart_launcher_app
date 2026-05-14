@@ -17,8 +17,10 @@ class HomeWidgetSlot extends StatefulWidget {
   final int maxSpanX;
   final int maxSpanY;
   final int gridColumns;
+  final int gridRows;
   final double resizeStepX;
   final double resizeStepY;
+  final double gridGap;
   final bool isSelected;
   final VoidCallback onDismissResize;
   final void Function(int slot, int spanX, int spanY) onResize;
@@ -33,8 +35,10 @@ class HomeWidgetSlot extends StatefulWidget {
     required this.maxSpanX,
     required this.maxSpanY,
     required this.gridColumns,
+    required this.gridRows,
     required this.resizeStepX,
     required this.resizeStepY,
+    required this.gridGap,
     required this.isSelected,
     required this.onDismissResize,
     required this.onResize,
@@ -50,7 +54,19 @@ class _HomeWidgetSlotState extends State<HomeWidgetSlot> {
     final w = widget.widget;
     return Stack(
       children: [
-        Positioned.fill(child: _WidgetView(widgetInfo: w)),
+        Positioned.fill(
+          child: IgnorePointer(
+            ignoring: widget.isSelected,
+            child: _WidgetView(
+              widgetInfo: w,
+              gridColumns: widget.gridColumns,
+              gridRows: widget.gridRows,
+              cellWidth: widget.resizeStepX - widget.gridGap,
+              cellHeight: widget.resizeStepY - widget.gridGap,
+              gap: widget.gridGap,
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -58,8 +74,20 @@ class _HomeWidgetSlotState extends State<HomeWidgetSlot> {
 
 class _WidgetView extends StatelessWidget {
   final LauncherWidgetInfo widgetInfo;
+  final int gridColumns;
+  final int gridRows;
+  final double cellWidth;
+  final double cellHeight;
+  final double gap;
 
-  const _WidgetView({required this.widgetInfo});
+  const _WidgetView({
+    required this.widgetInfo,
+    required this.gridColumns,
+    required this.gridRows,
+    required this.cellWidth,
+    required this.cellHeight,
+    required this.gap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -70,40 +98,44 @@ class _WidgetView extends StatelessWidget {
       return const Center(child: ClockWidget());
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return _MeasuredWidgetHostView(
-          appWidgetId: widgetInfo.appWidgetId,
-          width: constraints.maxWidth,
-          height: constraints.maxHeight,
-        );
-      },
+    return _SpanSyncedWidgetHostView(
+      widgetInfo: widgetInfo,
+      gridColumns: gridColumns,
+      gridRows: gridRows,
+      cellWidth: cellWidth,
+      cellHeight: cellHeight,
+      gap: gap,
     );
   }
 }
 
-class _MeasuredWidgetHostView extends StatefulWidget {
-  final int appWidgetId;
-  final double width;
-  final double height;
+class _SpanSyncedWidgetHostView extends StatefulWidget {
+  final LauncherWidgetInfo widgetInfo;
+  final int gridColumns;
+  final int gridRows;
+  final double cellWidth;
+  final double cellHeight;
+  final double gap;
 
-  const _MeasuredWidgetHostView({
-    required this.appWidgetId,
-    required this.width,
-    required this.height,
+  const _SpanSyncedWidgetHostView({
+    required this.widgetInfo,
+    required this.gridColumns,
+    required this.gridRows,
+    required this.cellWidth,
+    required this.cellHeight,
+    required this.gap,
   });
 
   @override
-  State<_MeasuredWidgetHostView> createState() =>
-      _MeasuredWidgetHostViewState();
+  State<_SpanSyncedWidgetHostView> createState() =>
+      _SpanSyncedWidgetHostViewState();
 }
 
-class _MeasuredWidgetHostViewState extends State<_MeasuredWidgetHostView> {
-  int? _lastWidth;
-  int? _lastHeight;
+class _SpanSyncedWidgetHostViewState extends State<_SpanSyncedWidgetHostView> {
+  String? _lastSizeKey;
 
   @override
-  void didUpdateWidget(covariant _MeasuredWidgetHostView oldWidget) {
+  void didUpdateWidget(covariant _SpanSyncedWidgetHostView oldWidget) {
     super.didUpdateWidget(oldWidget);
     _scheduleSizeSync();
   }
@@ -117,14 +149,32 @@ class _MeasuredWidgetHostViewState extends State<_MeasuredWidgetHostView> {
   void _scheduleSizeSync() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final width = widget.width.round();
-      final height = widget.height.round();
-      if (width <= 0 || height <= 0) return;
-      if (_lastWidth == width && _lastHeight == height) return;
+      if (widget.widgetInfo.spanX <= 0 || widget.widgetInfo.spanY <= 0) return;
+      final sizeKey = [
+        widget.widgetInfo.appWidgetId,
+        widget.widgetInfo.spanX,
+        widget.widgetInfo.spanY,
+        widget.gridColumns,
+        widget.gridRows,
+        widget.cellWidth.round(),
+        widget.cellHeight.round(),
+        widget.gap.round(),
+      ].join(':');
+      if (_lastSizeKey == sizeKey) return;
 
-      _lastWidth = width;
-      _lastHeight = height;
-      LauncherService.updateWidgetSize(widget.appWidgetId, width, height);
+      _lastSizeKey = sizeKey;
+      LauncherService.updateWidgetSize(
+        widget.widgetInfo.appWidgetId,
+        widget.widgetInfo.providerPackage,
+        widget.widgetInfo.providerClass,
+        widget.widgetInfo.spanX,
+        widget.widgetInfo.spanY,
+        gridColumns: widget.gridColumns,
+        gridRows: widget.gridRows,
+        cellWidth: widget.cellWidth,
+        cellHeight: widget.cellHeight,
+        gap: widget.gap,
+      );
     });
   }
 
@@ -132,7 +182,7 @@ class _MeasuredWidgetHostViewState extends State<_MeasuredWidgetHostView> {
   Widget build(BuildContext context) {
     return AndroidView(
       viewType: 'com.genrevibes.smartlauncher/widget_host_view',
-      creationParams: {'appWidgetId': widget.appWidgetId},
+      creationParams: {'appWidgetId': widget.widgetInfo.appWidgetId},
       creationParamsCodec: const StandardMessageCodec(),
       onPlatformViewCreated: (_) => _scheduleSizeSync(),
     );

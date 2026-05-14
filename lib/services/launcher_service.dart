@@ -33,10 +33,24 @@ class LauncherService {
   }
 
   /// Returns a list of all app widget providers installed on the device.
-  static Future<List<WidgetProviderInfo>> getAvailableWidgets() async {
+  static Future<List<WidgetProviderInfo>> getAvailableWidgets({
+    int? gridColumns,
+    int? gridRows,
+    double? cellWidth,
+    double? cellHeight,
+    double? gap,
+  }) async {
     try {
-      final List<dynamic> raw =
-          await _widgets.invokeMethod('getAvailableWidgets');
+      final List<dynamic> raw = await _widgets.invokeMethod(
+        'getAvailableWidgets',
+        {
+          if (gridColumns != null) 'gridColumns': gridColumns,
+          if (gridRows != null) 'gridRows': gridRows,
+          if (cellWidth != null) 'cellWidth': cellWidth,
+          if (cellHeight != null) 'cellHeight': cellHeight,
+          if (gap != null) 'gap': gap,
+        },
+      );
       return raw.map((e) => WidgetProviderInfo.fromMap(e as Map)).toList();
     } catch (_) {
       return [];
@@ -60,14 +74,28 @@ class LauncherService {
 
   static Future<void> updateWidgetSize(
     int appWidgetId,
-    int width,
-    int height,
-  ) async {
+    String providerPackage,
+    String providerClass,
+    int spanX,
+    int spanY, {
+    int? gridColumns,
+    int? gridRows,
+    double? cellWidth,
+    double? cellHeight,
+    double? gap,
+  }) async {
     try {
       await _widgets.invokeMethod('updateWidgetSize', {
         'appWidgetId': appWidgetId,
-        'width': width,
-        'height': height,
+        'providerPackage': providerPackage,
+        'providerClass': providerClass,
+        'spanX': spanX,
+        'spanY': spanY,
+        if (gridColumns != null) 'gridColumns': gridColumns,
+        if (gridRows != null) 'gridRows': gridRows,
+        if (cellWidth != null) 'cellWidth': cellWidth,
+        if (cellHeight != null) 'cellHeight': cellHeight,
+        if (gap != null) 'gap': gap,
       });
     } catch (_) {}
   }

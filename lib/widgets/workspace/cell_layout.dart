@@ -50,8 +50,13 @@ class CellLayoutView extends StatefulWidget {
 }
 
 class _CellLayoutViewState extends State<CellLayoutView>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
   static const double _gridGap = 8;
+  static const int _resizeHorizontal = 1;
+  static const int _resizeVertical = 2;
+
   static const double _widgetDragActivationDistance = 8;
   int? _draggingSlot;
   int? _selectedWidgetSlot;
@@ -79,8 +84,27 @@ class _CellLayoutViewState extends State<CellLayoutView>
   // Latest cell dimensions — updated each build, used for overlap math
   double _cellWidth = 0;
   double _cellHeight = 0;
+  static String? _lastWidgetMetadataRefreshKey;
   OverlayEntry? _openFolderEntry;
   String? _openFolderId;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _normalizePersistedWidgetSpans();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant CellLayoutView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.page != widget.page) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _normalizePersistedWidgetSpans();
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -1079,6 +1103,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final appsState = context.watch<AppsCubit>().state;
     final totalSlots = widget.settings.gridColumns * widget.settings.gridRows;
     final coveredSlots = _occupiedWidgetSlots(
@@ -1089,7 +1114,6 @@ class _CellLayoutViewState extends State<CellLayoutView>
     final selectedContent = _selectedWidgetSlot == null
         ? null
         : widget.page.slots[_selectedWidgetSlot!];
-    _normalizePersistedWidgetSpans();
     if (_selectedWidgetSlot != null &&
         selectedContent is! WidgetSlot &&
         selectedContent is! WidgetStackSlot) {
@@ -1111,6 +1135,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
           // Keep instance copies so helpers called from onMove/onDrop can use them.
           _cellWidth = cellWidth;
           _cellHeight = cellHeight;
+          _refreshWorkspaceWidgetMetadata();
 
           return Stack(
             key: _stackKey,
@@ -1548,8 +1573,10 @@ class _CellLayoutViewState extends State<CellLayoutView>
       maxSpanX: maxSpanX,
       maxSpanY: maxSpanY,
       gridColumns: widget.settings.gridColumns,
+      gridRows: widget.settings.gridRows,
       resizeStepX: resizeStepX,
       resizeStepY: resizeStepY,
+      gridGap: _gridGap,
       isSelected: isSelected,
       onDismissResize: _clearWidgetResizeSelection,
       onResize: (nextSlot, nextSpanX, nextSpanY) =>
@@ -1576,21 +1603,11 @@ class _CellLayoutViewState extends State<CellLayoutView>
         slot: slot,
         width: _spanDragWidth(effectiveSpanX, resizeStepX),
         height: _spanDragHeight(effectiveSpanY, resizeStepY),
-        child: HomeWidgetSlot(
-          widget: w,
-          page: widget.pageIndex,
-          slot: slot,
-          minSpanX: minSpanX,
-          minSpanY: minSpanY,
-          maxSpanX: maxSpanX,
-          maxSpanY: maxSpanY,
-          gridColumns: widget.settings.gridColumns,
-          resizeStepX: resizeStepX,
-          resizeStepY: resizeStepY,
-          isSelected: false,
-          onDismissResize: _clearWidgetResizeSelection,
-          onResize: (nextSlot, nextSpanX, nextSpanY) =>
-              _resizeWidget(slot, w, nextSlot, nextSpanX, nextSpanY),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(18),
+          ),
         ),
       ),
       childWhenDragging: ValueListenableBuilder<int?>(
@@ -1607,8 +1624,10 @@ class _CellLayoutViewState extends State<CellLayoutView>
               maxSpanX: maxSpanX,
               maxSpanY: maxSpanY,
               gridColumns: widget.settings.gridColumns,
+              gridRows: widget.settings.gridRows,
               resizeStepX: resizeStepX,
               resizeStepY: resizeStepY,
+              gridGap: _gridGap,
               isSelected: activeSlot != slot,
               onDismissResize: _clearWidgetResizeSelection,
               onResize: (nextSlot, nextSpanX, nextSpanY) =>
@@ -1684,8 +1703,10 @@ class _CellLayoutViewState extends State<CellLayoutView>
       maxSpanX: safeMaxSpanX,
       maxSpanY: safeMaxSpanY,
       gridColumns: widget.settings.gridColumns,
+      gridRows: widget.settings.gridRows,
       resizeStepX: resizeStepX,
       resizeStepY: resizeStepY,
+      gridGap: _gridGap,
       isSelected: isSelected,
       onDismissResize: _clearWidgetResizeSelection,
       onResize: (nextSlot, nextSpanX, nextSpanY) =>
@@ -1723,8 +1744,10 @@ class _CellLayoutViewState extends State<CellLayoutView>
           maxSpanX: safeMaxSpanX,
           maxSpanY: safeMaxSpanY,
           gridColumns: widget.settings.gridColumns,
+          gridRows: widget.settings.gridRows,
           resizeStepX: resizeStepX,
           resizeStepY: resizeStepY,
+          gridGap: _gridGap,
           isSelected: false,
           onDismissResize: _clearWidgetResizeSelection,
           onResize: (nextSlot, nextSpanX, nextSpanY) =>
@@ -1747,8 +1770,10 @@ class _CellLayoutViewState extends State<CellLayoutView>
               maxSpanX: safeMaxSpanX,
               maxSpanY: safeMaxSpanY,
               gridColumns: widget.settings.gridColumns,
+              gridRows: widget.settings.gridRows,
               resizeStepX: resizeStepX,
               resizeStepY: resizeStepY,
+              gridGap: _gridGap,
               isSelected: activeSlot != slot,
               onDismissResize: _clearWidgetResizeSelection,
               onResize: (nextSlot, nextSpanX, nextSpanY) => _resizeWidgetStack(
@@ -2108,11 +2133,30 @@ class _CellLayoutViewState extends State<CellLayoutView>
           .clamp(1, widget.settings.gridColumns)
           .toInt();
     }
+    if (widgetInfo.minSpanX > 0) {
+      final span =
+          widgetInfo.minSpanX.clamp(1, widget.settings.gridColumns).toInt();
+      // If the stored minSpanX fills the entire grid but the widget claims to
+      // support horizontal resize, its minResizeWidth was unreasonably large —
+      // allow free resize rather than blocking it entirely.
+      if (span >= widget.settings.gridColumns &&
+          _canResizeHorizontally(widgetInfo)) {
+        return 1;
+      }
+      return span;
+    }
     final sourceWidth = widgetInfo.minResizeWidth > 0
         ? widgetInfo.minResizeWidth
         : widgetInfo.minWidth;
-    if (sourceWidth <= 0) return 1;
-    return (sourceWidth / 110).ceil().clamp(1, widget.settings.gridColumns);
+    final span = _minSpanForSize(
+      sourceWidth,
+      _cellWidth,
+      widget.settings.gridColumns,
+    );
+    if (span >= widget.settings.gridColumns && _canResizeHorizontally(widgetInfo)) {
+      return 1;
+    }
+    return span;
   }
 
   int _minSpanYForWidget(LauncherWidgetInfo widgetInfo) {
@@ -2121,11 +2165,26 @@ class _CellLayoutViewState extends State<CellLayoutView>
           .clamp(1, widget.settings.gridRows)
           .toInt();
     }
+    if (widgetInfo.minSpanY > 0) {
+      final span =
+          widgetInfo.minSpanY.clamp(1, widget.settings.gridRows).toInt();
+      if (span >= widget.settings.gridRows && _canResizeVertically(widgetInfo)) {
+        return 1;
+      }
+      return span;
+    }
     final sourceHeight = widgetInfo.minResizeHeight > 0
         ? widgetInfo.minResizeHeight
         : widgetInfo.minHeight;
-    if (sourceHeight <= 0) return 1;
-    return (sourceHeight / 110).ceil().clamp(1, widget.settings.gridRows);
+    final span = _minSpanForSize(
+      sourceHeight,
+      _cellHeight,
+      widget.settings.gridRows,
+    );
+    if (span >= widget.settings.gridRows && _canResizeVertically(widgetInfo)) {
+      return 1;
+    }
+    return span;
   }
 
   int _maxSpanXForWidget(
@@ -2137,10 +2196,18 @@ class _CellLayoutViewState extends State<CellLayoutView>
           .clamp(minSpanX, widget.settings.gridColumns)
           .toInt();
     }
+    if (widgetInfo.maxSpanX > 0) {
+      return widgetInfo.maxSpanX
+          .clamp(minSpanX, widget.settings.gridColumns)
+          .toInt();
+    }
     if (widgetInfo.maxResizeWidth <= 0) return widget.settings.gridColumns;
-    return (widgetInfo.maxResizeWidth / 110)
-        .floor()
-        .clamp(minSpanX, widget.settings.gridColumns);
+    return _maxSpanForSize(
+      widgetInfo.maxResizeWidth,
+      _cellWidth,
+      widget.settings.gridColumns,
+      minSpanX,
+    );
   }
 
   int _maxSpanYForWidget(
@@ -2152,10 +2219,57 @@ class _CellLayoutViewState extends State<CellLayoutView>
           .clamp(minSpanY, widget.settings.gridRows)
           .toInt();
     }
+    if (widgetInfo.maxSpanY > 0) {
+      return widgetInfo.maxSpanY
+          .clamp(minSpanY, widget.settings.gridRows)
+          .toInt();
+    }
     if (widgetInfo.maxResizeHeight <= 0) return widget.settings.gridRows;
-    return (widgetInfo.maxResizeHeight / 110)
-        .floor()
-        .clamp(minSpanY, widget.settings.gridRows);
+    return _maxSpanForSize(
+      widgetInfo.maxResizeHeight,
+      _cellHeight,
+      widget.settings.gridRows,
+      minSpanY,
+    );
+  }
+
+  int _minSpanForSize(int size, double cellSize, int maxSpan) {
+    if (size <= 0 || cellSize <= 0) return 1;
+    final span = ((size + _gridGap) / (cellSize + _gridGap)).ceil();
+    return span.clamp(1, maxSpan).toInt();
+  }
+
+  int _maxSpanForSize(
+    int size,
+    double cellSize,
+    int maxSpan,
+    int minSpan,
+  ) {
+    if (size <= 0 || cellSize <= 0) return maxSpan;
+    final span = ((size + _gridGap) / (cellSize + _gridGap)).ceil();
+    return span.clamp(minSpan, maxSpan).toInt();
+  }
+
+  bool _canResizeHorizontally(LauncherWidgetInfo widgetInfo) {
+    if (_isDefaultClockWidget(widgetInfo)) return true;
+    return (_effectiveResizeMode(widgetInfo) & _resizeHorizontal) != 0;
+  }
+
+  bool _canResizeVertically(LauncherWidgetInfo widgetInfo) {
+    if (_isDefaultClockWidget(widgetInfo)) return true;
+    return (_effectiveResizeMode(widgetInfo) & _resizeVertical) != 0;
+  }
+
+  int _effectiveResizeMode(LauncherWidgetInfo widgetInfo) {
+    return widgetInfo.resizeMode;
+  }
+
+  bool _canResizeStackHorizontally(List<LauncherWidgetInfo> widgets) {
+    return widgets.every(_canResizeHorizontally);
+  }
+
+  bool _canResizeStackVertically(List<LauncherWidgetInfo> widgets) {
+    return widgets.every(_canResizeVertically);
   }
 
   bool _isDefaultClockWidget(LauncherWidgetInfo widgetInfo) {
@@ -2163,6 +2277,45 @@ class _CellLayoutViewState extends State<CellLayoutView>
         widgetInfo.providerPackage ==
             WorkspaceCubit.defaultClockProviderPackage &&
         widgetInfo.providerClass == WorkspaceCubit.defaultClockProviderClass;
+  }
+
+  void _refreshWorkspaceWidgetMetadata() {
+    if (_cellWidth <= 0 || _cellHeight <= 0) return;
+    final hasSystemWidgets = widget.page.slots.values.any((content) {
+      if (content is WidgetSlot) return !content.widget.isCustomWidget;
+      if (content is WidgetStackSlot) {
+        return content.widgets.any((widget) => !widget.isCustomWidget);
+      }
+      return false;
+    });
+    if (!hasSystemWidgets) return;
+
+    final key = [
+      widget.settings.gridColumns,
+      widget.settings.gridRows,
+      _cellWidth.round(),
+      _cellHeight.round(),
+      _gridGap.round(),
+    ].join(':');
+    if (_lastWidgetMetadataRefreshKey == key) return;
+    _lastWidgetMetadataRefreshKey = key;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final providers = await LauncherService.getAvailableWidgets(
+        gridColumns: widget.settings.gridColumns,
+        gridRows: widget.settings.gridRows,
+        cellWidth: _cellWidth,
+        cellHeight: _cellHeight,
+        gap: _gridGap,
+      );
+      if (!mounted) return;
+      context.read<WorkspaceCubit>().refreshWidgetProviderMetadata(
+            providers,
+            widget.settings.gridColumns,
+            widget.settings.gridRows,
+          );
+    });
   }
 
   void _resizeSelectedWidgetBySteps(
@@ -2176,9 +2329,21 @@ class _CellLayoutViewState extends State<CellLayoutView>
 
     switch (content) {
       case WidgetSlot(:final widget):
+        if (!_canResizeHorizontally(widget)) dxSteps = 0;
+        if (!_canResizeVertically(widget)) dySteps = 0;
+        if (dxSteps == 0 && dySteps == 0) return;
         final minSpanX = _minSpanXForWidget(widget);
         final minSpanY = _minSpanYForWidget(widget);
         final (currentSpanX, currentSpanY) = _effectiveSpanForContent(content);
+        final computedMaxSpanX = _maxSpanXForWidget(widget, minSpanX: minSpanX);
+        final computedMaxSpanY = _maxSpanYForWidget(widget, minSpanY: minSpanY);
+        debugPrint('[RESIZE] slot=$slot dir=$direction dx=$dxSteps dy=$dySteps '
+            'minSpanX=$minSpanX maxSpanX=$computedMaxSpanX '
+            'minSpanY=$minSpanY maxSpanY=$computedMaxSpanY '
+            'currentSpanX=$currentSpanX currentSpanY=$currentSpanY '
+            'storedMinSpanX=${widget.minSpanX} storedMaxSpanX=${widget.maxSpanX} '
+            'storedMinSpanY=${widget.minSpanY} storedMaxSpanY=${widget.maxSpanY} '
+            'resizeMode=${widget.resizeMode}');
         final candidate = _resizeCandidateFromSteps(
           direction: direction,
           currentSlot: slot,
@@ -2186,15 +2351,19 @@ class _CellLayoutViewState extends State<CellLayoutView>
           currentSpanY: currentSpanY,
           minSpanX: minSpanX,
           minSpanY: minSpanY,
-          maxSpanX: _maxSpanXForWidget(widget, minSpanX: minSpanX),
-          maxSpanY: _maxSpanYForWidget(widget, minSpanY: minSpanY),
+          maxSpanX: computedMaxSpanX,
+          maxSpanY: computedMaxSpanY,
           dxSteps: dxSteps,
           dySteps: dySteps,
         );
+        debugPrint('[RESIZE] candidate=$candidate');
         if (candidate == null) return;
         final (nextSlot, nextSpanX, nextSpanY) = candidate;
         _resizeWidget(slot, widget, nextSlot, nextSpanX, nextSpanY);
       case WidgetStackSlot(:final widgets, :final spanX, :final spanY):
+        if (!_canResizeStackHorizontally(widgets)) dxSteps = 0;
+        if (!_canResizeStackVertically(widgets)) dySteps = 0;
+        if (dxSteps == 0 && dySteps == 0) return;
         final minSpanX = widgets.fold<int>(
           1,
           (value, widget) => math.max(value, _minSpanXForWidget(widget)),

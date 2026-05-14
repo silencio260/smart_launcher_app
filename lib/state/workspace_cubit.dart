@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/workspace_item_info.dart';
 import '../models/folder_info.dart';
 import '../models/launcher_widget_info.dart';
+import '../models/widget_provider_info.dart';
 import '../models/item_info.dart';
 import '../widgets/workspace/widget_grid_math.dart';
 
@@ -914,6 +916,125 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     }
   }
 
+  void refreshWidgetProviderMetadata(
+    List<WidgetProviderInfo> providers,
+    int columns,
+    int rows,
+  ) {
+    if (providers.isEmpty) return;
+    final byProvider = {
+      for (final provider in providers)
+        '${provider.packageName}/${provider.providerClass}': provider,
+    };
+    var changed = false;
+    final pages = state.pages.map((page) {
+      final slots = Map<int, SlotContent>.from(page.slots);
+      slots.updateAll((slot, content) {
+        if (content is WidgetSlot) {
+          final updated = _refreshWidgetInfo(
+            content.widget,
+            byProvider,
+            columns,
+            rows,
+          );
+          if (!identical(updated, content.widget)) changed = true;
+          return WidgetSlot(updated);
+        }
+        if (content is WidgetStackSlot) {
+          var stackChanged = false;
+          final widgets = content.widgets.map((widget) {
+            final updated = _refreshWidgetInfo(
+              widget,
+              byProvider,
+              columns,
+              rows,
+            );
+            if (!identical(updated, widget)) stackChanged = true;
+            return updated;
+          }).toList();
+          if (!stackChanged) return content;
+
+          final minSpanX = widgets.fold<int>(
+            1,
+            (value, widget) =>
+                value > widget.minSpanX ? value : widget.minSpanX,
+          );
+          final minSpanY = widgets.fold<int>(
+            1,
+            (value, widget) =>
+                value > widget.minSpanY ? value : widget.minSpanY,
+          );
+          final maxSpanX = widgets.fold<int>(
+            columns,
+            (value, widget) =>
+                value < widget.maxSpanX ? value : widget.maxSpanX,
+          );
+          final maxSpanY = widgets.fold<int>(
+            rows,
+            (value, widget) =>
+                value < widget.maxSpanY ? value : widget.maxSpanY,
+          );
+          changed = true;
+          return WidgetStackSlot(
+            widgets,
+            spanX: content.spanX
+                .clamp(minSpanX, maxSpanX < minSpanX ? minSpanX : maxSpanX)
+                .toInt(),
+            spanY: content.spanY
+                .clamp(minSpanY, maxSpanY < minSpanY ? minSpanY : maxSpanY)
+                .toInt(),
+          );
+        }
+        return content;
+      });
+      return WorkspacePage(slots);
+    }).toList();
+
+    if (!changed) return;
+    emit(state.copyWith(pages: pages));
+    saveLayout();
+  }
+
+  LauncherWidgetInfo _refreshWidgetInfo(
+    LauncherWidgetInfo widget,
+    Map<String, WidgetProviderInfo> providers,
+    int columns,
+    int rows,
+  ) {
+    if (widget.isCustomWidget) return widget;
+    final provider =
+        providers['${widget.providerPackage}/${widget.providerClass}'];
+    if (provider == null) return widget;
+    var minSpanX = provider.minSpanX.clamp(1, columns).toInt();
+    var minSpanY = provider.minSpanY.clamp(1, rows).toInt();
+    // If the provider's minResize is so large it spans the entire grid, but the
+    // widget declares itself resizable, treat the floor as 1 — same override
+    // applied in CellLayout._minSpanXForWidget / _minSpanYForWidget.
+    if (minSpanX >= columns && provider.resizeMode & 1 != 0) minSpanX = 1;
+    if (minSpanY >= rows && provider.resizeMode & 2 != 0) minSpanY = 1;
+    final maxSpanX = provider.maxSpanX.clamp(minSpanX, columns).toInt();
+    final maxSpanY = provider.maxSpanY.clamp(minSpanY, rows).toInt();
+    debugPrint('[REFRESH_WIDGET] ${provider.packageName}/${provider.providerClass} '
+        'providerMin=(${ provider.minSpanX},${ provider.minSpanY}) '
+        'effectiveMin=($minSpanX,$minSpanY) max=($maxSpanX,$maxSpanY) '
+        'storedSpan=(${widget.spanX},${widget.spanY}) resizeMode=${provider.resizeMode}');
+    return widget.copyWith(
+      minWidth: provider.minWidth,
+      minHeight: provider.minHeight,
+      minResizeWidth: provider.minResizeWidth,
+      minResizeHeight: provider.minResizeHeight,
+      maxResizeWidth: provider.maxResizeWidth,
+      maxResizeHeight: provider.maxResizeHeight,
+      resizeMode: provider.resizeMode,
+      minSpanX: minSpanX,
+      minSpanY: minSpanY,
+      maxSpanX: maxSpanX,
+      maxSpanY: maxSpanY,
+      spanX: widget.spanX.clamp(minSpanX, maxSpanX).toInt(),
+      spanY: widget.spanY.clamp(minSpanY, maxSpanY).toInt(),
+    );
+  }
+
   Map<String, dynamic> _serialize(WorkspaceState s) => {
         'currentPage': s.currentPage,
         'clockPage': s.clockPage,
@@ -963,6 +1084,11 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
         'minResizeHeight': slot.widget.minResizeHeight,
         'maxResizeWidth': slot.widget.maxResizeWidth,
         'maxResizeHeight': slot.widget.maxResizeHeight,
+        'resizeMode': slot.widget.resizeMode,
+        'minSpanX': slot.widget.minSpanX,
+        'minSpanY': slot.widget.minSpanY,
+        'maxSpanX': slot.widget.maxSpanX,
+        'maxSpanY': slot.widget.maxSpanY,
         'spanX': slot.widget.spanX,
         'spanY': slot.widget.spanY,
       };
@@ -983,6 +1109,11 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
                   'minResizeHeight': w.minResizeHeight,
                   'maxResizeWidth': w.maxResizeWidth,
                   'maxResizeHeight': w.maxResizeHeight,
+                  'resizeMode': w.resizeMode,
+                  'minSpanX': w.minSpanX,
+                  'minSpanY': w.minSpanY,
+                  'maxSpanX': w.maxSpanX,
+                  'maxSpanY': w.maxSpanY,
                   'spanX': w.spanX,
                   'spanY': w.spanY,
                 })
@@ -1062,6 +1193,11 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
           minResizeHeight: data['minResizeHeight'] as int? ?? 0,
           maxResizeWidth: data['maxResizeWidth'] as int? ?? 0,
           maxResizeHeight: data['maxResizeHeight'] as int? ?? 0,
+          resizeMode: data['resizeMode'] as int? ?? 3,
+          minSpanX: data['minSpanX'] as int? ?? 0,
+          minSpanY: data['minSpanY'] as int? ?? 0,
+          maxSpanX: data['maxSpanX'] as int? ?? 0,
+          maxSpanY: data['maxSpanY'] as int? ?? 0,
           spanX: data['spanX'] as int? ?? 1,
           spanY: data['spanY'] as int? ?? 1,
         ));
@@ -1080,6 +1216,11 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
             minResizeHeight: wMap['minResizeHeight'] as int? ?? 0,
             maxResizeWidth: wMap['maxResizeWidth'] as int? ?? 0,
             maxResizeHeight: wMap['maxResizeHeight'] as int? ?? 0,
+            resizeMode: wMap['resizeMode'] as int? ?? 3,
+            minSpanX: wMap['minSpanX'] as int? ?? 0,
+            minSpanY: wMap['minSpanY'] as int? ?? 0,
+            maxSpanX: wMap['maxSpanX'] as int? ?? 0,
+            maxSpanY: wMap['maxSpanY'] as int? ?? 0,
             spanX: wMap['spanX'] as int? ?? 1,
             spanY: wMap['spanY'] as int? ?? 1,
           );

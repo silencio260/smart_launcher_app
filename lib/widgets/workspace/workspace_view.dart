@@ -62,6 +62,7 @@ class _WorkspaceViewState extends State<WorkspaceView> {
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<WorkspaceCubit, WorkspaceState>(
+      buildWhen: (prev, curr) => prev.pages != curr.pages,
       builder: (context, state) {
         if (state.pages.isEmpty) {
           return const SizedBox.shrink();

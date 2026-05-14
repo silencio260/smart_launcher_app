@@ -24,6 +24,7 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
   List<WidgetProviderInfo> _providers = [];
   bool _loading = true;
   String _error = '';
+  bool _loadedInitialWidgets = false;
 
   // Which app package names are expanded
   final Set<String> _expanded = {};
@@ -31,6 +32,13 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
   @override
   void initState() {
     super.initState();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_loadedInitialWidgets) return;
+    _loadedInitialWidgets = true;
     _loadWidgets();
   }
 
@@ -40,7 +48,22 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
       _error = '';
     });
     try {
-      final list = await LauncherService.getAvailableWidgets();
+      final settings = context.read<SettingsCubit>().state;
+      final media = MediaQuery.of(context).size;
+      const gap = 8.0;
+      final cellWidth =
+          (media.width - 16.0 - (settings.gridColumns - 1) * gap) /
+              settings.gridColumns;
+      final cellHeight =
+          (media.height * 0.62 - (settings.gridRows - 1) * gap) /
+              settings.gridRows;
+      final list = await LauncherService.getAvailableWidgets(
+        gridColumns: settings.gridColumns,
+        gridRows: settings.gridRows,
+        cellWidth: cellWidth,
+        cellHeight: cellHeight,
+        gap: gap,
+      );
       if (mounted) {
         setState(() {
           _providers = list;
@@ -95,6 +118,11 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
       minResizeHeight: provider.minResizeHeight,
       maxResizeWidth: provider.maxResizeWidth,
       maxResizeHeight: provider.maxResizeHeight,
+      resizeMode: provider.resizeMode,
+      minSpanX: provider.minSpanX,
+      minSpanY: provider.minSpanY,
+      maxSpanX: provider.maxSpanX,
+      maxSpanY: provider.maxSpanY,
       spanX: initialSpan.$1,
       spanY: initialSpan.$2,
     );
@@ -113,32 +141,8 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
 
   (int, int) _initialSpanForProvider(WidgetProviderInfo provider) {
     final settings = context.read<SettingsCubit>().state;
-    if (provider.targetCellWidth > 0 &&
-        provider.targetCellHeight > 0 &&
-        provider.targetCellWidth <= settings.gridColumns &&
-        provider.targetCellHeight <= settings.gridRows) {
-      return (provider.targetCellWidth, provider.targetCellHeight);
-    }
-
-    final media = MediaQuery.of(context).size;
-    const gap = 8.0;
-    const horizontalPadding = 16.0;
-
-    final cellWidth =
-        (media.width - horizontalPadding - (settings.gridColumns - 1) * gap) /
-            settings.gridColumns;
-    final estimatedCellHeight =
-        (media.height * 0.62 - (settings.gridRows - 1) * gap) /
-            settings.gridRows;
-
-    final spanX = provider.minWidth <= 0
-        ? 2
-        : (provider.minWidth / cellWidth).ceil().clamp(1, settings.gridColumns);
-    final spanY = provider.minHeight <= 0
-        ? 1
-        : (provider.minHeight / estimatedCellHeight)
-            .ceil()
-            .clamp(1, settings.gridRows);
+    final spanX = provider.spanX.clamp(1, settings.gridColumns).toInt();
+    final spanY = provider.spanY.clamp(1, settings.gridRows).toInt();
 
     return (spanX, spanY);
   }
@@ -277,9 +281,8 @@ class _WidgetTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final minCellsX =
-        _cellsForSize(provider.minWidth, gridColumns, fallback: 2);
-    final minCellsY = _cellsForSize(provider.minHeight, gridRows, fallback: 1);
+    final minCellsX = provider.spanX.clamp(1, gridColumns).toInt();
+    final minCellsY = provider.spanY.clamp(1, gridRows).toInt();
 
     return Padding(
       padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
@@ -370,11 +373,6 @@ class _WidgetTile extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  int _cellsForSize(int size, int max, {required int fallback}) {
-    if (size <= 0) return fallback.clamp(1, max);
-    return (size / 110).ceil().clamp(1, max);
   }
 }
 
