@@ -1014,10 +1014,27 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     if (minSpanY >= rows && provider.resizeMode & 2 != 0) minSpanY = 1;
     final maxSpanX = provider.maxSpanX.clamp(minSpanX, columns).toInt();
     final maxSpanY = provider.maxSpanY.clamp(minSpanY, rows).toInt();
-    debugPrint('[REFRESH_WIDGET] ${provider.packageName}/${provider.providerClass} '
-        'providerMin=(${ provider.minSpanX},${ provider.minSpanY}) '
+    debugPrint(
+        '[REFRESH_WIDGET] ${provider.packageName}/${provider.providerClass} '
+        'providerMin=(${provider.minSpanX},${provider.minSpanY}) '
         'effectiveMin=($minSpanX,$minSpanY) max=($maxSpanX,$maxSpanY) '
         'storedSpan=(${widget.spanX},${widget.spanY}) resizeMode=${provider.resizeMode}');
+    var spanX = widget.spanX.clamp(minSpanX, maxSpanX).toInt();
+    var spanY = widget.spanY.clamp(minSpanY, maxSpanY).toInt();
+
+    final wasAtOldMinX = widget.minSpanX > 0 && widget.spanX == widget.minSpanX;
+    final wasAtOldMinY = widget.minSpanY > 0 && widget.spanY == widget.minSpanY;
+    if (wasAtOldMinX &&
+        provider.targetCellWidth > 0 &&
+        provider.spanX < widget.spanX) {
+      spanX = provider.spanX.clamp(minSpanX, maxSpanX).toInt();
+    }
+    if (wasAtOldMinY &&
+        provider.targetCellHeight > 0 &&
+        provider.spanY < widget.spanY) {
+      spanY = provider.spanY.clamp(minSpanY, maxSpanY).toInt();
+    }
+
     return widget.copyWith(
       minWidth: provider.minWidth,
       minHeight: provider.minHeight,
@@ -1030,8 +1047,8 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
       minSpanY: minSpanY,
       maxSpanX: maxSpanX,
       maxSpanY: maxSpanY,
-      spanX: widget.spanX.clamp(minSpanX, maxSpanX).toInt(),
-      spanY: widget.spanY.clamp(minSpanY, maxSpanY).toInt(),
+      spanX: spanX,
+      spanY: spanY,
     );
   }
 

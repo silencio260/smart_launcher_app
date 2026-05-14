@@ -49,14 +49,26 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
     });
     try {
       final settings = context.read<SettingsCubit>().state;
-      final media = MediaQuery.of(context).size;
+      final mediaQuery = MediaQuery.of(context);
       const gap = 8.0;
       final cellWidth =
-          (media.width - 16.0 - (settings.gridColumns - 1) * gap) /
+          (mediaQuery.size.width - 16.0 - (settings.gridColumns - 1) * gap) /
               settings.gridColumns;
+      // Estimate actual workspace height using real system insets.
+      // Mirrors home_screen.dart: statusBar+8 at top, hotseat+navBar+12 at bottom,
+      // plus CellLayout's EdgeInsets.all(8) padding (16dp total off height).
+      final hotseatSlotHeight = settings.dockIconSize +
+          (settings.showDockLabels ? settings.dockIconSize * 0.6 : 16.0);
+      final hotseatTotalHeight = settings.showDock
+          ? hotseatSlotHeight + 24.0 + mediaQuery.padding.bottom + 12.0
+          : 0.0;
+      final workspaceHeight = mediaQuery.size.height -
+          mediaQuery.padding.top -
+          8.0 -
+          hotseatTotalHeight -
+          16.0;
       final cellHeight =
-          (media.height * 0.62 - (settings.gridRows - 1) * gap) /
-              settings.gridRows;
+          (workspaceHeight - (settings.gridRows - 1) * gap) / settings.gridRows;
       final list = await LauncherService.getAvailableWidgets(
         gridColumns: settings.gridColumns,
         gridRows: settings.gridRows,
@@ -141,10 +153,11 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
 
   (int, int) _initialSpanForProvider(WidgetProviderInfo provider) {
     final settings = context.read<SettingsCubit>().state;
-    final spanX = provider.spanX.clamp(1, settings.gridColumns).toInt();
-    final spanY = provider.spanY.clamp(1, settings.gridRows).toInt();
-
-    return (spanX, spanY);
+    return _preferredCellsForProvider(
+      provider,
+      gridColumns: settings.gridColumns,
+      gridRows: settings.gridRows,
+    );
   }
 
   @override
@@ -198,13 +211,26 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
     }
 
     final grouped = _grouped;
-    final packages = grouped.keys.toList()..sort();
+    final packages = grouped.keys.toList()
+      ..sort((a, b) {
+        final nameA = (grouped[a]!.first.appName.isNotEmpty
+                ? grouped[a]!.first.appName
+                : a.split('.').last)
+            .toLowerCase();
+        final nameB = (grouped[b]!.first.appName.isNotEmpty
+                ? grouped[b]!.first.appName
+                : b.split('.').last)
+            .toLowerCase();
+        return nameA.compareTo(nameB);
+      });
 
     return ListView.builder(
       itemCount: packages.length,
       itemBuilder: (context, i) {
         final pkg = packages[i];
-        final providers = grouped[pkg]!;
+        final providers = grouped[pkg]!
+          ..sort(
+              (a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
         final isExpanded = _expanded.contains(pkg);
         final appIcon =
             apps.where((a) => a.packageName == pkg).firstOrNull?.icon ??
@@ -281,66 +307,43 @@ class _WidgetTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final minCellsX = provider.spanX.clamp(1, gridColumns).toInt();
-    final minCellsY = provider.spanY.clamp(1, gridRows).toInt();
+    final (minCellsX, minCellsY) = _preferredCellsForProvider(
+      provider,
+      gridColumns: gridColumns,
+      gridRows: gridRows,
+    );
+
+    final useExpandedPreview =
+        provider.previewIsGenerated && provider.previewImage != null;
 
     return Padding(
       padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
       child: Card(
         color: Colors.white.withValues(alpha: 0.06),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Padding(
+        clipBehavior: Clip.antiAlias,
+        child: useExpandedPreview
+            ? _buildExpandedPreview(minCellsX, minCellsY)
+            : _buildCompactRow(minCellsX, minCellsY),
+      ),
+    );
+  }
+
+  Widget _buildExpandedPreview(int minCellsX, int minCellsY) {
+    final aspectRatio = (minCellsX / minCellsY).clamp(0.5, 4.0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AspectRatio(
+          aspectRatio: aspectRatio,
+          child: Image.memory(provider.previewImage!, fit: BoxFit.cover),
+        ),
+        Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
             children: [
-              // Preview or placeholder
-              Container(
-                width: 72,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.white12),
-                ),
-                child: provider.previewImage != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Image.memory(provider.previewImage!,
-                                fit: BoxFit.cover),
-                            Positioned(
-                              right: 4,
-                              bottom: 4,
-                              child: _WidgetAppIcon(
-                                iconBytes: appIcon,
-                                shape: iconShape,
-                                size: 16,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : Stack(
-                        children: [
-                          const Center(
-                            child: Icon(Icons.widgets_outlined,
-                                color: Colors.white38, size: 28),
-                          ),
-                          Positioned(
-                            right: 4,
-                            bottom: 4,
-                            child: _WidgetAppIcon(
-                              iconBytes: appIcon,
-                              shape: iconShape,
-                              size: 16,
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-              const SizedBox(width: 12),
+              _WidgetAppIcon(iconBytes: appIcon, shape: iconShape, size: 32),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -348,14 +351,12 @@ class _WidgetTile extends StatelessWidget {
                     Text(
                       provider.label.isNotEmpty ? provider.label : 'Widget',
                       style: const TextStyle(
-                        fontWeight: FontWeight.w500,
-                        fontSize: 14,
-                      ),
+                          fontWeight: FontWeight.w500, fontSize: 14),
                     ),
                     Text(
                       '$minCellsX x $minCellsY cells',
-                      style:
-                          const TextStyle(fontSize: 11, color: Colors.white38),
+                      style: const TextStyle(
+                          fontSize: 11, color: Colors.white38),
                     ),
                   ],
                 ),
@@ -371,9 +372,109 @@ class _WidgetTile extends StatelessWidget {
             ],
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildCompactRow(int minCellsX, int minCellsY) {
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          Container(
+            width: 72,
+            height: 48,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: provider.previewImage != null
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Image.memory(provider.previewImage!,
+                            fit: BoxFit.cover),
+                        Positioned(
+                          right: 4,
+                          bottom: 4,
+                          child: _WidgetAppIcon(
+                            iconBytes: appIcon,
+                            shape: iconShape,
+                            size: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : Stack(
+                    children: [
+                      const Center(
+                        child: Icon(Icons.widgets_outlined,
+                            color: Colors.white38, size: 28),
+                      ),
+                      Positioned(
+                        right: 4,
+                        bottom: 4,
+                        child: _WidgetAppIcon(
+                          iconBytes: appIcon,
+                          shape: iconShape,
+                          size: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  provider.label.isNotEmpty ? provider.label : 'Widget',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14,
+                  ),
+                ),
+                Text(
+                  '$minCellsX x $minCellsY cells',
+                  style:
+                      const TextStyle(fontSize: 11, color: Colors.white38),
+                ),
+              ],
+            ),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              minimumSize: const Size(0, 36),
+            ),
+            onPressed: onActivate,
+            child: const Text('Add'),
+          ),
+        ],
       ),
     );
   }
+}
+
+(int, int) _preferredCellsForProvider(
+  WidgetProviderInfo provider, {
+  required int gridColumns,
+  required int gridRows,
+}) {
+  final hasTargetCells =
+      provider.targetCellWidth > 0 && provider.targetCellHeight > 0;
+  final spanX = hasTargetCells ? provider.targetCellWidth : provider.spanX;
+  final spanY = hasTargetCells ? provider.targetCellHeight : provider.spanY;
+
+  return (
+    spanX.clamp(1, gridColumns).toInt(),
+    spanY.clamp(1, gridRows).toInt(),
+  );
 }
 
 class _WidgetAppIcon extends StatelessWidget {

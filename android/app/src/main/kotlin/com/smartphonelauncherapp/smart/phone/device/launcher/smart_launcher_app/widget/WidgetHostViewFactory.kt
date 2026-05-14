@@ -36,5 +36,11 @@ private class WidgetPlatformView(
 
     override fun getView(): View = hostView
 
-    override fun dispose() {}
+    override fun dispose() {
+        // Detach from parent so its Surface stops producing frames immediately.
+        // Without this, the abandoned AppWidgetHostView keeps rendering into the
+        // old ImageReader after Flutter has already moved on, triggering the
+        // "Unable to acquire a buffer item" warning during resize.
+        (hostView.parent as? android.view.ViewGroup)?.removeView(hostView)
+    }
 }

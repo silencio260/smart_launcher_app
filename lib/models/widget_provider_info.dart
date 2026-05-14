@@ -22,6 +22,7 @@ class WidgetProviderInfo {
   final int maxSpanY;
   final Uint8List? appIcon;
   final Uint8List? previewImage;
+  final bool previewIsGenerated;
 
   const WidgetProviderInfo({
     required this.packageName,
@@ -45,6 +46,7 @@ class WidgetProviderInfo {
     this.maxSpanY = 6,
     this.appIcon,
     this.previewImage,
+    this.previewIsGenerated = false,
   });
 
   static WidgetProviderInfo fromMap(Map map) {
@@ -72,6 +74,7 @@ class WidgetProviderInfo {
       maxSpanY: map['maxSpanY'] as int? ?? 6,
       appIcon: appIcon is Uint8List ? appIcon : null,
       previewImage: preview is Uint8List ? preview : null,
+      previewIsGenerated: map['previewIsGenerated'] as bool? ?? false,
     );
   }
 }

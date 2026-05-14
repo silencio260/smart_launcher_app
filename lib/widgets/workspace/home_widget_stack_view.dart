@@ -223,6 +223,7 @@ class _SpanSyncedStackWidgetViewState
   @override
   Widget build(BuildContext context) {
     return AndroidView(
+      key: ValueKey(widget.widgetInfo.appWidgetId),
       viewType: 'com.genrevibes.smartlauncher/widget_host_view',
       creationParams: {'appWidgetId': widget.widgetInfo.appWidgetId},
       creationParamsCodec: const StandardMessageCodec(),

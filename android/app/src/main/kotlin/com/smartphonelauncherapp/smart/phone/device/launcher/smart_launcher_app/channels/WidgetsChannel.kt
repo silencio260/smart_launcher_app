@@ -15,10 +15,15 @@ import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Bundle
 import android.util.SizeF
+import android.view.View
+import android.widget.RemoteViews
+import android.appwidget.AppWidgetHostView
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class WidgetsChannel(
     private val activity: Activity,
@@ -109,23 +114,14 @@ class WidgetsChannel(
                             info.provider.className.substringAfterLast('.')
                         }
 
-                        val previewBytes: ByteArray? = try {
-                            if (info.previewImage != 0) {
-                                val drawable = pm.getDrawable(
-                                    info.provider.packageName, info.previewImage, null
-                                )
-                                drawable?.let { drawableToBytes(it) }
-                            } else null
-                        } catch (_: Exception) {
-                            null
-                        }
-
                         val appIconBytes: ByteArray? = try {
-                            pm.getApplicationIcon(info.provider.packageName)?.let { drawableToBytes(it) }
+                            pm.getApplicationIcon(info.provider.packageName)
+                                ?.let { drawableToBytes(it, maxWidth = 120, maxHeight = 120) }
                         } catch (_: Exception) {
                             null
                         }
                         val sizing = WidgetSizing.fromProviderInfo(context, info, profile)
+                        val (previewBytes, isGeneratedPreview) = loadWidgetPreview(info, sizing, profile, mainHandler)
 
                         val map = mutableMapOf<String, Any?>(
                             "packageName" to info.provider.packageName,
@@ -151,18 +147,114 @@ class WidgetsChannel(
                             map["maxResizeHeight"] = info.maxResizeHeight
                         }
                         if (appIconBytes != null) map["appIcon"] = appIconBytes
-                        if (previewBytes != null) map["previewImage"] = previewBytes
+                        if (previewBytes != null) {
+                            map["previewImage"] = previewBytes
+                            map["previewIsGenerated"] = isGeneratedPreview
+                        }
                         map
                     } catch (_: Exception) {
                         null
                     }
                 }
 
-                mainHandler.post { result.success(list) }
+                val sorted = list.sortedBy { (it["appName"] as? String ?: "").lowercase() }
+                mainHandler.post { result.success(sorted) }
             } catch (e: Exception) {
                 mainHandler.post { result.error("WIDGET_ERROR", e.message, null) }
             }
         }.start()
+    }
+
+    private fun loadWidgetPreview(
+        info: android.appwidget.AppWidgetProviderInfo,
+        sizing: WidgetSizing,
+        profile: WidgetGridProfile,
+        mainHandler: android.os.Handler,
+    ): Pair<ByteArray?, Boolean> {
+        val previewLayoutBytes = renderPreviewLayoutBytes(info, sizing, profile, mainHandler)
+        if (previewLayoutBytes != null) return previewLayoutBytes to true
+
+        val drawableBytes = try {
+            if (info.previewImage != 0) {
+                val drawable = context.packageManager.getDrawable(
+                    info.provider.packageName,
+                    info.previewImage,
+                    null,
+                )
+                drawable?.let {
+                    drawableToBytes(it, maxWidth = 800, maxHeight = 533, jpeg = true)
+                }
+            } else {
+                null
+            }
+        } catch (_: Exception) {
+            null
+        }
+        return drawableBytes to (drawableBytes != null)
+    }
+
+    private fun renderPreviewLayoutBytes(
+        info: android.appwidget.AppWidgetProviderInfo,
+        sizing: WidgetSizing,
+        profile: WidgetGridProfile,
+        mainHandler: android.os.Handler,
+    ): ByteArray? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || info.previewLayout == 0) return null
+
+        var preview: ByteArray? = null
+        val latch = CountDownLatch(1)
+        mainHandler.post {
+            try {
+                preview = renderPreviewLayoutBytesOnMain(info, sizing, profile)
+            } catch (_: Exception) {
+                preview = null
+            } finally {
+                latch.countDown()
+            }
+        }
+        latch.await(750, TimeUnit.MILLISECONDS)
+        return preview
+    }
+
+    private fun renderPreviewLayoutBytesOnMain(
+        info: android.appwidget.AppWidgetProviderInfo,
+        sizing: WidgetSizing,
+        profile: WidgetGridProfile,
+    ): ByteArray? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || info.previewLayout == 0) return null
+
+        val density = context.resources.displayMetrics.density
+        val widthDp = widgetPreviewWidthDp(sizing.spanX, profile)
+        val heightDp = widgetPreviewHeightDp(sizing.spanY, profile)
+        val widthPx = (widthDp * density).toInt().coerceIn(96, 900)
+        val heightPx = (heightDp * density).toInt().coerceIn(64, 900)
+
+        val hostView = AppWidgetHostView(context)
+        hostView.setAppWidget(-1, info)
+        hostView.updateAppWidget(RemoteViews(info.provider.packageName, info.previewLayout))
+        hostView.setPadding(0, 0, 0, 0)
+        hostView.measure(
+            View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(heightPx, View.MeasureSpec.EXACTLY),
+        )
+        hostView.layout(0, 0, widthPx, heightPx)
+
+        val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        hostView.draw(canvas)
+        return bitmapToBytes(bitmap, jpeg = false)
+    }
+
+    private fun widgetPreviewWidthDp(spanX: Int, profile: WidgetGridProfile): Float {
+        val cellWidth = profile.cellWidthDp.takeIf { it > 0 } ?: 72f
+        val gap = profile.gapDp.takeIf { it >= 0 } ?: 8f
+        return spanX.coerceAtLeast(1) * cellWidth + (spanX.coerceAtLeast(1) - 1) * gap
+    }
+
+    private fun widgetPreviewHeightDp(spanY: Int, profile: WidgetGridProfile): Float {
+        val cellHeight = profile.cellHeightDp.takeIf { it > 0 } ?: 72f
+        val gap = profile.gapDp.takeIf { it >= 0 } ?: 8f
+        return spanY.coerceAtLeast(1) * cellHeight + (spanY.coerceAtLeast(1) - 1) * gap
     }
 
     private fun bindWidget(
@@ -224,20 +316,44 @@ class WidgetsChannel(
         }
     }
 
-    private fun drawableToBytes(drawable: Drawable): ByteArray {
-        val bitmap = if (drawable is BitmapDrawable && drawable.bitmap != null) {
+    private fun drawableToBytes(
+        drawable: Drawable,
+        maxWidth: Int = 512,
+        maxHeight: Int = 512,
+        jpeg: Boolean = false,
+    ): ByteArray {
+        val srcW = drawable.intrinsicWidth.takeIf { it > 0 } ?: maxWidth
+        val srcH = drawable.intrinsicHeight.takeIf { it > 0 } ?: maxHeight
+        val scale = minOf(maxWidth.toFloat() / srcW, maxHeight.toFloat() / srcH, 1f)
+        val dstW = (srcW * scale).toInt().coerceAtLeast(1)
+        val dstH = (srcH * scale).toInt().coerceAtLeast(1)
+
+        val bmp = if (drawable is BitmapDrawable && drawable.bitmap != null && dstW == srcW && dstH == srcH && !jpeg) {
             drawable.bitmap
         } else {
-            val w = drawable.intrinsicWidth.takeIf { it > 0 } ?: 120
-            val h = drawable.intrinsicHeight.takeIf { it > 0 } ?: 80
-            val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bmp)
-            drawable.setBounds(0, 0, w, h)
+            val raw = Bitmap.createBitmap(dstW, dstH, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(raw)
+            if (jpeg) canvas.drawColor(android.graphics.Color.WHITE)
+            drawable.setBounds(0, 0, dstW, dstH)
             drawable.draw(canvas)
-            bmp
+            raw
         }
         val stream = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.PNG, 85, stream)
+        if (jpeg) {
+            bmp.compress(Bitmap.CompressFormat.JPEG, 80, stream)
+        } else {
+            bmp.compress(Bitmap.CompressFormat.PNG, 0, stream)
+        }
+        return stream.toByteArray()
+    }
+
+    private fun bitmapToBytes(bitmap: Bitmap, jpeg: Boolean = false): ByteArray {
+        val stream = ByteArrayOutputStream()
+        if (jpeg) {
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 86, stream)
+        } else {
+            bitmap.compress(Bitmap.CompressFormat.PNG, 0, stream)
+        }
         return stream.toByteArray()
     }
 
@@ -335,6 +451,20 @@ class WidgetsChannel(
                     }
                 }
 
+                val hasTargetSpan = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    info.targetCellWidth > 0 &&
+                    info.targetCellHeight > 0
+                val targetSpanX = if (hasTargetSpan) {
+                    info.targetCellWidth.coerceIn(1, columns)
+                } else {
+                    0
+                }
+                val targetSpanY = if (hasTargetSpan) {
+                    info.targetCellHeight.coerceIn(1, rows)
+                } else {
+                    0
+                }
+
                 // If minResizeWidth/Height is so large that it exceeds the grid (span > columns/rows)
                 // but the widget claims to be resizable, fall back to defaultSpan (from minWidth)
                 // rather than 1. This gives the widget a sensible minimum rather than allowing it
@@ -345,21 +475,40 @@ class WidgetsChannel(
                 val effectiveResizeMinSpanY =
                     if (resizeMinSpanY > rows && info.resizeMode and 2 != 0) defaultSpanY else resizeMinSpanY
 
-                val minSpanX = maxOf(defaultSpanX, effectiveResizeMinSpanX).coerceIn(1, columns)
-                val minSpanY = maxOf(defaultSpanY, effectiveResizeMinSpanY).coerceIn(1, rows)
-                maxSpanX = maxOf(maxSpanX, minSpanX).coerceIn(minSpanX, columns)
-                maxSpanY = maxOf(maxSpanY, minSpanY).coerceIn(minSpanY, rows)
+                // Use minResizeWidth/Height as the resize floor when the widget declares one.
+                // If the widget is resizable but declares no minimum, allow down to 1 cell —
+                // the widget's RemoteViews layout will adapt (matches One UI / Lawnchair behaviour).
+                // Only fall back to defaultSpan when the widget is NOT resizable on that axis.
+                // Some widgets publish inflated legacy minResize values but also publish an
+                // Android 12+ target cell span. In that case, do not let the legacy minimum
+                // immediately force the widget larger than its declared target.
+                val minSpanX = when {
+                    info.minResizeWidth > 0 && targetSpanX > 0 && info.resizeMode and 1 != 0 ->
+                        minOf(effectiveResizeMinSpanX, targetSpanX)
+                    info.minResizeWidth > 0 -> effectiveResizeMinSpanX
+                    info.resizeMode and 1 != 0 -> 1
+                    else -> defaultSpanX
+                }.coerceIn(1, columns)
+                val minSpanY = when {
+                    info.minResizeHeight > 0 && targetSpanY > 0 && info.resizeMode and 2 != 0 ->
+                        minOf(effectiveResizeMinSpanY, targetSpanY)
+                    info.minResizeHeight > 0 -> effectiveResizeMinSpanY
+                    info.resizeMode and 2 != 0 -> 1
+                    else -> defaultSpanY
+                }.coerceIn(1, rows)
+                maxSpanX = maxOf(maxSpanX, minSpanX, targetSpanX).coerceIn(minSpanX, columns)
+                maxSpanY = maxOf(maxSpanY, minSpanY, targetSpanY).coerceIn(minSpanY, rows)
 
                 var spanX = defaultSpanX.coerceIn(1, columns)
                 var spanY = defaultSpanY.coerceIn(1, rows)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                    info.targetCellWidth >= minSpanX &&
-                    info.targetCellWidth <= maxSpanX &&
-                    info.targetCellHeight >= minSpanY &&
-                    info.targetCellHeight <= maxSpanY
-                ) {
-                    spanX = info.targetCellWidth
-                    spanY = info.targetCellHeight
+                // Prefer the widget's declared target span (Android 12+).
+                // Clamp only to the grid size — do NOT clamp against minSpanX/Y here,
+                // because minSpan is a resize floor, not a placement floor. Clamping
+                // against an inflated minSpan would silently override the declared target.
+                // This matches Lawnchair's behavior.
+                if (hasTargetSpan) {
+                    spanX = targetSpanX
+                    spanY = targetSpanY
                 }
 
                 return WidgetSizing(minSpanX, minSpanY, spanX, spanY, maxSpanX, maxSpanY)
