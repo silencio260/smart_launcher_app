@@ -331,12 +331,30 @@ class _WidgetTile extends StatelessWidget {
 
   Widget _buildExpandedPreview(int minCellsX, int minCellsY) {
     final aspectRatio = (minCellsX / minCellsY).clamp(0.5, 4.0);
+    final previewHeight = (220.0 * minCellsY / minCellsX).clamp(140.0, 280.0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        AspectRatio(
-          aspectRatio: aspectRatio,
-          child: Image.memory(provider.previewImage!, fit: BoxFit.cover),
+        SizedBox(
+          height: previewHeight,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.22),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Center(
+                child: AspectRatio(
+                  aspectRatio: aspectRatio,
+                  child: Image.memory(
+                    provider.previewImage!,
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.medium,
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
         Padding(
           padding: const EdgeInsets.all(12),
@@ -355,8 +373,8 @@ class _WidgetTile extends StatelessWidget {
                     ),
                     Text(
                       '$minCellsX x $minCellsY cells',
-                      style: const TextStyle(
-                          fontSize: 11, color: Colors.white38),
+                      style:
+                          const TextStyle(fontSize: 11, color: Colors.white38),
                     ),
                   ],
                 ),
@@ -395,8 +413,11 @@ class _WidgetTile extends StatelessWidget {
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        Image.memory(provider.previewImage!,
-                            fit: BoxFit.cover),
+                        Image.memory(
+                          provider.previewImage!,
+                          fit: BoxFit.contain,
+                          filterQuality: FilterQuality.medium,
+                        ),
                         Positioned(
                           right: 4,
                           bottom: 4,
@@ -441,8 +462,7 @@ class _WidgetTile extends StatelessWidget {
                 ),
                 Text(
                   '$minCellsX x $minCellsY cells',
-                  style:
-                      const TextStyle(fontSize: 11, color: Colors.white38),
+                  style: const TextStyle(fontSize: 11, color: Colors.white38),
                 ),
               ],
             ),

@@ -226,8 +226,10 @@ class WidgetsChannel(
         val density = context.resources.displayMetrics.density
         val widthDp = widgetPreviewWidthDp(sizing.spanX, profile)
         val heightDp = widgetPreviewHeightDp(sizing.spanY, profile)
-        val widthPx = (widthDp * density).toInt().coerceIn(96, 900)
-        val heightPx = (heightDp * density).toInt().coerceIn(64, 900)
+        val longestSide = maxOf(widthDp, heightDp).coerceAtLeast(1f)
+        val previewScale = minOf(1f, 420f / longestSide)
+        val widthPx = (widthDp * previewScale * density).toInt().coerceIn(96, 720)
+        val heightPx = (heightDp * previewScale * density).toInt().coerceIn(64, 720)
 
         val hostView = AppWidgetHostView(context)
         hostView.setAppWidget(-1, info)

@@ -42,3 +42,7 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    implementation("androidx.constraintlayout:constraintlayout:2.2.1")
+}
