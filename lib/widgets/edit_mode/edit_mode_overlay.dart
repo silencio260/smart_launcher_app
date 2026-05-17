@@ -27,7 +27,7 @@ class EditModeOverlay extends StatefulWidget {
 
 class _EditModeOverlayState extends State<EditModeOverlay>
     with SingleTickerProviderStateMixin {
-  static const double _viewportFraction = 0.78;
+  static const double _viewportFraction = 0.84;
 
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
@@ -172,18 +172,21 @@ class _EditModeOverlayState extends State<EditModeOverlay>
     return GestureDetector(
       onTap: () {},
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+        margin: const EdgeInsets.symmetric(horizontal: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(28),
+          color: Colors.black.withValues(alpha: 0.45),
+          borderRadius: BorderRadius.circular(32),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.08),
+            width: 0.6,
+          ),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
             _BottomBarItem(
               icon: Icons.wallpaper_outlined,
-              label: 'Wallpaper\nand style',
               onTap: () {
                 _commitCurrentPage();
                 widget.onWallpaper();
@@ -191,7 +194,6 @@ class _EditModeOverlayState extends State<EditModeOverlay>
             ),
             _BottomBarItem(
               icon: Icons.palette_outlined,
-              label: 'Themes',
               onTap: () {
                 _commitCurrentPage();
                 widget.onSettings();
@@ -199,7 +201,6 @@ class _EditModeOverlayState extends State<EditModeOverlay>
             ),
             _BottomBarItem(
               icon: Icons.widgets_outlined,
-              label: 'Widgets',
               onTap: () {
                 _commitCurrentPage();
                 widget.onSettings();
@@ -207,7 +208,6 @@ class _EditModeOverlayState extends State<EditModeOverlay>
             ),
             _BottomBarItem(
               icon: Icons.settings_outlined,
-              label: 'Settings',
               onTap: () {
                 _commitCurrentPage();
                 widget.onSettings();
@@ -294,14 +294,14 @@ class _PageDots extends StatelessWidget {
         final isActive = i == active;
         return AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          margin: const EdgeInsets.symmetric(horizontal: 3),
-          width: isActive ? 18 : 6,
-          height: 6,
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          width: 7,
+          height: 7,
           decoration: BoxDecoration(
             color: isActive
                 ? Colors.white
-                : Colors.white.withValues(alpha: 0.4),
-            borderRadius: BorderRadius.circular(3),
+                : Colors.white.withValues(alpha: 0.35),
+            shape: BoxShape.circle,
           ),
         );
       }),
@@ -366,24 +366,10 @@ class _PageCard extends StatelessWidget {
         ),
       ),
       padding: const EdgeInsets.all(10),
-      child: Column(
-        children: [
-          Expanded(
-            child: _PagePreview(
-              page: page,
-              folders: folders,
-              settings: settings,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '${pageIndex + 1}',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.65),
-              fontSize: 11,
-            ),
-          ),
-        ],
+      child: _PagePreview(
+        page: page,
+        folders: folders,
+        settings: settings,
       ),
     );
   }
@@ -692,12 +678,10 @@ class _WidgetTile extends StatelessWidget {
 
 class _BottomBarItem extends StatelessWidget {
   final IconData icon;
-  final String label;
   final VoidCallback onTap;
 
   const _BottomBarItem({
     required this.icon,
-    required this.label,
     required this.onTap,
   });
 
@@ -705,28 +689,10 @@ class _BottomBarItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Icon(icon, color: Colors.white, size: 26),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.85),
-              fontSize: 11,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: Icon(icon, color: Colors.white, size: 24),
       ),
     );
   }

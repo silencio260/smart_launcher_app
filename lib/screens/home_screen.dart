@@ -284,6 +284,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       pageController: _pageController,
                       child: WorkspaceTouchListener(
                         settings: settings,
+                        dragController: _dragController,
                         onDoubleTap: () =>
                             _handleGesture(settings.doubleTapAction),
                         onSwipeUp: () => _handleGesture(settings.swipeUpAction),
