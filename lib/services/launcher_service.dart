@@ -107,6 +107,34 @@ class LauncherService {
     }
   }
 
+  /// Returns a PNG snapshot of the currently-rendered AppWidgetHostView for
+  /// [appWidgetId]. Returns null if no live host view is registered for that
+  /// id (e.g. the workspace hasn't laid it out yet), so callers should fall
+  /// back to the static provider preview image.
+  static Future<Uint8List?> renderLiveWidget(
+    int appWidgetId, {
+    int maxWidthPx = 360,
+    int maxHeightPx = 360,
+  }) async {
+    if (appWidgetId <= 0) return null;
+    try {
+      final result = await _widgets.invokeMethod<Uint8List>(
+        'renderLiveWidget',
+        {
+          'appWidgetId': appWidgetId,
+          'maxWidthPx': maxWidthPx,
+          'maxHeightPx': maxHeightPx,
+        },
+      );
+      return result;
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[LauncherServiceWidgets] renderLiveWidget error=$error\n$stackTrace',
+      );
+      return null;
+    }
+  }
+
   static Future<void> updateWidgetSize(
     int appWidgetId,
     String providerPackage,

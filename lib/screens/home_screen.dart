@@ -21,7 +21,9 @@ import '../widgets/workspace/workspace_touch_listener.dart';
 import '../widgets/workspace/workspace_view.dart';
 import '../services/drag/drag_controller.dart';
 import 'search_overlay_screen.dart';
+import 'settings/general_settings_screen.dart';
 import 'settings/settings_root_screen.dart';
+import 'settings/widget_picker_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -38,6 +40,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _editMode = false;
   bool _didEnsureDefaultClock = false;
   PageController? _pageController;
+  Map<int, Uint8List> _editModeWidgetSnapshots = const {};
 
   @override
   void initState() {
@@ -89,12 +92,53 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     context.read<LauncherCubit>().goToState(ls.LauncherState.normal);
   }
 
-  void _enterEditMode() {
+  Future<void> _enterEditMode() async {
     _dismissAppInfoTooltip();
-    setState(() => _editMode = true);
+    // Snapshot every visible widget BEFORE the overlay covers them. The
+    // platform views are still on-screen and laid out, so the snapshots come
+    // back instantly. Once edit mode is on, the workspace is hidden behind the
+    // overlay (still in the tree via Visibility.maintainState) so further
+    // snapshot requests would race with the hide.
+    final snapshots = await _captureLiveWidgetSnapshots();
+    if (!mounted) return;
+    setState(() {
+      _editModeWidgetSnapshots = snapshots;
+      _editMode = true;
+    });
   }
 
-  void _exitEditMode() => setState(() => _editMode = false);
+  Future<Map<int, Uint8List>> _captureLiveWidgetSnapshots() async {
+    final workspace = context.read<WorkspaceCubit>().state;
+    final ids = <int>{};
+    for (final page in workspace.pages) {
+      page.slots.forEach((_, content) {
+        if (content is WidgetSlot) {
+          final id = content.widget.appWidgetId;
+          if (id > 0) ids.add(id);
+        } else if (content is WidgetStackSlot) {
+          for (final w in content.widgets) {
+            if (w.appWidgetId > 0) ids.add(w.appWidgetId);
+          }
+        }
+      });
+    }
+    if (ids.isEmpty) return const {};
+    final entries = await Future.wait(ids.map((id) async {
+      final bytes = await LauncherService.renderLiveWidget(id);
+      return MapEntry(id, bytes);
+    }));
+    final result = <int, Uint8List>{};
+    for (final e in entries) {
+      final v = e.value;
+      if (v != null) result[e.key] = v;
+    }
+    return result;
+  }
+
+  void _exitEditMode() => setState(() {
+        _editMode = false;
+        _editModeWidgetSnapshots = const {};
+      });
 
   void _navigateToBestDragPage() {
     final workspace = context.read<WorkspaceCubit>();
@@ -236,6 +280,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  void _openThemes() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MultiBlocProvider(
+          providers: [
+            BlocProvider.value(value: context.read<SettingsCubit>()),
+            BlocProvider.value(value: context.read<AppsCubit>()),
+          ],
+          child: const GeneralSettingsScreen(),
+        ),
+      ),
+    );
+  }
+
+  void _openWidgetPicker() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MultiBlocProvider(
+          providers: [
+            BlocProvider.value(value: context.read<SettingsCubit>()),
+            BlocProvider.value(value: context.read<AppsCubit>()),
+            BlocProvider.value(value: context.read<WorkspaceCubit>()),
+          ],
+          child: WidgetPickerScreen(onWidgetAdded: _addWidgetToHomeScreen),
+        ),
+      ),
+    );
+  }
+
   void _showAppInfoTooltip(AppInfo app, Offset iconCenter) {
     _dismissAppInfoTooltip();
     final overlay = Overlay.of(context);
@@ -260,140 +335,166 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<SettingsCubit, LauncherSettings>(
-      builder: (context, settings) {
-        _ensureDefaultClockWidget(
-          context.watch<WorkspaceCubit>().state,
-          settings,
-        );
-        return BlocListener<LauncherCubit, ls.LauncherState>(
+    return MultiBlocListener(
+      listeners: [
+        BlocListener<LauncherCubit, ls.LauncherState>(
           listener: (context, state) {
             if (state == ls.LauncherState.allApps) _openDrawer();
           },
-          child: Scaffold(
+        ),
+        // One-shot default clock seed. Listen instead of watch so the entire
+        // HomeScreen subtree (workspace, dock, every AndroidView) doesn't
+        // rebuild on every WorkspaceCubit emit.
+        BlocListener<WorkspaceCubit, WorkspaceState>(
+          listenWhen: (_, curr) =>
+              !_didEnsureDefaultClock && curr.pages.isNotEmpty,
+          listener: (context, state) {
+            _ensureDefaultClockWidget(
+              state,
+              context.read<SettingsCubit>().state,
+            );
+          },
+        ),
+      ],
+      child: BlocBuilder<SettingsCubit, LauncherSettings>(
+        builder: (context, settings) {
+          // BlocBuilder<AppsCubit> is intentionally NOT wrapping this Scaffold.
+          // AppsCubit emits on every notification badge push, so wrapping the
+          // whole tree would rebuild DragLayer, the touch listener, and every
+          // AndroidView host view subtree on each badge event. Instead, each
+          // leaf that actually consumes appsState subscribes locally.
+          return Scaffold(
             backgroundColor: Colors.transparent,
             extendBody: true,
-            body: BlocBuilder<AppsCubit, AppsState>(
-              builder: (context, appsState) {
-                final dockApps = _resolveDockApps(appsState, settings);
-                return Stack(
-                  children: [
-                    DragLayer(
-                      dragController: _dragController,
-                      iconShape: settings.iconShape,
-                      pageController: _pageController,
-                      child: WorkspaceTouchListener(
-                        settings: settings,
-                        dragController: _dragController,
-                        onDoubleTap: () =>
-                            _handleGesture(settings.doubleTapAction),
-                        onSwipeUp: () => _handleGesture(settings.swipeUpAction),
-                        onSwipeDown: () =>
-                            _handleGesture(settings.swipeDownAction),
-                        onLongPress: _enterEditMode,
-                        child: Column(
-                          children: [
-                            SizedBox(
-                                height: MediaQuery.of(context).padding.top + 8),
-                            Expanded(
-                              child: Visibility(
-                                // Reveal workspace when dragging from drawer so
-                                // drop targets are reachable behind the drawer.
-                                // Hidden in edit mode so the wallpaper shows
-                                // through behind the One UI–style overlay.
-                                visible: (!_drawerOpen || _drawerDraggingToHome) &&
-                                    !_editMode,
-                                maintainState: true,
-                                maintainAnimation: true,
-                                maintainSize: true,
-                                child: WorkspaceView(
-                                  dragController: _dragController,
+            body: Stack(
+              children: [
+                DragLayer(
+                  dragController: _dragController,
+                  iconShape: settings.iconShape,
+                  pageController: _pageController,
+                  child: WorkspaceTouchListener(
+                    settings: settings,
+                    dragController: _dragController,
+                    onDoubleTap: () =>
+                        _handleGesture(settings.doubleTapAction),
+                    onSwipeUp: () => _handleGesture(settings.swipeUpAction),
+                    onSwipeDown: () =>
+                        _handleGesture(settings.swipeDownAction),
+                    onLongPress: _enterEditMode,
+                    child: Column(
+                      children: [
+                        SizedBox(
+                            height: MediaQuery.of(context).padding.top + 8),
+                        Expanded(
+                          child: Visibility(
+                            // Reveal workspace when dragging from drawer so
+                            // drop targets are reachable behind the drawer.
+                            // Hidden in edit mode so the wallpaper shows
+                            // through behind the One UI–style overlay.
+                            visible: (!_drawerOpen || _drawerDraggingToHome) &&
+                                !_editMode,
+                            maintainState: true,
+                            maintainAnimation: true,
+                            maintainSize: true,
+                            child: BlocBuilder<AppsCubit, AppsState>(
+                              builder: (context, appsState) => WorkspaceView(
+                                dragController: _dragController,
+                                settings: settings,
+                                badgeCounts: appsState.badgeCounts,
+                                onAppTap: (app) => LauncherService.launchApp(
+                                    app.packageName),
+                                onAppLongPress: (app, page, slot, center) =>
+                                    _showAppInfoTooltip(app, center),
+                                onPageChanged: (offset) {
+                                  const MethodChannel(
+                                          'com.genrevibes.smartlauncher/wallpaper')
+                                      .invokeMethod('setWallpaperOffset',
+                                          {'xOffset': offset});
+                                },
+                                onControllerReady: (ctrl) =>
+                                    setState(() => _pageController = ctrl),
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (settings.showDock)
+                          Visibility(
+                            visible: (!_drawerOpen || _drawerDraggingToHome) &&
+                                !_editMode,
+                            maintainState: true,
+                            child: Padding(
+                              padding: EdgeInsets.only(
+                                left: 12,
+                                right: 12,
+                                bottom:
+                                    MediaQuery.of(context).padding.bottom +
+                                        12,
+                              ),
+                              child: BlocBuilder<AppsCubit, AppsState>(
+                                builder: (context, appsState) => HotseatView(
+                                  apps: _resolveDockApps(appsState, settings),
                                   settings: settings,
                                   badgeCounts: appsState.badgeCounts,
-                                  onAppTap: (app) => LauncherService.launchApp(
-                                      app.packageName),
-                                  onAppLongPress: (app, page, slot, center) =>
-                                      _showAppInfoTooltip(app, center),
-                                  onPageChanged: (offset) {
-                                    const MethodChannel(
-                                            'com.genrevibes.smartlauncher/wallpaper')
-                                        .invokeMethod('setWallpaperOffset',
-                                            {'xOffset': offset});
-                                  },
-                                  onControllerReady: (ctrl) =>
-                                      setState(() => _pageController = ctrl),
+                                  dragController: _dragController,
+                                  onSwipeUp: () =>
+                                      _handleGesture(settings.swipeUpAction),
+                                  onAppTap: (app) =>
+                                      LauncherService.launchApp(
+                                          app.packageName),
+                                  onAppLongPress: (app) =>
+                                      _showAppInfoTooltip(app, Offset.zero),
                                 ),
                               ),
                             ),
-                            if (settings.showDock)
-                              Visibility(
-                                visible: (!_drawerOpen || _drawerDraggingToHome) &&
-                                    !_editMode,
-                                maintainState: true,
-                                child: Padding(
-                                  padding: EdgeInsets.only(
-                                    left: 12,
-                                    right: 12,
-                                    bottom:
-                                        MediaQuery.of(context).padding.bottom +
-                                            12,
-                                  ),
-                                  child: HotseatView(
-                                    apps: dockApps,
-                                    settings: settings,
-                                    badgeCounts: appsState.badgeCounts,
-                                    dragController: _dragController,
-                                    onSwipeUp: () =>
-                                        _handleGesture(settings.swipeUpAction),
-                                    onAppTap: (app) =>
-                                        LauncherService.launchApp(
-                                            app.packageName),
-                                    onAppLongPress: (app) =>
-                                        _showAppInfoTooltip(app, Offset.zero),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
+                          ),
+                      ],
                     ),
-                    if (_drawerOpen)
-                      AllAppsContainer(
-                        settings: settings,
-                        dragController: _dragController,
-                        onDismiss: _closeDrawer,
-                        onAppTap: (app) {
-                          _closeDrawer();
-                          LauncherService.launchApp(app.packageName);
-                        },
-                        onAddToHome: _addAppToHomeScreen,
-                        onDragToHome: () {
-                          setState(() => _drawerDraggingToHome = true);
-                          _navigateToBestDragPage();
-                        },
-                        onDragCancelled: () =>
-                            setState(() => _drawerDraggingToHome = false),
-                      ),
-                    if (_editMode)
-                      EditModeOverlay(
-                        settings: settings,
-                        onDismiss: _exitEditMode,
-                        onWallpaper: () {
-                          _exitEditMode();
-                          LauncherService.changeWallpaper();
-                        },
-                        onSettings: () {
-                          _exitEditMode();
-                          _openSettings();
-                        },
-                      ),
-                  ],
-                );
-              },
+                  ),
+                ),
+                if (_drawerOpen)
+                  AllAppsContainer(
+                    settings: settings,
+                    dragController: _dragController,
+                    onDismiss: _closeDrawer,
+                    onAppTap: (app) {
+                      _closeDrawer();
+                      LauncherService.launchApp(app.packageName);
+                    },
+                    onAddToHome: _addAppToHomeScreen,
+                    onDragToHome: () {
+                      setState(() => _drawerDraggingToHome = true);
+                      _navigateToBestDragPage();
+                    },
+                    onDragCancelled: () =>
+                        setState(() => _drawerDraggingToHome = false),
+                  ),
+                if (_editMode)
+                  EditModeOverlay(
+                    settings: settings,
+                    initialWidgetSnapshots: _editModeWidgetSnapshots,
+                    onDismiss: _exitEditMode,
+                    onWallpaper: () {
+                      _exitEditMode();
+                      LauncherService.changeWallpaper();
+                    },
+                    onThemes: () {
+                      _exitEditMode();
+                      _openThemes();
+                    },
+                    onWidgets: () {
+                      _exitEditMode();
+                      _openWidgetPicker();
+                    },
+                    onSettings: () {
+                      _exitEditMode();
+                      _openSettings();
+                    },
+                  ),
+              ],
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 

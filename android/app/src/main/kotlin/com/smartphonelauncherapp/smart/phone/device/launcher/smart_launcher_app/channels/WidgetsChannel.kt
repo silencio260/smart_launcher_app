@@ -18,6 +18,7 @@ import android.util.SizeF
 import android.view.View
 import android.widget.RemoteViews
 import android.appwidget.AppWidgetHostView
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.widget.WidgetHostViewRegistry
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
@@ -78,6 +79,12 @@ class WidgetsChannel(
                         "updateWidgetSize args id=$appWidgetId provider=$providerPackage/$providerClass span=${spanX}x${spanY} profile=$profile",
                     )
                     updateWidgetSize(appWidgetId, providerPackage, providerClass, spanX, spanY, profile, result)
+                }
+                "renderLiveWidget" -> {
+                    val appWidgetId = call.argument<Int>("appWidgetId") ?: -1
+                    val maxWidthPx = call.argument<Int>("maxWidthPx") ?: 0
+                    val maxHeightPx = call.argument<Int>("maxHeightPx") ?: 0
+                    renderLiveWidget(appWidgetId, maxWidthPx, maxHeightPx, result)
                 }
                 else -> result.notImplemented()
             }
@@ -384,6 +391,83 @@ class WidgetsChannel(
         } catch (e: Exception) {
             result.error("WIDGET_RESIZE_ERROR", e.message, null)
         }
+    }
+
+    private fun renderLiveWidget(
+        appWidgetId: Int,
+        maxWidthPx: Int,
+        maxHeightPx: Int,
+        result: MethodChannel.Result,
+    ) {
+        if (appWidgetId <= 0) {
+            result.success(null)
+            return
+        }
+        val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        mainHandler.post {
+            try {
+                result.success(snapshotWidget(appWidgetId, maxWidthPx, maxHeightPx))
+            } catch (e: Exception) {
+                android.util.Log.w(TAG, "renderLiveWidget id=$appWidgetId failed: ${e.message}")
+                result.success(null)
+            }
+        }
+    }
+
+    private fun snapshotWidget(
+        appWidgetId: Int,
+        maxWidthPx: Int,
+        maxHeightPx: Int,
+    ): ByteArray? {
+        val live = WidgetHostViewRegistry.get(appWidgetId)
+        if (live != null && live.width > 0 && live.height > 0) {
+            return drawHostView(live, live.width, live.height, maxWidthPx, maxHeightPx)
+        }
+        // Off-screen page: PageView never built this widget's PlatformView, so
+        // we have no live host view. Build an ephemeral one via the shared
+        // AppWidgetHost so it receives the latest cached RemoteViews, measure
+        // it at its declared min size, and snapshot. The ephemeral takes over
+        // mViews tracking until WidgetHostViewFactory creates the real view
+        // when the user scrolls to that page; that's already idempotent.
+        val info = AppWidgetManager.getInstance(context)
+            .getAppWidgetInfo(appWidgetId) ?: return null
+        val density = context.resources.displayMetrics.density
+        val widthPx = info.minWidth.coerceAtLeast((120 * density).toInt())
+        val heightPx = info.minHeight.coerceAtLeast((80 * density).toInt())
+        val ephemeral = appWidgetHost.createView(context, appWidgetId, info)
+        ephemeral.setPadding(0, 0, 0, 0)
+        ephemeral.measure(
+            View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(heightPx, View.MeasureSpec.EXACTLY),
+        )
+        ephemeral.layout(0, 0, widthPx, heightPx)
+        return drawHostView(ephemeral, widthPx, heightPx, maxWidthPx, maxHeightPx)
+    }
+
+    private fun drawHostView(
+        view: View,
+        srcW: Int,
+        srcH: Int,
+        maxWidthPx: Int,
+        maxHeightPx: Int,
+    ): ByteArray? {
+        if (srcW <= 0 || srcH <= 0) return null
+        val scale = if (maxWidthPx > 0 && maxHeightPx > 0) {
+            minOf(maxWidthPx.toFloat() / srcW, maxHeightPx.toFloat() / srcH, 1f)
+        } else 1f
+        val dstW = (srcW * scale).toInt().coerceAtLeast(1)
+        val dstH = (srcH * scale).toInt().coerceAtLeast(1)
+        // RGB_565 has no alpha and uses half the heap of ARGB_8888. Since we
+        // paint an opaque background and encode as JPEG (also no alpha), the
+        // alpha channel is wasted in ARGB_8888.
+        val bitmap = Bitmap.createBitmap(dstW, dstH, Bitmap.Config.RGB_565)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(android.graphics.Color.BLACK)
+        if (scale != 1f) canvas.scale(scale, scale)
+        view.draw(canvas)
+        val bytes = bitmapToBytes(bitmap, jpeg = true)
+        bitmap.recycle()
+        return bytes
     }
 
     private fun drawableToBytes(

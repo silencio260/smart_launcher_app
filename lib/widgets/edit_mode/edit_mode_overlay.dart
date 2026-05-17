@@ -4,21 +4,26 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/folder_info.dart';
 import '../../models/launcher_settings.dart';
 import '../../models/workspace_item_info.dart';
-import '../../services/launcher_service.dart';
 import '../../state/workspace_cubit.dart';
 import '../icons/shaped_icon.dart';
 
 class EditModeOverlay extends StatefulWidget {
   final LauncherSettings settings;
+  final Map<int, Uint8List> initialWidgetSnapshots;
   final VoidCallback onDismiss;
   final VoidCallback onWallpaper;
+  final VoidCallback onThemes;
+  final VoidCallback onWidgets;
   final VoidCallback onSettings;
 
   const EditModeOverlay({
     super.key,
     required this.settings,
+    this.initialWidgetSnapshots = const {},
     required this.onDismiss,
     required this.onWallpaper,
+    required this.onThemes,
+    required this.onWidgets,
     required this.onSettings,
   });
 
@@ -34,7 +39,6 @@ class _EditModeOverlayState extends State<EditModeOverlay>
   late Animation<double> _fadeAnim;
   late PageController _pageController;
   int _displayedPage = 0;
-  Map<String, Uint8List> _widgetPreviews = const {};
 
   @override
   void initState() {
@@ -54,7 +58,6 @@ class _EditModeOverlayState extends State<EditModeOverlay>
       viewportFraction: _viewportFraction,
     );
     _pageController.addListener(_handlePageScroll);
-    _loadWidgetPreviews();
   }
 
   @override
@@ -63,19 +66,6 @@ class _EditModeOverlayState extends State<EditModeOverlay>
     _pageController.dispose();
     _animController.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadWidgetPreviews() async {
-    final providers = await LauncherService.getAvailableWidgets();
-    if (!mounted) return;
-    final map = <String, Uint8List>{};
-    for (final p in providers) {
-      final bytes = p.previewImage;
-      if (bytes != null) {
-        map['${p.packageName}/${p.providerClass}'] = bytes;
-      }
-    }
-    setState(() => _widgetPreviews = map);
   }
 
   void _handlePageScroll() {
@@ -115,6 +105,44 @@ class _EditModeOverlayState extends State<EditModeOverlay>
     });
   }
 
+  Future<void> _confirmRemovePage(int pageIndex) async {
+    final cubit = context.read<WorkspaceCubit>();
+    if (cubit.state.pages.length <= 1) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove page?'),
+        content: const Text(
+          'Items on this page will be removed from your home screen.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+    final newLength = cubit.state.pages.length - 1;
+    cubit.removePage(pageIndex);
+    if (!mounted) return;
+    // Keep the overlay open. Adjust the displayed page so it stays in range
+    // and the PageView doesn't jump unexpectedly.
+    final target = _displayedPage.clamp(0, (newLength - 1).clamp(0, newLength));
+    setState(() => _displayedPage = target);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_pageController.hasClients) return;
+      _pageController.jumpToPage(target);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return FadeTransition(
@@ -134,9 +162,7 @@ class _EditModeOverlayState extends State<EditModeOverlay>
                   const SizedBox(height: 10),
                   _RemoveDropTarget(
                     enabled: state.pages.length > 1,
-                    onAccept: (pageIndex) {
-                      context.read<WorkspaceCubit>().removePage(pageIndex);
-                    },
+                    onAccept: _confirmRemovePage,
                   ),
                   const SizedBox(height: 10),
                   const _HairlineDivider(),
@@ -174,7 +200,7 @@ class _EditModeOverlayState extends State<EditModeOverlay>
             page: state.pages[i],
             folders: state.folders,
             settings: widget.settings,
-            widgetPreviews: _widgetPreviews,
+            widgetSnapshots: widget.initialWidgetSnapshots,
             onTap: () {
               context.read<WorkspaceCubit>().setCurrentPage(i);
               _dismiss();
@@ -206,7 +232,7 @@ class _EditModeOverlayState extends State<EditModeOverlay>
               label: 'Themes',
               onTap: () {
                 _commitCurrentPage();
-                widget.onSettings();
+                widget.onThemes();
               },
             ),
             _BottomBarItem(
@@ -214,7 +240,7 @@ class _EditModeOverlayState extends State<EditModeOverlay>
               label: 'Widgets',
               onTap: () {
                 _commitCurrentPage();
-                widget.onSettings();
+                widget.onWidgets();
               },
             ),
             _BottomBarItem(
@@ -357,7 +383,7 @@ class _PageCard extends StatelessWidget {
   final WorkspacePage page;
   final Map<String, FolderInfo> folders;
   final LauncherSettings settings;
-  final Map<String, Uint8List> widgetPreviews;
+  final Map<int, Uint8List> widgetSnapshots;
   final VoidCallback onTap;
 
   const _PageCard({
@@ -365,18 +391,19 @@ class _PageCard extends StatelessWidget {
     required this.page,
     required this.folders,
     required this.settings,
-    required this.widgetPreviews,
+    required this.widgetSnapshots,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final content = _PagePreview(
+    final preview = _PagePreview(
       page: page,
       folders: folders,
       settings: settings,
-      widgetPreviews: widgetPreviews,
+      widgetSnapshots: widgetSnapshots,
     );
+    final framed = _PageFrame(child: preview);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: LongPressDraggable<int>(
@@ -388,15 +415,36 @@ class _PageCard extends StatelessWidget {
             page: page,
             folders: folders,
             settings: settings,
-            widgetPreviews: widgetPreviews,
+            widgetSnapshots: widgetSnapshots,
           ),
         ),
-        childWhenDragging: Opacity(opacity: 0.35, child: content),
+        childWhenDragging: Opacity(opacity: 0.35, child: framed),
         child: GestureDetector(
           onTap: onTap,
-          child: content,
+          child: framed,
         ),
       ),
+    );
+  }
+}
+
+class _PageFrame extends StatelessWidget {
+  final Widget child;
+  const _PageFrame({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.55),
+          width: 1.4,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      padding: const EdgeInsets.all(6),
+      child: child,
     );
   }
 }
@@ -446,13 +494,13 @@ class _PagePreview extends StatelessWidget {
   final WorkspacePage page;
   final Map<String, FolderInfo> folders;
   final LauncherSettings settings;
-  final Map<String, Uint8List> widgetPreviews;
+  final Map<int, Uint8List> widgetSnapshots;
 
   const _PagePreview({
     required this.page,
     required this.folders,
     required this.settings,
-    required this.widgetPreviews,
+    required this.widgetSnapshots,
   });
 
   @override
@@ -525,10 +573,12 @@ class _PagePreview extends StatelessWidget {
           showLabel: settings.showLabels,
         );
       case WidgetSlot(:final widget):
-        final key = '${widget.providerPackage}/${widget.providerClass}';
-        return _WidgetTile(previewImage: widgetPreviews[key]);
-      case WidgetStackSlot():
-        return const _WidgetTile(previewImage: null, isStack: true);
+        return _WidgetTile(previewImage: widgetSnapshots[widget.appWidgetId]);
+      case WidgetStackSlot(:final widgets):
+        final first = widgets
+            .map((w) => widgetSnapshots[w.appWidgetId])
+            .firstWhere((b) => b != null, orElse: () => null);
+        return _WidgetTile(previewImage: first, isStack: true);
       case EmptySlot():
         return const SizedBox.shrink();
     }

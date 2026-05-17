@@ -9,6 +9,24 @@ import io.flutter.plugin.common.StandardMessageCodec
 import io.flutter.plugin.platform.PlatformView
 import io.flutter.plugin.platform.PlatformViewFactory
 
+/// Tracks the live AppWidgetHostView for each appWidgetId so other components
+/// (e.g. WidgetsChannel) can snapshot the current rendered widget contents
+/// without re-binding or re-creating the host.
+object WidgetHostViewRegistry {
+    private val views = mutableMapOf<Int, AppWidgetHostView>()
+
+    fun register(appWidgetId: Int, view: AppWidgetHostView) {
+        if (appWidgetId <= 0) return
+        views[appWidgetId] = view
+    }
+
+    fun unregister(appWidgetId: Int, view: AppWidgetHostView) {
+        if (views[appWidgetId] === view) views.remove(appWidgetId)
+    }
+
+    fun get(appWidgetId: Int): AppWidgetHostView? = views[appWidgetId]
+}
+
 class WidgetHostViewFactory(
     private val context: Context,
     private val appWidgetHost: AppWidgetHost,
@@ -24,7 +42,7 @@ class WidgetHostViewFactory(
 private class WidgetPlatformView(
     context: Context,
     appWidgetHost: AppWidgetHost,
-    appWidgetId: Int,
+    private val appWidgetId: Int,
 ) : PlatformView {
 
     private val hostView: AppWidgetHostView
@@ -32,11 +50,13 @@ private class WidgetPlatformView(
     init {
         val info = AppWidgetManager.getInstance(context).getAppWidgetInfo(appWidgetId)
         hostView = appWidgetHost.createView(context, appWidgetId, info)
+        WidgetHostViewRegistry.register(appWidgetId, hostView)
     }
 
     override fun getView(): View = hostView
 
     override fun dispose() {
+        WidgetHostViewRegistry.unregister(appWidgetId, hostView)
         // Detach from parent so its Surface stops producing frames immediately.
         // Without this, the abandoned AppWidgetHostView keeps rendering into the
         // old ImageReader after Flutter has already moved on, triggering the
