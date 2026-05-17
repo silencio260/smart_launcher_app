@@ -800,6 +800,54 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     return true;
   }
 
+  bool addItemsToFolder(String folderId, List<WorkspaceItemInfo> items) {
+    if (items.isEmpty) return false;
+    final folders = Map<String, FolderInfo>.from(state.folders);
+    final folder = folders[folderId];
+    if (folder == null) return false;
+    folders[folderId] = FolderInfo(
+      id: folder.id,
+      folderTitle: folder.folderTitle,
+      contents: [...folder.contents, ...items],
+      cellX: folder.cellX,
+      cellY: folder.cellY,
+      screenId: folder.screenId,
+    );
+    emit(state.copyWith(folders: folders));
+    saveLayout();
+    return true;
+  }
+
+  String? createFolderForItems(
+    List<WorkspaceItemInfo> items,
+    int columns,
+    int rows, {
+    String title = '',
+  }) {
+    if (items.isEmpty) return null;
+    final pages = state.pages.isEmpty
+        ? <WorkspacePage>[_emptyPage()]
+        : List<WorkspacePage>.from(state.pages);
+    final placement = _findAppPlacementInPages(pages, columns, rows);
+    final folderId = 'folder_${DateTime.now().millisecondsSinceEpoch}';
+    final folder = FolderInfo(
+      id: folderId.hashCode,
+      folderTitle: title,
+      contents: items,
+      cellX: placement.slot % columns,
+      cellY: placement.slot ~/ columns,
+      screenId: placement.page,
+    );
+    final slots = Map<int, SlotContent>.from(pages[placement.page].slots)
+      ..[placement.slot] = FolderSlot(folderId);
+    pages[placement.page] = WorkspacePage(slots);
+    final folders = Map<String, FolderInfo>.from(state.folders)
+      ..[folderId] = folder;
+    emit(state.copyWith(pages: pages, folders: folders));
+    saveLayout();
+    return folderId;
+  }
+
   void renameFolder(String folderId, String title) {
     final folders = Map<String, FolderInfo>.from(state.folders);
     final folder = folders[folderId];

@@ -57,8 +57,8 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
       // Estimate actual workspace height using real system insets.
       // Mirrors home_screen.dart: statusBar+8 at top, hotseat+navBar+12 at bottom,
       // plus CellLayout's EdgeInsets.all(8) padding (16dp total off height).
-      final hotseatSlotHeight = settings.dockIconSize +
-          (settings.showDockLabels ? settings.dockIconSize * 0.6 : 16.0);
+      final hotseatSlotHeight = settings.iconSize +
+          (settings.showDockLabels ? settings.iconSize * 0.6 : 16.0);
       final hotseatTotalHeight = settings.showDock
           ? hotseatSlotHeight + 24.0 + mediaQuery.padding.bottom + 12.0
           : 0.0;
@@ -74,7 +74,7 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
         'screen=${mediaQuery.size.width.toStringAsFixed(2)}x${mediaQuery.size.height.toStringAsFixed(2)} '
         'padding=${mediaQuery.padding} '
         'grid=${settings.gridColumns}x${settings.gridRows} '
-        'gap=$gap dock(show=${settings.showDock}, icon=${settings.dockIconSize}, labels=${settings.showDockLabels}) '
+        'gap=$gap dock(show=${settings.showDock}, icon=${settings.iconSize}, labels=${settings.showDockLabels}) '
         'workspaceHeight=${workspaceHeight.toStringAsFixed(2)} '
         'cell=${cellWidth.toStringAsFixed(2)}x${cellHeight.toStringAsFixed(2)}',
       );
@@ -307,8 +307,25 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
                     iconShape: settings.iconShape,
                     gridColumns: settings.gridColumns,
                     gridRows: settings.gridRows,
-                    cellWidth: (mediaQuery.size.width - 16.0 - (settings.gridColumns - 1) * 8.0) / settings.gridColumns,
-                    cellHeight: ((mediaQuery.size.height - mediaQuery.padding.top - 8.0 - (settings.showDock ? (settings.dockIconSize + (settings.showDockLabels ? settings.dockIconSize * 0.6 : 16.0) + 24.0 + mediaQuery.padding.bottom + 12.0) : 0.0) - 16.0) - (settings.gridRows - 1) * 8.0) / settings.gridRows,
+                    cellWidth: (mediaQuery.size.width -
+                            16.0 -
+                            (settings.gridColumns - 1) * 8.0) /
+                        settings.gridColumns,
+                    cellHeight: ((mediaQuery.size.height -
+                                mediaQuery.padding.top -
+                                8.0 -
+                                (settings.showDock
+                                    ? (settings.iconSize +
+                                        (settings.showDockLabels
+                                            ? settings.iconSize * 0.6
+                                            : 16.0) +
+                                        24.0 +
+                                        mediaQuery.padding.bottom +
+                                        12.0)
+                                    : 0.0) -
+                                16.0) -
+                            (settings.gridRows - 1) * 8.0) /
+                        settings.gridRows,
                     showDebugOverlay: settings.showGridDebugOverlay,
                     onActivate: () => _activateWidget(p),
                   )),

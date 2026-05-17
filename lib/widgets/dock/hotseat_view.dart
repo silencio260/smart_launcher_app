@@ -2,16 +2,42 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/app_info.dart';
+import '../../models/folder_info.dart';
 import '../../models/item_info.dart';
 import '../../models/launcher_settings.dart';
 import '../../models/workspace_item_info.dart';
 import '../../services/drag/drag_controller.dart';
+import '../../state/apps_cubit.dart';
 import '../../state/settings_cubit.dart';
 import '../../state/workspace_cubit.dart';
+import '../folder/folder_icon.dart';
+import '../folder/folder_view.dart';
 import '../icons/bubble_text_view.dart';
 
+const String kDockFolderPrefix = 'folder:';
+
+sealed class DockItem {
+  const DockItem();
+}
+
+class DockAppItem extends DockItem {
+  final AppInfo app;
+
+  const DockAppItem(this.app);
+}
+
+class DockFolderItem extends DockItem {
+  final String folderId;
+  final FolderInfo folder;
+
+  const DockFolderItem({
+    required this.folderId,
+    required this.folder,
+  });
+}
+
 class HotseatView extends StatelessWidget {
-  final List<AppInfo?> apps;
+  final List<DockItem?> apps;
   final LauncherSettings settings;
   final Map<String, int> badgeCounts;
   final DragController dragController;
@@ -33,13 +59,14 @@ class HotseatView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!settings.showDock) return const SizedBox.shrink();
+    final slotCount = settings.dockSize.clamp(0, settings.gridColumns).toInt();
 
     final row = Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: List.generate(settings.dockSize, (slot) {
-        final app = slot < apps.length ? apps[slot] : null;
+      children: List.generate(slotCount, (slot) {
+        final item = slot < apps.length ? apps[slot] : null;
         return _DockSlot(
-          app: app,
+          item: item,
           slot: slot,
           apps: apps,
           settings: settings,
@@ -81,9 +108,9 @@ class HotseatView extends StatelessWidget {
 }
 
 class _DockSlot extends StatelessWidget {
-  final AppInfo? app;
+  final DockItem? item;
   final int slot;
-  final List<AppInfo?> apps;
+  final List<DockItem?> apps;
   final LauncherSettings settings;
   final Map<String, int> badgeCounts;
   final DragController dragController;
@@ -91,7 +118,7 @@ class _DockSlot extends StatelessWidget {
   final void Function(AppInfo) onAppLongPress;
 
   const _DockSlot({
-    required this.app,
+    required this.item,
     required this.slot,
     required this.apps,
     required this.settings,
@@ -117,7 +144,11 @@ class _DockSlot extends StatelessWidget {
   // apps list when the settings list is still empty (never customized).
   List<String> _ensureInitialized(List<String> current) {
     if (current.isNotEmpty) return List<String>.from(current);
-    return apps.map((a) => a?.packageName ?? '').toList();
+    return apps.map((item) {
+      if (item is DockAppItem) return item.app.packageName;
+      if (item is DockFolderItem) return '$kDockFolderPrefix${item.folderId}';
+      return '';
+    }).toList();
   }
 
   // Persists the initialized dockPackages if they were not yet saved.
@@ -133,10 +164,11 @@ class _DockSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final current = app;
-    final slotWidth = settings.dockIconSize + 16;
-    final slotHeight = settings.dockIconSize +
-        (settings.showDockLabels ? settings.dockIconSize * 0.6 : 16);
+    final current = item;
+    final dockIconSize = settings.iconSize;
+    final slotWidth = dockIconSize + 16;
+    final slotHeight =
+        dockIconSize + (settings.showDockLabels ? dockIconSize * 0.6 : 16);
 
     if (current == null) {
       // Empty dock slot — accepts drops from workspace or other dock slots.
@@ -189,15 +221,20 @@ class _DockSlot extends StatelessWidget {
       );
     }
 
-    final badge = badgeCounts[current.packageName] ?? 0;
+    if (current is DockFolderItem) {
+      return _buildFolderSlot(context, current, slotWidth, slotHeight);
+    }
+
+    final currentApp = (current as DockAppItem).app;
+    final badge = badgeCounts[currentApp.packageName] ?? 0;
     final payload = DragPayload(
       item: WorkspaceItemInfo(
-        id: current.id,
+        id: currentApp.id,
         itemType: ItemType.application,
-        packageName: current.packageName,
-        componentName: current.appComponentName,
-        title: current.name,
-        icon: current.icon,
+        packageName: currentApp.packageName,
+        componentName: currentApp.appComponentName,
+        title: currentApp.name,
+        icon: currentApp.icon,
       ),
       sourcePage: -1, // -1 = dock source
       sourceSlot: slot,
@@ -215,7 +252,7 @@ class _DockSlot extends StatelessWidget {
         if (incomingPkg.isEmpty) return;
 
         // Save the displaced app before overwriting this slot
-        final displacedPkg = current.packageName;
+        final displacedPkg = currentApp.packageName;
 
         // Put incoming app into this dock slot
         _setDockSlot(context, incomingPkg);
@@ -225,12 +262,12 @@ class _DockSlot extends StatelessWidget {
           // From workspace — put displaced app back at the source workspace slot
           final workspaceCubit = context.read<WorkspaceCubit>();
           final displacedItem = WorkspaceItemInfo(
-            id: current.id,
+            id: currentApp.id,
             itemType: ItemType.application,
             packageName: displacedPkg,
-            componentName: current.appComponentName,
-            title: current.name,
-            icon: current.icon,
+            componentName: currentApp.appComponentName,
+            title: currentApp.name,
+            icon: currentApp.icon,
           );
           workspaceCubit.addItem(
               displacedItem, incoming.sourcePage, incoming.sourceSlot);
@@ -276,8 +313,8 @@ class _DockSlot extends StatelessWidget {
                 child: Transform.scale(
                   scale: 1.15,
                   child: BubbleTextView(
-                    app: current,
-                    iconSize: settings.dockIconSize,
+                    app: currentApp,
+                    iconSize: dockIconSize,
                     showLabel: false,
                     iconShape: settings.iconShape,
                   ),
@@ -287,25 +324,125 @@ class _DockSlot extends StatelessWidget {
             childWhenDragging: Opacity(
               opacity: 0.3,
               child: BubbleTextView(
-                app: current,
-                iconSize: settings.dockIconSize,
+                app: currentApp,
+                iconSize: dockIconSize,
                 showLabel: settings.showDockLabels,
                 iconShape: settings.iconShape,
                 badgeCount: badge,
               ),
             ),
             child: BubbleTextView(
-              app: current,
-              iconSize: settings.dockIconSize,
+              app: currentApp,
+              iconSize: dockIconSize,
               showLabel: settings.showDockLabels,
               iconShape: settings.iconShape,
               badgeCount: badge,
-              onTap: () => onAppTap(current),
-              onLongPress: () => onAppLongPress(current),
+              onTap: () => onAppTap(currentApp),
+              onLongPress: () => onAppLongPress(currentApp),
             ),
           ),
         );
       },
     );
+  }
+
+  Widget _buildFolderSlot(
+    BuildContext context,
+    DockFolderItem current,
+    double slotWidth,
+    double slotHeight,
+  ) {
+    final folderSettings = settings.copyWith(
+      showFolderLabels: settings.showDockLabels,
+    );
+
+    return DragTarget<DragPayload>(
+      onWillAcceptWithDetails: (d) =>
+          d.data.item is WorkspaceItemInfo &&
+          (d.data.item as WorkspaceItemInfo).packageName.isNotEmpty,
+      onAcceptWithDetails: (details) {
+        final item = details.data.item;
+        if (item is! WorkspaceItemInfo || item.packageName.isEmpty) return;
+        context.read<WorkspaceCubit>().addToFolder(current.folderId, item);
+
+        if (details.data.sourcePage >= 0) {
+          context
+              .read<WorkspaceCubit>()
+              .removeItem(details.data.sourcePage, details.data.sourceSlot);
+          context.read<WorkspaceCubit>().collapseEmptyPages();
+        } else if (details.data.sourcePage == -1 &&
+            details.data.sourceSlot != slot) {
+          final s = context.read<SettingsCubit>().state;
+          final packages = _ensureInitialized(s.dockPackages);
+          while (packages.length <= details.data.sourceSlot) {
+            packages.add('');
+          }
+          packages[details.data.sourceSlot] = '';
+          context
+              .read<SettingsCubit>()
+              .update(s.copyWith(dockPackages: packages));
+        } else if (details.data.folderId != null) {
+          context
+              .read<WorkspaceCubit>()
+              .removeFromFolder(details.data.folderId!, item);
+          details.data.onFolderDropCompleted?.call();
+        }
+      },
+      builder: (_, candidateData, __) {
+        final isHovered = candidateData.isNotEmpty;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          width: slotWidth,
+          height: slotHeight,
+          decoration: isHovered
+              ? BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                )
+              : null,
+          child: Center(
+            child: FolderIconView(
+              folder: current.folder,
+              settings: folderSettings,
+              onTap: () => _openFolder(context, current.folderId),
+              onLongPress: () {},
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _openFolder(BuildContext context, String folderId) {
+    final overlay = Overlay.of(context);
+    final workspaceCubit = context.read<WorkspaceCubit>();
+    final appsCubit = context.read<AppsCubit>();
+    OverlayEntry? entry;
+    entry = OverlayEntry(
+      builder: (_) => MultiBlocProvider(
+        providers: [
+          BlocProvider.value(value: workspaceCubit),
+          BlocProvider.value(value: appsCubit),
+        ],
+        child: FolderView(
+          folderId: folderId,
+          folderPage: -1,
+          folderSlot: slot,
+          settings: settings,
+          badgeCounts: badgeCounts,
+          dragController: dragController,
+          onClose: () {
+            entry?.remove();
+            entry = null;
+          },
+          onAppTap: (app) {
+            entry?.remove();
+            entry = null;
+            onAppTap(app);
+          },
+        ),
+      ),
+    );
+    overlay.insert(entry!);
   }
 }

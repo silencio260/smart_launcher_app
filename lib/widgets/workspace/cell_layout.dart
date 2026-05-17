@@ -84,6 +84,10 @@ class _CellLayoutViewState extends State<CellLayoutView>
   // Latest cell dimensions — updated each build, used for overlap math
   double _cellWidth = 0;
   double _cellHeight = 0;
+  int? _widgetDropPreviewPointerSlot;
+  int? _widgetDropPreviewAnchorSlot;
+  int _widgetDropPreviewSpanX = 1;
+  int _widgetDropPreviewSpanY = 1;
   static String? _lastWidgetMetadataRefreshKey;
   static String? _lastWidgetCellMetricsLogKey;
   OverlayEntry? _openFolderEntry;
@@ -150,8 +154,31 @@ class _CellLayoutViewState extends State<CellLayoutView>
       setState(() {
         _ghostDestinationSlots.clear();
         _folderPreviewSlots.clear();
+        _clearWidgetDropPreviewState();
       });
     }
+  }
+
+  void _clearWidgetDropPreviewState() {
+    _widgetDropPreviewPointerSlot = null;
+    _widgetDropPreviewAnchorSlot = null;
+    _widgetDropPreviewSpanX = 1;
+    _widgetDropPreviewSpanY = 1;
+  }
+
+  void _clearWidgetDropPreview([int? pointerSlot]) {
+    if (_widgetDropPreviewPointerSlot == null &&
+        _widgetDropPreviewAnchorSlot == null) {
+      return;
+    }
+    if (pointerSlot != null && _widgetDropPreviewPointerSlot != pointerSlot) {
+      return;
+    }
+    if (!mounted) {
+      _clearWidgetDropPreviewState();
+      return;
+    }
+    setState(_clearWidgetDropPreviewState);
   }
 
   void _clearWidgetResizeSelection() {
@@ -514,11 +541,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
     // ── Widget drag ────────────────────────────────────────────────────────────
     if (payload.isWidget) {
       final settings = context.read<SettingsCubit>().state;
-      final sourceContent = payload.sourcePage >= 0 &&
-              payload.sourcePage < workspace.state.pages.length
-          ? workspace.state.pages[payload.sourcePage].slots[payload.sourceSlot]
-          : null;
-      final (spanX, spanY) = _spanForWidgetContent(sourceContent);
+      final (spanX, spanY) = _spanForWidgetPayload(payload, workspace);
       final resolvedSlot = _resolveWidgetAnchorSlot(
         payload: payload,
         pointerSlot: slot,
@@ -528,6 +551,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
       );
       if (resolvedSlot == null) {
         widget.dragController.cancelDrag();
+        _clearWidgetDropPreview();
         return;
       }
       final targetPage = widget.pageIndex >= 0 &&
@@ -606,6 +630,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
       }
       workspace.collapseEmptyPages();
       widget.dragController.cancelDrag();
+      _clearWidgetDropPreview();
       if (mounted) {
         setState(() => _selectedWidgetSlot = resolvedSlot);
       }
@@ -764,12 +789,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
       if (target is FolderSlot) return false;
       if (isWidgetAnchor) return true;
 
-      final sourcePage = payload.sourcePage >= 0 &&
-              payload.sourcePage < workspace.state.pages.length
-          ? workspace.state.pages[payload.sourcePage]
-          : null;
-      final sourceContent = sourcePage?.slots[payload.sourceSlot];
-      final (spanX, spanY) = _spanForWidgetContent(sourceContent);
+      final (spanX, spanY) = _spanForWidgetPayload(payload, workspace);
 
       return _resolveWidgetAnchorSlot(
             payload: payload,
@@ -842,6 +862,62 @@ class _CellLayoutViewState extends State<CellLayoutView>
     final (spanX, spanY) = _effectiveSpanForContent(content);
     if (spanX == 0 || spanY == 0) return (1, 1);
     return (spanX, spanY);
+  }
+
+  (int, int) _spanForWidgetPayload(
+    DragPayload payload,
+    WorkspaceCubit workspace,
+  ) {
+    final sourceContent = payload.sourcePage >= 0 &&
+            payload.sourcePage < workspace.state.pages.length
+        ? workspace.state.pages[payload.sourcePage].slots[payload.sourceSlot]
+        : null;
+    final (contentSpanX, contentSpanY) = _spanForWidgetContent(sourceContent);
+    if (contentSpanX > 1 || contentSpanY > 1) {
+      return (contentSpanX, contentSpanY);
+    }
+    return (
+      payload.item.spanX.clamp(1, widget.settings.gridColumns).toInt(),
+      payload.item.spanY.clamp(1, widget.settings.gridRows).toInt(),
+    );
+  }
+
+  void _updateWidgetDropPreview(
+    DragPayload payload,
+    int pointerSlot,
+    WorkspaceCubit workspace,
+  ) {
+    if (!payload.isWidget) {
+      _clearWidgetDropPreview(pointerSlot);
+      return;
+    }
+
+    final (spanX, spanY) = _spanForWidgetPayload(payload, workspace);
+    final anchorSlot = _resolveWidgetAnchorSlot(
+      payload: payload,
+      pointerSlot: pointerSlot,
+      spanX: spanX,
+      spanY: spanY,
+      workspace: workspace,
+    );
+    if (anchorSlot == null) {
+      _clearWidgetDropPreview(pointerSlot);
+      return;
+    }
+
+    if (_widgetDropPreviewPointerSlot == pointerSlot &&
+        _widgetDropPreviewAnchorSlot == anchorSlot &&
+        _widgetDropPreviewSpanX == spanX &&
+        _widgetDropPreviewSpanY == spanY) {
+      return;
+    }
+
+    setState(() {
+      _widgetDropPreviewPointerSlot = pointerSlot;
+      _widgetDropPreviewAnchorSlot = anchorSlot;
+      _widgetDropPreviewSpanX = spanX;
+      _widgetDropPreviewSpanY = spanY;
+    });
   }
 
   void _normalizePersistedWidgetSpans() {
@@ -1102,6 +1178,39 @@ class _CellLayoutViewState extends State<CellLayoutView>
     return null;
   }
 
+  Widget? _buildWidgetDropPreview(double cellWidth, double cellHeight) {
+    if (!(widget.dragController.activeDrag?.isWidget ?? false)) return null;
+    final anchorSlot = _widgetDropPreviewAnchorSlot;
+    if (anchorSlot == null) return null;
+
+    final safeSpanX =
+        _widgetDropPreviewSpanX.clamp(1, widget.settings.gridColumns).toInt();
+    final safeSpanY =
+        _widgetDropPreviewSpanY.clamp(1, widget.settings.gridRows).toInt();
+    final rect = _slotRect(anchorSlot, cellWidth, cellHeight);
+
+    return Positioned(
+      left: rect.left,
+      top: rect.top,
+      width: cellWidth * safeSpanX + _gridGap * (safeSpanX - 1),
+      height: cellHeight * safeSpanY + _gridGap * (safeSpanY - 1),
+      child: IgnorePointer(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.16),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.55),
+              width: 1.5,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -1237,137 +1346,175 @@ class _CellLayoutViewState extends State<CellLayoutView>
                       _sourceWidgetCoverage(widget.dragController.activeDrag);
                   final isWidgetDrag =
                       widget.dragController.activeDrag?.isWidget ?? false;
+                  final widgetDropPreview =
+                      _buildWidgetDropPreview(cellWidth, cellHeight);
                   return Stack(
-                    children: List.generate(totalSlots, (slot) {
-                      final content = widget.page.slots[slot];
-                      final isWidgetAnchor =
-                          content is WidgetSlot || content is WidgetStackSlot;
-                      final coveredByOtherWidget =
-                          coveredSlots.contains(slot) &&
-                              !isWidgetAnchor &&
-                              !sourceWidgetCoverage.contains(slot);
-                      if (coveredByOtherWidget && isWidgetDrag) {
-                        return const SizedBox.shrink();
-                      }
+                    children: [
+                      if (widgetDropPreview != null) widgetDropPreview,
+                      ...List.generate(totalSlots, (slot) {
+                        final content = widget.page.slots[slot];
+                        final isWidgetAnchor =
+                            content is WidgetSlot || content is WidgetStackSlot;
+                        final coveredByOtherWidget =
+                            coveredSlots.contains(slot) &&
+                                !isWidgetAnchor &&
+                                !sourceWidgetCoverage.contains(slot);
+                        if (coveredByOtherWidget && isWidgetDrag) {
+                          return const SizedBox.shrink();
+                        }
 
-                      final rect = _slotRect(slot, cellWidth, cellHeight);
-                      return Positioned(
-                        left: rect.left,
-                        top: rect.top,
-                        width: rect.width,
-                        height: rect.height,
-                        child: DragTarget<DragPayload>(
-                          onWillAcceptWithDetails: (d) =>
-                              _willAccept(d.data, content, slot, workspace),
-                          onAcceptWithDetails: (d) => _onDrop(context, d, slot),
-                          onMove: (details) {
-                            final isSourceSlot =
-                                details.data.sourcePage == widget.pageIndex &&
-                                    details.data.sourceSlot == slot;
-                            if (isSourceSlot) return;
+                        final rect = _slotRect(slot, cellWidth, cellHeight);
+                        return Positioned(
+                          left: rect.left,
+                          top: rect.top,
+                          width: rect.width,
+                          height: rect.height,
+                          child: DragTarget<DragPayload>(
+                            onWillAcceptWithDetails: (d) {
+                              final accepted =
+                                  _willAccept(d.data, content, slot, workspace);
+                              if (d.data.isWidget && accepted) {
+                                _updateWidgetDropPreview(
+                                  d.data,
+                                  slot,
+                                  workspace,
+                                );
+                              }
+                              return accepted;
+                            },
+                            onAcceptWithDetails: (d) =>
+                                _onDrop(context, d, slot),
+                            onMove: (details) {
+                              final isSourceSlot =
+                                  details.data.sourcePage == widget.pageIndex &&
+                                      details.data.sourceSlot == slot;
+                              if (isSourceSlot) return;
 
-                            if (!details.data.isWidget && content is AppSlot) {
-                              // Compute how much of the tile the dragged icon covers.
-                              final localPos =
-                                  _localPositionInSlot(details.offset, slot);
-                              if (localPos != null) {
-                                final overlap = _overlapFraction(localPos);
-                                if (overlap >= 0.25) {
-                                  // Deep hover → folder creation mode
-                                  _cancelDisplacementTimer(slot);
-                                  if (!_folderPreviewSlots.contains(slot)) {
-                                    setState(
-                                        () => _folderPreviewSlots.add(slot));
-                                  }
-                                  return;
+                              if (details.data.isWidget) {
+                                _updateWidgetDropPreview(
+                                  details.data,
+                                  slot,
+                                  workspace,
+                                );
+                                if (content is AppSlot) {
+                                  final settings =
+                                      context.read<SettingsCubit>().state;
+                                  _startDisplacementTimer(
+                                      slot, workspace, settings);
                                 }
+                              } else if (content is AppSlot) {
+                                // Compute how much of the tile the dragged icon covers.
+                                final localPos =
+                                    _localPositionInSlot(details.offset, slot);
+                                if (localPos != null) {
+                                  final overlap = _overlapFraction(localPos);
+                                  if (overlap >= 0.25) {
+                                    // Deep hover → folder creation mode
+                                    _cancelDisplacementTimer(slot);
+                                    if (!_folderPreviewSlots.contains(slot)) {
+                                      setState(
+                                          () => _folderPreviewSlots.add(slot));
+                                    }
+                                    return;
+                                  }
+                                }
+                                // Shallow hover → displacement mode
+                                if (_folderPreviewSlots.contains(slot)) {
+                                  setState(
+                                      () => _folderPreviewSlots.remove(slot));
+                                }
+                                final settings =
+                                    context.read<SettingsCubit>().state;
+                                final pushDir = localPos != null
+                                    ? _pushDirectionFromLocalPos(localPos)
+                                    : Offset.zero;
+                                _startDisplacementTimer(
+                                    slot, workspace, settings,
+                                    withPreview: true,
+                                    preferredDirection: pushDir);
+                              } else if (content is FolderSlot) {
+                                final settings =
+                                    context.read<SettingsCubit>().state;
+                                _startDisplacementTimer(
+                                    slot, workspace, settings,
+                                    withPreview: true);
                               }
-                              // Shallow hover → displacement mode
-                              if (_folderPreviewSlots.contains(slot)) {
-                                setState(
-                                    () => _folderPreviewSlots.remove(slot));
+                            },
+                            onLeave: (payload) {
+                              _cancelDisplacementTimer(slot);
+                              if (payload?.isWidget ?? false) {
+                                _clearWidgetDropPreview(slot);
                               }
-                              final settings =
-                                  context.read<SettingsCubit>().state;
-                              final pushDir = localPos != null
-                                  ? _pushDirectionFromLocalPos(localPos)
-                                  : Offset.zero;
-                              _startDisplacementTimer(slot, workspace, settings,
-                                  withPreview: true,
-                                  preferredDirection: pushDir);
-                            } else if (!details.data.isWidget &&
-                                content is FolderSlot) {
-                              final settings =
-                                  context.read<SettingsCubit>().state;
-                              _startDisplacementTimer(slot, workspace, settings,
-                                  withPreview: true);
-                            } else if (details.data.isWidget &&
-                                content is AppSlot) {
-                              final settings =
-                                  context.read<SettingsCubit>().state;
-                              _startDisplacementTimer(
-                                  slot, workspace, settings);
-                            }
-                          },
-                          onLeave: (_) => _cancelDisplacementTimer(slot),
-                          builder: (context, candidateData, rejectData) {
-                            final isHovered = candidateData.isNotEmpty;
-                            final isRejected = rejectData.isNotEmpty;
-                            final isGhost =
-                                _ghostDestinationSlots.contains(slot);
-                            final isFolderPreview =
-                                _folderPreviewSlots.contains(slot);
-                            if (isRejected) {
-                              return AnimatedContainer(
-                                duration: const Duration(milliseconds: 100),
-                                decoration: BoxDecoration(
-                                  color: Colors.red.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              );
-                            }
-                            if (isFolderPreview) {
-                              return AnimatedContainer(
-                                duration: const Duration(milliseconds: 150),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange.withValues(alpha: 0.45),
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                    color: Colors.orange.withValues(alpha: 0.8),
-                                    width: 1.5,
-                                  ),
-                                ),
-                              );
-                            }
-                            if (isGhost && !isHovered) {
-                              return IgnorePointer(
-                                child: Container(
+                            },
+                            builder: (context, candidateData, rejectData) {
+                              final isHovered = candidateData.isNotEmpty;
+                              final isRejected = rejectData.isNotEmpty;
+                              final isGhost =
+                                  _ghostDestinationSlots.contains(slot);
+                              final isFolderPreview =
+                                  _folderPreviewSlots.contains(slot);
+                              final hoveredPayload =
+                                  isHovered ? candidateData.first : null;
+                              final isHoveredWidget =
+                                  hoveredPayload?.isWidget ?? false;
+                              if (isRejected) {
+                                return AnimatedContainer(
+                                  duration: const Duration(milliseconds: 100),
                                   decoration: BoxDecoration(
+                                    color: Colors.red.withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(12),
+                                  ),
+                                );
+                              }
+                              if (isHoveredWidget) {
+                                return const SizedBox.shrink();
+                              }
+                              if (isFolderPreview) {
+                                return AnimatedContainer(
+                                  duration: const Duration(milliseconds: 150),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        Colors.orange.withValues(alpha: 0.45),
+                                    borderRadius: BorderRadius.circular(16),
                                     border: Border.all(
                                       color:
-                                          Colors.white.withValues(alpha: 0.35),
+                                          Colors.orange.withValues(alpha: 0.8),
                                       width: 1.5,
                                     ),
                                   ),
-                                ),
-                              );
-                            }
-                            return AnimatedContainer(
-                              duration: const Duration(milliseconds: 150),
-                              decoration: isHovered
-                                  ? BoxDecoration(
-                                      color:
-                                          Colors.white.withValues(alpha: 0.15),
+                                );
+                              }
+                              if (isGhost && !isHovered) {
+                                return IgnorePointer(
+                                  child: Container(
+                                    decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: Colors.white24),
-                                    )
-                                  : null,
-                            );
-                          },
-                        ),
-                      );
-                    }),
+                                      border: Border.all(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.35),
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }
+                              return AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                decoration: isHovered
+                                    ? BoxDecoration(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border:
+                                            Border.all(color: Colors.white24),
+                                      )
+                                    : null,
+                              );
+                            },
+                          ),
+                        );
+                      }),
+                    ],
                   );
                 },
               ),
@@ -1580,6 +1727,8 @@ class _CellLayoutViewState extends State<CellLayoutView>
         packageName: w.providerPackage,
         componentName: w.providerClass,
         title: 'Widget',
+        spanX: effectiveSpanX,
+        spanY: effectiveSpanY,
       ),
       sourcePage: widget.pageIndex,
       sourceSlot: slot,
@@ -1708,6 +1857,8 @@ class _CellLayoutViewState extends State<CellLayoutView>
         packageName: first.providerPackage,
         componentName: first.providerClass,
         title: 'Widget Stack',
+        spanX: effectiveSpanX,
+        spanY: effectiveSpanY,
       ),
       sourcePage: widget.pageIndex,
       sourceSlot: slot,
@@ -2186,7 +2337,8 @@ class _CellLayoutViewState extends State<CellLayoutView>
       _cellWidth,
       widget.settings.gridColumns,
     );
-    if (span >= widget.settings.gridColumns && _canResizeHorizontally(widgetInfo)) {
+    if (span >= widget.settings.gridColumns &&
+        _canResizeHorizontally(widgetInfo)) {
       debugPrint(
         '[CellLayoutWidgetSizing] minSpanX computedOverride '
         'provider=${widgetInfo.providerPackage}/${widgetInfo.providerClass} '
@@ -2214,7 +2366,8 @@ class _CellLayoutViewState extends State<CellLayoutView>
     if (widgetInfo.minSpanY > 0) {
       final span =
           widgetInfo.minSpanY.clamp(1, widget.settings.gridRows).toInt();
-      if (span >= widget.settings.gridRows && _canResizeVertically(widgetInfo)) {
+      if (span >= widget.settings.gridRows &&
+          _canResizeVertically(widgetInfo)) {
         debugPrint(
           '[CellLayoutWidgetSizing] minSpanY storedOverride '
           'provider=${widgetInfo.providerPackage}/${widgetInfo.providerClass} '

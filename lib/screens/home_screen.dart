@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../models/app_info.dart';
+import '../models/folder_info.dart';
 import '../models/item_info.dart';
 import '../models/launcher_widget_info.dart';
 import '../models/launcher_settings.dart';
@@ -40,6 +41,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _drawerDraggingToHome = false;
   bool _editMode = false;
   bool _didEnsureDefaultClock = false;
+  bool _normalizingDock = false;
   PageController? _pageController;
 
   @override
@@ -314,6 +316,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             );
           },
         ),
+        BlocListener<SettingsCubit, LauncherSettings>(
+          listenWhen: (prev, next) =>
+              prev.gridColumns != next.gridColumns ||
+              prev.gridRows != next.gridRows ||
+              prev.dockSize != next.dockSize,
+          listener: (context, settings) {
+            context
+                .read<WorkspaceCubit>()
+                .normalizeLayout(settings.gridColumns, settings.gridRows);
+            _normalizeDockForCurrentState();
+          },
+        ),
+        BlocListener<AppsCubit, AppsState>(
+          listenWhen: (prev, next) => prev.apps != next.apps,
+          listener: (_, __) => _normalizeDockForCurrentState(),
+        ),
       ],
       child: BlocBuilder<SettingsCubit, LauncherSettings>(
         builder: (context, settings) {
@@ -339,83 +357,95 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     iconShape: settings.iconShape,
                     pageController: _pageController,
                     child: WorkspaceTouchListener(
-                    settings: settings,
-                    dragController: _dragController,
-                    onDoubleTap: () =>
-                        _handleGesture(settings.doubleTapAction),
-                    onSwipeUp: () => _handleGesture(settings.swipeUpAction),
-                    onSwipeDown: () =>
-                        _handleGesture(settings.swipeDownAction),
-                    onLongPress: _enterEditMode,
-                    child: Column(
-                      children: [
-                        SizedBox(
-                            height: MediaQuery.of(context).padding.top + 8),
-                        Expanded(
-                          child: Visibility(
-                            // Reveal workspace when dragging from drawer so
-                            // drop targets are reachable behind the drawer.
-                            // Hidden in edit mode so the wallpaper shows
-                            // through behind the One UI–style overlay.
-                            visible: (!_drawerOpen || _drawerDraggingToHome) &&
-                                !_editMode,
-                            maintainState: true,
-                            maintainAnimation: true,
-                            maintainSize: true,
-                            child: BlocBuilder<AppsCubit, AppsState>(
-                              builder: (context, appsState) => WorkspaceView(
-                                dragController: _dragController,
-                                settings: settings,
-                                badgeCounts: appsState.badgeCounts,
-                                onAppTap: (app) => LauncherService.launchApp(
-                                    app.packageName),
-                                onAppLongPress: (app, page, slot, center) =>
-                                    _showAppInfoTooltip(app, center),
-                                onPageChanged: (offset) {
-                                  const MethodChannel(
-                                          'com.genrevibes.smartlauncher/wallpaper')
-                                      .invokeMethod('setWallpaperOffset',
-                                          {'xOffset': offset});
-                                },
-                                onControllerReady: (ctrl) =>
-                                    setState(() => _pageController = ctrl),
-                              ),
-                            ),
-                          ),
-                        ),
-                        if (settings.showDock)
-                          Visibility(
-                            visible: (!_drawerOpen || _drawerDraggingToHome) &&
-                                !_editMode,
-                            maintainState: true,
-                            child: Padding(
-                              padding: EdgeInsets.only(
-                                left: 12,
-                                right: 12,
-                                bottom:
-                                    MediaQuery.of(context).padding.bottom +
-                                        12,
-                              ),
+                      settings: settings,
+                      dragController: _dragController,
+                      onDoubleTap: () =>
+                          _handleGesture(settings.doubleTapAction),
+                      onSwipeUp: () => _handleGesture(settings.swipeUpAction),
+                      onSwipeDown: () =>
+                          _handleGesture(settings.swipeDownAction),
+                      onLongPress: _enterEditMode,
+                      child: Column(
+                        children: [
+                          SizedBox(
+                              height: MediaQuery.of(context).padding.top + 8),
+                          Expanded(
+                            child: Visibility(
+                              // Reveal workspace when dragging from drawer so
+                              // drop targets are reachable behind the drawer.
+                              // Hidden in edit mode so the wallpaper shows
+                              // through behind the One UI–style overlay.
+                              visible:
+                                  (!_drawerOpen || _drawerDraggingToHome) &&
+                                      !_editMode,
+                              maintainState: true,
+                              maintainAnimation: true,
+                              maintainSize: true,
                               child: BlocBuilder<AppsCubit, AppsState>(
-                                builder: (context, appsState) => HotseatView(
-                                  apps: _resolveDockApps(appsState, settings),
+                                builder: (context, appsState) => WorkspaceView(
+                                  dragController: _dragController,
                                   settings: settings,
                                   badgeCounts: appsState.badgeCounts,
-                                  dragController: _dragController,
-                                  onSwipeUp: () =>
-                                      _handleGesture(settings.swipeUpAction),
-                                  onAppTap: (app) =>
-                                      LauncherService.launchApp(
-                                          app.packageName),
-                                  onAppLongPress: (app) =>
-                                      _showAppInfoTooltip(app, Offset.zero),
+                                  onAppTap: (app) => LauncherService.launchApp(
+                                      app.packageName),
+                                  onAppLongPress: (app, page, slot, center) =>
+                                      _showAppInfoTooltip(app, center),
+                                  onPageChanged: (offset) {
+                                    const MethodChannel(
+                                            'com.genrevibes.smartlauncher/wallpaper')
+                                        .invokeMethod('setWallpaperOffset',
+                                            {'xOffset': offset});
+                                  },
+                                  onControllerReady: (ctrl) =>
+                                      setState(() => _pageController = ctrl),
                                 ),
                               ),
                             ),
                           ),
-                      ],
+                          if (settings.showDock)
+                            Visibility(
+                              visible:
+                                  (!_drawerOpen || _drawerDraggingToHome) &&
+                                      !_editMode,
+                              maintainState: true,
+                              child: Padding(
+                                padding: EdgeInsets.only(
+                                  left: 12,
+                                  right: 12,
+                                  bottom:
+                                      MediaQuery.of(context).padding.bottom +
+                                          12,
+                                ),
+                                child: BlocBuilder<AppsCubit, AppsState>(
+                                  builder: (context, appsState) => BlocBuilder<
+                                      WorkspaceCubit, WorkspaceState>(
+                                    buildWhen: (prev, next) =>
+                                        prev.folders != next.folders,
+                                    builder: (context, workspaceState) =>
+                                        HotseatView(
+                                      apps: _resolveDockItems(
+                                        appsState,
+                                        workspaceState,
+                                        settings,
+                                      ),
+                                      settings: settings,
+                                      badgeCounts: appsState.badgeCounts,
+                                      dragController: _dragController,
+                                      onSwipeUp: () => _handleGesture(
+                                          settings.swipeUpAction),
+                                      onAppTap: (app) =>
+                                          LauncherService.launchApp(
+                                              app.packageName),
+                                      onAppLongPress: (app) =>
+                                          _showAppInfoTooltip(app, Offset.zero),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
                   ),
                 ),
                 if (_drawerOpen)
@@ -464,15 +494,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  List<AppInfo?> _resolveDockApps(
+  List<DockItem?> _resolveDockItems(
+    AppsState appsState,
+    WorkspaceState workspaceState,
+    LauncherSettings settings,
+  ) {
+    final slotCount = _effectiveDockSlots(settings);
+    final refs = _resolveDockRefs(appsState, settings).take(slotCount);
+    final items = refs.map<DockItem?>((ref) {
+      if (ref.isEmpty) return null;
+      if (_isDockFolderRef(ref)) {
+        final folderId = _folderIdFromDockRef(ref);
+        final folder = workspaceState.folders[folderId];
+        if (folder == null) return null;
+        return DockFolderItem(
+          folderId: folderId,
+          folder: _resolveFolderIcons(folder, appsState),
+        );
+      }
+      final app = appsState.apps.where((a) => a.packageName == ref).firstOrNull;
+      return app == null ? null : DockAppItem(app);
+    }).toList();
+    return items;
+  }
+
+  List<String> _resolveDockRefs(
       AppsState appsState, LauncherSettings settings) {
     if (settings.dockPackages.isNotEmpty) {
       // Preserve slot positions: empty-string entries become null so the dock
       // displays an empty slot rather than shifting subsequent apps left.
-      return settings.dockPackages.map((pkg) {
-        if (pkg.isEmpty) return null;
-        return appsState.apps.where((a) => a.packageName == pkg).firstOrNull;
-      }).toList();
+      return List<String>.from(settings.dockPackages);
     }
     const defaults = [
       'com.android.dialer',
@@ -486,7 +537,123 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final resolved = pinned.isEmpty
         ? appsState.apps.take(settings.dockSize).toList()
         : pinned;
-    return resolved.map<AppInfo?>((a) => a).toList();
+    return resolved.map((a) => a.packageName).toList();
+  }
+
+  int _effectiveDockSlots(LauncherSettings settings) {
+    return settings.dockSize.clamp(0, settings.gridColumns).toInt();
+  }
+
+  bool _isDockFolderRef(String ref) => ref.startsWith(kDockFolderPrefix);
+
+  String _folderIdFromDockRef(String ref) =>
+      ref.substring(kDockFolderPrefix.length);
+
+  WorkspaceItemInfo _dockRefToWorkspaceItem(
+    String ref,
+    AppsState appsState,
+  ) {
+    final app = appsState.apps.where((a) => a.packageName == ref).firstOrNull;
+    return WorkspaceItemInfo(
+      id: app?.id ?? ref.hashCode,
+      itemType: ItemType.application,
+      packageName: ref,
+      componentName: app?.appComponentName ?? ref,
+      title: app?.name ?? ref,
+      icon: app?.icon,
+    );
+  }
+
+  void _normalizeDockForCurrentState() {
+    if (!mounted || _normalizingDock) return;
+    final settings = context.read<SettingsCubit>().state;
+    final appsState = context.read<AppsCubit>().state;
+    if (appsState.apps.isEmpty) return;
+
+    final capacity = _effectiveDockSlots(settings);
+    final refs = _resolveDockRefs(appsState, settings);
+    final hasOverflow = refs.length > capacity;
+    final visibleRefs = refs.take(capacity).toList();
+    final overflowRefs = refs.skip(capacity).where((ref) => ref.isNotEmpty);
+    final workspace = context.read<WorkspaceCubit>();
+    final dockFolderRef = refs
+        .where((ref) =>
+            _isDockFolderRef(ref) &&
+            workspace.state.folders.containsKey(_folderIdFromDockRef(ref)))
+        .firstOrNull;
+    final overflowAppRefs =
+        overflowRefs.where((ref) => !_isDockFolderRef(ref)).toList();
+
+    if (dockFolderRef != null && capacity > 0 && hasOverflow) {
+      if (!visibleRefs.contains(dockFolderRef)) {
+        final displacedRef = visibleRefs.isEmpty ? '' : visibleRefs.last;
+        if (displacedRef.isNotEmpty && !_isDockFolderRef(displacedRef)) {
+          overflowAppRefs.insert(0, displacedRef);
+        }
+        if (visibleRefs.isEmpty) {
+          visibleRefs.add(dockFolderRef);
+        } else {
+          visibleRefs[visibleRefs.length - 1] = dockFolderRef;
+        }
+      }
+      final overflowItems = overflowAppRefs
+          .map((ref) => _dockRefToWorkspaceItem(ref, appsState))
+          .toList();
+      workspace.addItemsToFolder(
+        _folderIdFromDockRef(dockFolderRef),
+        overflowItems,
+      );
+    } else if (overflowAppRefs.isNotEmpty) {
+      final overflowItems = overflowAppRefs
+          .map((ref) => _dockRefToWorkspaceItem(ref, appsState))
+          .toList();
+      workspace.createFolderForItems(
+        overflowItems,
+        settings.gridColumns,
+        settings.gridRows,
+      );
+    }
+
+    final shouldClampDockSize = settings.dockSize != capacity;
+    final shouldTrimPackages = hasOverflow || settings.dockPackages.isEmpty;
+    if (!shouldClampDockSize && !hasOverflow) return;
+
+    _normalizingDock = true;
+    final nextPackages =
+        shouldTrimPackages ? visibleRefs : settings.dockPackages;
+    context.read<SettingsCubit>().update(
+          settings.copyWith(
+            dockSize: capacity,
+            dockPackages: nextPackages,
+          ),
+        );
+    _normalizingDock = false;
+  }
+
+  FolderInfo _resolveFolderIcons(FolderInfo folder, AppsState appsState) {
+    final resolved = folder.contents.map((item) {
+      if (item.icon != null) return item;
+      final live = appsState.apps
+          .where((a) => a.packageName == item.packageName)
+          .firstOrNull;
+      if (live == null) return item;
+      return WorkspaceItemInfo(
+        id: item.id,
+        itemType: item.itemType,
+        packageName: item.packageName,
+        componentName: item.componentName ?? live.appComponentName,
+        title: item.title ?? live.name,
+        icon: live.icon,
+      );
+    }).toList();
+    return FolderInfo(
+      id: folder.id,
+      folderTitle: folder.folderTitle,
+      contents: resolved,
+      cellX: folder.cellX,
+      cellY: folder.cellY,
+      screenId: folder.screenId,
+    );
   }
 }
 

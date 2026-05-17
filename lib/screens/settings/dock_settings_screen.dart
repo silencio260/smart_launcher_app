@@ -13,6 +13,7 @@ class DockSettingsScreen extends StatelessWidget {
       body: BlocBuilder<SettingsCubit, LauncherSettings>(
         builder: (context, s) {
           final cubit = context.read<SettingsCubit>();
+          final dockSlots = s.dockSize.clamp(3, s.gridColumns).toInt();
           return ListView(
             children: [
               SwitchListTile(
@@ -25,25 +26,13 @@ class DockSettingsScreen extends StatelessWidget {
               _SliderTile(
                 icon: Icons.apps,
                 title: 'Dock Slots',
-                value: s.dockSize.toDouble(),
+                value: dockSlots.toDouble(),
                 min: 3,
-                max: 7,
-                divisions: 4,
-                label: '${s.dockSize}',
-                onChanged: s.showDock
+                max: s.gridColumns.toDouble(),
+                divisions: (s.gridColumns - 3).clamp(1, 4).toInt(),
+                label: '$dockSlots',
+                onChanged: s.showDock && s.gridColumns > 3
                     ? (v) => cubit.update(s.copyWith(dockSize: v.round()))
-                    : null,
-              ),
-              _SliderTile(
-                icon: Icons.photo_size_select_large_outlined,
-                title: 'Icon Size',
-                value: s.dockIconSize,
-                min: 36,
-                max: 72,
-                divisions: 9,
-                label: '${s.dockIconSize.round()}dp',
-                onChanged: s.showDock
-                    ? (v) => cubit.update(s.copyWith(dockIconSize: v))
                     : null,
               ),
               _SectionHeader('Background'),
