@@ -1,9 +1,10 @@
-import 'dart:ui';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/folder_info.dart';
 import '../../models/launcher_settings.dart';
 import '../../models/workspace_item_info.dart';
+import '../../services/launcher_service.dart';
 import '../../state/workspace_cubit.dart';
 import '../icons/shaped_icon.dart';
 
@@ -33,6 +34,7 @@ class _EditModeOverlayState extends State<EditModeOverlay>
   late Animation<double> _fadeAnim;
   late PageController _pageController;
   int _displayedPage = 0;
+  Map<String, Uint8List> _widgetPreviews = const {};
 
   @override
   void initState() {
@@ -52,6 +54,7 @@ class _EditModeOverlayState extends State<EditModeOverlay>
       viewportFraction: _viewportFraction,
     );
     _pageController.addListener(_handlePageScroll);
+    _loadWidgetPreviews();
   }
 
   @override
@@ -60,6 +63,19 @@ class _EditModeOverlayState extends State<EditModeOverlay>
     _pageController.dispose();
     _animController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadWidgetPreviews() async {
+    final providers = await LauncherService.getAvailableWidgets();
+    if (!mounted) return;
+    final map = <String, Uint8List>{};
+    for (final p in providers) {
+      final bytes = p.previewImage;
+      if (bytes != null) {
+        map['${p.packageName}/${p.providerClass}'] = bytes;
+      }
+    }
+    setState(() => _widgetPreviews = map);
   }
 
   void _handlePageScroll() {
@@ -86,6 +102,19 @@ class _EditModeOverlayState extends State<EditModeOverlay>
     }
   }
 
+  void _addPage() {
+    final cubit = context.read<WorkspaceCubit>();
+    cubit.addPage();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_pageController.hasClients) return;
+      _pageController.animateToPage(
+        cubit.state.pages.length - 1,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return FadeTransition(
@@ -93,37 +122,38 @@ class _EditModeOverlayState extends State<EditModeOverlay>
       child: GestureDetector(
         onTap: _dismiss,
         behavior: HitTestBehavior.opaque,
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-          child: ColoredBox(
-            color: Colors.black.withValues(alpha: 0.55),
-            child: SafeArea(
-              child: BlocBuilder<WorkspaceCubit, WorkspaceState>(
-                builder: (context, state) {
-                  return Column(
-                    children: [
-                      const SizedBox(height: 12),
-                      _RemovePill(
-                        enabled: state.pages.length > 1,
-                        onAccept: (pageIndex) {
-                          context.read<WorkspaceCubit>().removePage(pageIndex);
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      Expanded(child: _buildPagesRow(state)),
-                      const SizedBox(height: 14),
-                      _PageDots(
-                        count: state.pages.length,
-                        active: _displayedPage.clamp(0, state.pages.length - 1),
-                      ),
-                      const SizedBox(height: 14),
-                      _buildBottomBar(),
-                      const SizedBox(height: 8),
-                    ],
-                  );
-                },
-              ),
-            ),
+        child: SafeArea(
+          child: BlocBuilder<WorkspaceCubit, WorkspaceState>(
+            builder: (context, state) {
+              final activeIndex =
+                  _displayedPage.clamp(0, state.pages.length - 1);
+              return Column(
+                children: [
+                  const SizedBox(height: 6),
+                  const _HomeBadge(),
+                  const SizedBox(height: 10),
+                  _RemoveDropTarget(
+                    enabled: state.pages.length > 1,
+                    onAccept: (pageIndex) {
+                      context.read<WorkspaceCubit>().removePage(pageIndex);
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  const _HairlineDivider(),
+                  const SizedBox(height: 12),
+                  Expanded(child: _buildPagesRow(state)),
+                  const SizedBox(height: 12),
+                  _PageDots(
+                    count: state.pages.length,
+                    active: activeIndex,
+                    onAddPage: _addPage,
+                  ),
+                  const SizedBox(height: 22),
+                  _buildBottomBar(),
+                  const SizedBox(height: 8),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -136,28 +166,15 @@ class _EditModeOverlayState extends State<EditModeOverlay>
       behavior: HitTestBehavior.opaque,
       child: PageView.builder(
         controller: _pageController,
-        itemCount: state.pages.length + 1,
+        itemCount: state.pages.length,
         onPageChanged: (i) => setState(() => _displayedPage = i),
         itemBuilder: (context, i) {
-          if (i == state.pages.length) {
-            return _AddPageCard(
-              onTap: () {
-                final cubit = context.read<WorkspaceCubit>();
-                cubit.addPage();
-                _pageController.animateToPage(
-                  cubit.state.pages.length - 1,
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.easeOut,
-                );
-              },
-            );
-          }
           return _PageCard(
             pageIndex: i,
             page: state.pages[i],
             folders: state.folders,
             settings: widget.settings,
-            isCurrent: i == _displayedPage,
+            widgetPreviews: _widgetPreviews,
             onTap: () {
               context.read<WorkspaceCubit>().setCurrentPage(i);
               _dismiss();
@@ -171,29 +188,22 @@ class _EditModeOverlayState extends State<EditModeOverlay>
   Widget _buildBottomBar() {
     return GestureDetector(
       onTap: () {},
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 24),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.45),
-          borderRadius: BorderRadius.circular(32),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.08),
-            width: 0.6,
-          ),
-        ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
             _BottomBarItem(
               icon: Icons.wallpaper_outlined,
+              label: 'Wallpaper\nand style',
               onTap: () {
                 _commitCurrentPage();
                 widget.onWallpaper();
               },
             ),
             _BottomBarItem(
-              icon: Icons.palette_outlined,
+              icon: Icons.format_paint_outlined,
+              label: 'Themes',
               onTap: () {
                 _commitCurrentPage();
                 widget.onSettings();
@@ -201,6 +211,7 @@ class _EditModeOverlayState extends State<EditModeOverlay>
             ),
             _BottomBarItem(
               icon: Icons.widgets_outlined,
+              label: 'Widgets',
               onTap: () {
                 _commitCurrentPage();
                 widget.onSettings();
@@ -208,6 +219,7 @@ class _EditModeOverlayState extends State<EditModeOverlay>
             ),
             _BottomBarItem(
               icon: Icons.settings_outlined,
+              label: 'Settings',
               onTap: () {
                 _commitCurrentPage();
                 widget.onSettings();
@@ -220,13 +232,28 @@ class _EditModeOverlayState extends State<EditModeOverlay>
   }
 }
 
-// ─── Remove pill ─────────────────────────────────────────────────────────────
+// ─── Top home indicator ──────────────────────────────────────────────────────
 
-class _RemovePill extends StatelessWidget {
+class _HomeBadge extends StatelessWidget {
+  const _HomeBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Icon(
+      Icons.home_outlined,
+      color: Colors.white.withValues(alpha: 0.9),
+      size: 22,
+    );
+  }
+}
+
+// ─── Trash drop target (no pill, no label) ───────────────────────────────────
+
+class _RemoveDropTarget extends StatelessWidget {
   final bool enabled;
   final ValueChanged<int> onAccept;
 
-  const _RemovePill({required this.enabled, required this.onAccept});
+  const _RemoveDropTarget({required this.enabled, required this.onAccept});
 
   @override
   Widget build(BuildContext context) {
@@ -238,38 +265,20 @@ class _RemovePill extends StatelessWidget {
         return AnimatedContainer(
           duration: const Duration(milliseconds: 160),
           curve: Curves.easeOut,
-          padding: EdgeInsets.symmetric(
-            horizontal: hovering ? 26 : 22,
-            vertical: hovering ? 14 : 12,
-          ),
+          width: 44,
+          height: 44,
           decoration: BoxDecoration(
             color: hovering
                 ? Colors.red.withValues(alpha: 0.85)
                 : Colors.transparent,
-            borderRadius: BorderRadius.circular(40),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: hovering ? 0.0 : 0.85),
-              width: 1.2,
-            ),
+            shape: BoxShape.circle,
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                hovering ? Icons.delete_forever : Icons.close,
-                color: Colors.white,
-                size: 18,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Remove',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
+          child: Icon(
+            hovering ? Icons.delete_forever : Icons.delete_outline,
+            color: enabled
+                ? Colors.white
+                : Colors.white.withValues(alpha: 0.35),
+            size: 24,
           ),
         );
       },
@@ -277,46 +286,78 @@ class _RemovePill extends StatelessWidget {
   }
 }
 
-// ─── Page dots ───────────────────────────────────────────────────────────────
-
-class _PageDots extends StatelessWidget {
-  final int count;
-  final int active;
-
-  const _PageDots({required this.count, required this.active});
+class _HairlineDivider extends StatelessWidget {
+  const _HairlineDivider();
 
   @override
   Widget build(BuildContext context) {
-    if (count <= 0) return const SizedBox.shrink();
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(count, (i) {
-        final isActive = i == active;
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          width: 7,
-          height: 7,
-          decoration: BoxDecoration(
-            color: isActive
-                ? Colors.white
-                : Colors.white.withValues(alpha: 0.35),
-            shape: BoxShape.circle,
-          ),
-        );
-      }),
+    return Container(
+      height: 1,
+      margin: const EdgeInsets.symmetric(horizontal: 28),
+      color: Colors.white.withValues(alpha: 0.18),
     );
   }
 }
 
-// ─── Page card (draggable + tappable, holds the preview) ─────────────────────
+// ─── Page dots + trailing "+" ────────────────────────────────────────────────
+
+class _PageDots extends StatelessWidget {
+  final int count;
+  final int active;
+  final VoidCallback onAddPage;
+
+  const _PageDots({
+    required this.count,
+    required this.active,
+    required this.onAddPage,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        for (var i = 0; i < count; i++)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: i == active ? 8 : 6,
+              height: i == active ? 8 : 6,
+              decoration: BoxDecoration(
+                color: i == active
+                    ? Colors.white
+                    : Colors.white.withValues(alpha: 0.35),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+        const SizedBox(width: 6),
+        GestureDetector(
+          onTap: onAddPage,
+          behavior: HitTestBehavior.opaque,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            child: Icon(
+              Icons.add,
+              color: Colors.white.withValues(alpha: 0.9),
+              size: 18,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─── Page card (chromeless, draggable, tappable) ─────────────────────────────
 
 class _PageCard extends StatelessWidget {
   final int pageIndex;
   final WorkspacePage page;
   final Map<String, FolderInfo> folders;
   final LauncherSettings settings;
-  final bool isCurrent;
+  final Map<String, Uint8List> widgetPreviews;
   final VoidCallback onTap;
 
   const _PageCard({
@@ -324,13 +365,18 @@ class _PageCard extends StatelessWidget {
     required this.page,
     required this.folders,
     required this.settings,
-    required this.isCurrent,
+    required this.widgetPreviews,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final card = _buildCard(context);
+    final content = _PagePreview(
+      page: page,
+      folders: folders,
+      settings: settings,
+      widgetPreviews: widgetPreviews,
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: LongPressDraggable<int>(
@@ -342,34 +388,14 @@ class _PageCard extends StatelessWidget {
             page: page,
             folders: folders,
             settings: settings,
+            widgetPreviews: widgetPreviews,
           ),
         ),
-        childWhenDragging: Opacity(opacity: 0.35, child: card),
+        childWhenDragging: Opacity(opacity: 0.35, child: content),
         child: GestureDetector(
           onTap: onTap,
-          child: card,
+          child: content,
         ),
-      ),
-    );
-  }
-
-  Widget _buildCard(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: isCurrent ? 0.16 : 0.08),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: isCurrent
-              ? Colors.white.withValues(alpha: 0.95)
-              : Colors.white.withValues(alpha: 0.25),
-          width: isCurrent ? 1.6 : 1.0,
-        ),
-      ),
-      padding: const EdgeInsets.all(10),
-      child: _PagePreview(
-        page: page,
-        folders: folders,
-        settings: settings,
       ),
     );
   }
@@ -391,7 +417,7 @@ class _DragFeedback extends StatelessWidget {
           aspectRatio: 9 / 16,
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.24),
+              color: Colors.white.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(22),
               border: Border.all(
                 color: Colors.white.withValues(alpha: 0.9),
@@ -414,81 +440,19 @@ class _DragFeedback extends StatelessWidget {
   }
 }
 
-// ─── Add-page card ───────────────────────────────────────────────────────────
-
-class _AddPageCard extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _AddPageCard({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: DottedBorderCard(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.add, color: Colors.white, size: 30),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                'Add page',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.8),
-                  fontSize: 13,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class DottedBorderCard extends StatelessWidget {
-  final Widget child;
-
-  const DottedBorderCard({super.key, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.35),
-          width: 1.2,
-        ),
-      ),
-      child: child,
-    );
-  }
-}
-
-// ─── Real-content page preview (icons, folders, widget tiles) ────────────────
+// ─── Page preview (icons with labels, folders, widget previews) ──────────────
 
 class _PagePreview extends StatelessWidget {
   final WorkspacePage page;
   final Map<String, FolderInfo> folders;
   final LauncherSettings settings;
+  final Map<String, Uint8List> widgetPreviews;
 
   const _PagePreview({
     required this.page,
     required this.folders,
     required this.settings,
+    required this.widgetPreviews,
   });
 
   @override
@@ -543,13 +507,14 @@ class _PagePreview extends StatelessWidget {
   }
 
   Widget _buildSlot(SlotContent content, double cellW, double cellH) {
-    final iconSize = (cellW * 0.62).clamp(14.0, 40.0);
+    final iconSize = (cellW * 0.58).clamp(14.0, 36.0);
     switch (content) {
       case AppSlot(:final item):
         return _AppTile(
           item: item,
           iconSize: iconSize,
           shape: settings.iconShape,
+          showLabel: settings.showLabels,
         );
       case FolderSlot(:final folderId):
         final folder = folders[folderId];
@@ -557,11 +522,13 @@ class _PagePreview extends StatelessWidget {
           folder: folder,
           iconSize: iconSize,
           shape: settings.iconShape,
+          showLabel: settings.showLabels,
         );
-      case WidgetSlot():
-        return const _WidgetTile(isStack: false);
+      case WidgetSlot(:final widget):
+        final key = '${widget.providerPackage}/${widget.providerClass}';
+        return _WidgetTile(previewImage: widgetPreviews[key]);
       case WidgetStackSlot():
-        return const _WidgetTile(isStack: true);
+        return const _WidgetTile(previewImage: null, isStack: true);
       case EmptySlot():
         return const SizedBox.shrink();
     }
@@ -572,21 +539,42 @@ class _AppTile extends StatelessWidget {
   final WorkspaceItemInfo item;
   final double iconSize;
   final String shape;
+  final bool showLabel;
 
   const _AppTile({
     required this.item,
     required this.iconSize,
     required this.shape,
+    required this.showLabel,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: ShapedIcon(
-        iconBytes: item.icon,
-        shape: shape,
-        size: iconSize,
-      ),
+    final label = item.title ?? '';
+    final fontSize = (iconSize * 0.3).clamp(7.5, 10.0);
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ShapedIcon(iconBytes: item.icon, shape: shape, size: iconSize),
+        if (showLabel && label.isNotEmpty) ...[
+          const SizedBox(height: 3),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: fontSize,
+                height: 1.1,
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -595,11 +583,13 @@ class _FolderTile extends StatelessWidget {
   final FolderInfo? folder;
   final double iconSize;
   final String shape;
+  final bool showLabel;
 
   const _FolderTile({
     required this.folder,
     required this.iconSize,
     required this.shape,
+    required this.showLabel,
   });
 
   @override
@@ -609,79 +599,112 @@ class _FolderTile extends StatelessWidget {
     final padding = iconSize * 0.12;
     final innerSize = iconSize - padding * 2;
     final miniSize = (innerSize - 2) / 2;
+    final label = folder?.title ?? '';
+    final fontSize = (iconSize * 0.3).clamp(7.5, 10.0);
 
-    return Center(
-      child: Container(
-        width: iconSize,
-        height: iconSize,
-        padding: EdgeInsets.all(padding),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.22),
-          borderRadius: BorderRadius.circular(iconSize * 0.28),
-        ),
-        child: preview.isEmpty
-            ? Icon(
-                Icons.folder,
-                color: Colors.white.withValues(alpha: 0.85),
-                size: innerSize * 0.8,
-              )
-            : Wrap(
-                spacing: 2,
-                runSpacing: 2,
-                children: [
-                  for (final item in preview)
-                    SizedBox(
-                      width: miniSize,
-                      height: miniSize,
-                      child: ShapedIcon(
-                        iconBytes: item.icon,
-                        shape: shape,
-                        size: miniSize,
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: iconSize,
+          height: iconSize,
+          padding: EdgeInsets.all(padding),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.22),
+            borderRadius: BorderRadius.circular(iconSize * 0.28),
+          ),
+          child: preview.isEmpty
+              ? Icon(
+                  Icons.folder,
+                  color: Colors.white.withValues(alpha: 0.85),
+                  size: innerSize * 0.8,
+                )
+              : Wrap(
+                  spacing: 2,
+                  runSpacing: 2,
+                  children: [
+                    for (final item in preview)
+                      SizedBox(
+                        width: miniSize,
+                        height: miniSize,
+                        child: ShapedIcon(
+                          iconBytes: item.icon,
+                          shape: shape,
+                          size: miniSize,
+                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
+        ),
+        if (showLabel && label.isNotEmpty) ...[
+          const SizedBox(height: 3),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: fontSize,
+                height: 1.1,
               ),
-      ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
 
 class _WidgetTile extends StatelessWidget {
+  final Uint8List? previewImage;
   final bool isStack;
 
-  const _WidgetTile({required this.isStack});
+  const _WidgetTile({required this.previewImage, this.isStack = false});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final container = Container(
       margin: const EdgeInsets.all(2),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.22),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.35),
-          width: 0.8,
-        ),
+        color: Colors.white.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: Center(
-        child: Icon(
-          isStack ? Icons.dashboard_customize_outlined : Icons.widgets_outlined,
-          color: Colors.white.withValues(alpha: 0.85),
-          size: 18,
-        ),
-      ),
+      child: previewImage != null
+          ? Image.memory(
+              previewImage!,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              filterQuality: FilterQuality.medium,
+            )
+          : Center(
+              child: Icon(
+                isStack
+                    ? Icons.dashboard_customize_outlined
+                    : Icons.widgets_outlined,
+                color: Colors.white.withValues(alpha: 0.85),
+                size: 18,
+              ),
+            ),
     );
+    return container;
   }
 }
 
-// ─── Bottom action bar item ──────────────────────────────────────────────────
+// ─── Bottom action item (icon + text label) ──────────────────────────────────
 
 class _BottomBarItem extends StatelessWidget {
   final IconData icon;
+  final String label;
   final VoidCallback onTap;
 
   const _BottomBarItem({
     required this.icon,
+    required this.label,
     required this.onTap,
   });
 
@@ -691,8 +714,24 @@ class _BottomBarItem extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        child: Icon(icon, color: Colors.white, size: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: Colors.white, size: 24),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                height: 1.15,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

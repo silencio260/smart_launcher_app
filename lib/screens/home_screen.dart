@@ -299,7 +299,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               child: Visibility(
                                 // Reveal workspace when dragging from drawer so
                                 // drop targets are reachable behind the drawer.
-                                visible: !_drawerOpen || _drawerDraggingToHome,
+                                // Hidden in edit mode so the wallpaper shows
+                                // through behind the One UI–style overlay.
+                                visible: (!_drawerOpen || _drawerDraggingToHome) &&
+                                    !_editMode,
                                 maintainState: true,
                                 maintainAnimation: true,
                                 maintainSize: true,
@@ -324,7 +327,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             ),
                             if (settings.showDock)
                               Visibility(
-                                visible: !_drawerOpen || _drawerDraggingToHome,
+                                visible: (!_drawerOpen || _drawerDraggingToHome) &&
+                                    !_editMode,
                                 maintainState: true,
                                 child: Padding(
                                   padding: EdgeInsets.only(
