@@ -321,9 +321,25 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     int columns,
     int rows,
   ) {
+    debugPrint(
+      '[WorkspaceWidgetSizing] addWidget request '
+      'provider=${widget.providerPackage}/${widget.providerClass} '
+      'grid=${columns}x$rows incomingSpan=${widget.spanX}x${widget.spanY} '
+      'minSpan=${widget.minSpanX}x${widget.minSpanY} '
+      'maxSpan=${widget.maxSpanX}x${widget.maxSpanY} '
+      'rawMin=${widget.minWidth}x${widget.minHeight} '
+      'rawMinResize=${widget.minResizeWidth}x${widget.minResizeHeight} '
+      'rawMaxResize=${widget.maxResizeWidth}x${widget.maxResizeHeight} '
+      'resizeMode=${widget.resizeMode}',
+    );
     final placeableWidget = widget.copyWith(
       spanX: widget.spanX.clamp(1, columns),
       spanY: widget.spanY.clamp(1, rows),
+    );
+    debugPrint(
+      '[WorkspaceWidgetSizing] addWidget clamped '
+      'provider=${widget.providerPackage}/${widget.providerClass} '
+      'placeableSpan=${placeableWidget.spanX}x${placeableWidget.spanY}',
     );
     final placement = ensureWidgetPlacement(
       placeableWidget.spanX,
@@ -331,11 +347,24 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
       columns,
       rows,
     );
+    debugPrint(
+      '[WorkspaceWidgetSizing] addWidget placement '
+      'provider=${widget.providerPackage}/${widget.providerClass} '
+      'page=${placement.page} slot=${placement.slot} '
+      'span=${placeableWidget.spanX}x${placeableWidget.spanY}',
+    );
     addWidget(placeableWidget, placement.page, placement.slot);
     return placement;
   }
 
   void addWidget(LauncherWidgetInfo widget, int page, int slot) {
+    debugPrint(
+      '[WorkspaceWidgetSizing] addWidget save '
+      'provider=${widget.providerPackage}/${widget.providerClass} '
+      'page=$page slot=$slot span=${widget.spanX}x${widget.spanY} '
+      'minSpan=${widget.minSpanX}x${widget.minSpanY} '
+      'maxSpan=${widget.maxSpanX}x${widget.maxSpanY}',
+    );
     final pages = List<WorkspacePage>.from(state.pages);
     while (pages.length <= page) {
       pages.add(WorkspacePage({}));
@@ -922,6 +951,10 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     int rows,
   ) {
     if (providers.isEmpty) return;
+    debugPrint(
+      '[WorkspaceWidgetSizing] refreshMetadata start '
+      'providerCount=${providers.length} grid=${columns}x$rows',
+    );
     final byProvider = {
       for (final provider in providers)
         '${provider.packageName}/${provider.providerClass}': provider,
@@ -991,6 +1024,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     }).toList();
 
     if (!changed) return;
+    debugPrint('[WorkspaceWidgetSizing] refreshMetadata changed=true saving layout');
     emit(state.copyWith(pages: pages));
     saveLayout();
   }
@@ -1004,7 +1038,14 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     if (widget.isCustomWidget) return widget;
     final provider =
         providers['${widget.providerPackage}/${widget.providerClass}'];
-    if (provider == null) return widget;
+    if (provider == null) {
+      debugPrint(
+        '[WorkspaceWidgetSizing] refreshWidget missingProvider '
+        '${widget.providerPackage}/${widget.providerClass} '
+        'storedSpan=${widget.spanX}x${widget.spanY}',
+      );
+      return widget;
+    }
     var minSpanX = provider.minSpanX.clamp(1, columns).toInt();
     var minSpanY = provider.minSpanY.clamp(1, rows).toInt();
     // If the provider's minResize is so large it spans the entire grid, but the
@@ -1015,10 +1056,20 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     final maxSpanX = provider.maxSpanX.clamp(minSpanX, columns).toInt();
     final maxSpanY = provider.maxSpanY.clamp(minSpanY, rows).toInt();
     debugPrint(
-        '[REFRESH_WIDGET] ${provider.packageName}/${provider.providerClass} '
-        'providerMin=(${provider.minSpanX},${provider.minSpanY}) '
-        'effectiveMin=($minSpanX,$minSpanY) max=($maxSpanX,$maxSpanY) '
-        'storedSpan=(${widget.spanX},${widget.spanY}) resizeMode=${provider.resizeMode}');
+      '[WorkspaceWidgetSizing] refreshWidget beforeClamp '
+      '${provider.packageName}/${provider.providerClass} '
+      'storedSpan=${widget.spanX}x${widget.spanY} '
+      'storedMinSpan=${widget.minSpanX}x${widget.minSpanY} '
+      'providerSpan=${provider.spanX}x${provider.spanY} '
+      'providerMin=${provider.minSpanX}x${provider.minSpanY} '
+      'effectiveMin=${minSpanX}x$minSpanY '
+      'max=${maxSpanX}x$maxSpanY '
+      'target=${provider.targetCellWidth}x${provider.targetCellHeight} '
+      'rawMin=${provider.minWidth}x${provider.minHeight} '
+      'rawMinResize=${provider.minResizeWidth}x${provider.minResizeHeight} '
+      'rawMaxResize=${provider.maxResizeWidth}x${provider.maxResizeHeight} '
+      'resizeMode=${provider.resizeMode}',
+    );
     var spanX = widget.spanX.clamp(minSpanX, maxSpanX).toInt();
     var spanY = widget.spanY.clamp(minSpanY, maxSpanY).toInt();
 
@@ -1034,6 +1085,14 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
         provider.spanY < widget.spanY) {
       spanY = provider.spanY.clamp(minSpanY, maxSpanY).toInt();
     }
+    debugPrint(
+      '[WorkspaceWidgetSizing] refreshWidget afterClamp '
+      '${provider.packageName}/${provider.providerClass} '
+      'wasAtOldMin=${wasAtOldMinX}x$wasAtOldMinY '
+      'finalSpan=${spanX}x$spanY '
+      'finalMinSpan=${minSpanX}x$minSpanY '
+      'finalMaxSpan=${maxSpanX}x$maxSpanY',
+    );
 
     return widget.copyWith(
       minWidth: provider.minWidth,

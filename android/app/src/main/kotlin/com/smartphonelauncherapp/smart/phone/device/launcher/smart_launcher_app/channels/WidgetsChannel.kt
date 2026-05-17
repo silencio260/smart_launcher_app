@@ -34,6 +34,7 @@ class WidgetsChannel(
     companion object {
         private const val CHANNEL = "com.genrevibes.smartlauncher/widgets"
         private const val REQUEST_BIND_WIDGET = 8731
+        private const val TAG = "WidgetSizing"
     }
 
     private val context: Context get() = activity
@@ -51,6 +52,7 @@ class WidgetsChannel(
                         cellHeightDp = (call.argument<Double>("cellHeight") ?: 0.0).toFloat(),
                         gapDp = (call.argument<Double>("gap") ?: 8.0).toFloat(),
                     )
+                    android.util.Log.d(TAG, "getAvailableWidgets args=$profile")
                     getAvailableWidgets(profile, result)
                 }
                 "bindWidget" -> {
@@ -70,6 +72,10 @@ class WidgetsChannel(
                         cellWidthDp = (call.argument<Double>("cellWidth") ?: 0.0).toFloat(),
                         cellHeightDp = (call.argument<Double>("cellHeight") ?: 0.0).toFloat(),
                         gapDp = (call.argument<Double>("gap") ?: 8.0).toFloat(),
+                    )
+                    android.util.Log.d(
+                        TAG,
+                        "updateWidgetSize args id=$appWidgetId provider=$providerPackage/$providerClass span=${spanX}x${spanY} profile=$profile",
                     )
                     updateWidgetSize(appWidgetId, providerPackage, providerClass, spanX, spanY, profile, result)
                 }
@@ -122,6 +128,21 @@ class WidgetsChannel(
                             null
                         }
                         val sizing = WidgetSizing.fromProviderInfo(context, info, profile)
+                        android.util.Log.d(TAG, buildString {
+                            append("providerResult ")
+                            append("provider=${info.provider.flattenToShortString()} ")
+                            append("label=$label app=$appName ")
+                            append("rawMin=${info.minWidth}x${info.minHeight} ")
+                            append("rawMinResize=${info.minResizeWidth}x${info.minResizeHeight} ")
+                            append("resizeMode=${info.resizeMode} ")
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                append("target=${info.targetCellWidth}x${info.targetCellHeight} ")
+                                append("rawMaxResize=${info.maxResizeWidth}x${info.maxResizeHeight} ")
+                            }
+                            append("computedDefaultSpan=${sizing.spanX}x${sizing.spanY} ")
+                            append("computedMinSpan=${sizing.minSpanX}x${sizing.minSpanY} ")
+                            append("computedMaxSpan=${sizing.maxSpanX}x${sizing.maxSpanY}")
+                        })
                         val (previewBytes, isGeneratedPreview) = loadWidgetPreview(info, sizing, profile, mainHandler)
 
                         val map = mutableMapOf<String, Any?>(
@@ -343,6 +364,19 @@ class WidgetsChannel(
             }
             val options = WidgetSizing.sizeOptionsForWidget(context, provider, spanX, spanY, profile)
             val manager = AppWidgetManager.getInstance(context)
+            android.util.Log.d(TAG, buildString {
+                append("updateWidgetSize options ")
+                append("id=$appWidgetId provider=${provider?.flattenToShortString()} ")
+                append("span=${spanX}x${spanY} profile=$profile ")
+                append("min=${options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)}x")
+                append(options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT))
+                append(" max=${options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH)}x")
+                append(options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT))
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    append(" sizes=")
+                    append(options.getParcelableArrayList<SizeF>(AppWidgetManager.OPTION_APPWIDGET_SIZES))
+                }
+            })
             if (!WidgetSizing.sameSizeOptions(manager.getAppWidgetOptions(appWidgetId), options)) {
                 manager.updateAppWidgetOptions(appWidgetId, options)
             }
@@ -415,6 +449,20 @@ class WidgetsChannel(
                 val columns = profiles.maxOf { it.columns }.coerceAtLeast(1)
                 val rows = profiles.maxOf { it.rows }.coerceAtLeast(1)
                 val padding = defaultPaddingDp(context, info.provider)
+                // AppWidgetProviderInfo's min/max/minResize dimensions are stored in PX,
+                // not dp (despite some legacy docs). Convert once up front so all span
+                // math runs in dp alongside cellWidthDp/cellHeightDp.
+                val density = context.resources.displayMetrics.density.takeIf { it > 0f } ?: 1f
+                val minWidthDp = info.minWidth / density
+                val minHeightDp = info.minHeight / density
+                val minResizeWidthDp = info.minResizeWidth / density
+                val minResizeHeightDp = info.minResizeHeight / density
+                val maxResizeWidthDp = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    info.maxResizeWidth / density
+                } else 0f
+                val maxResizeHeightDp = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    info.maxResizeHeight / density
+                } else 0f
 
                 var resizeMinSpanX = 0
                 var resizeMinSpanY = 0
@@ -426,16 +474,38 @@ class WidgetsChannel(
                 val placementProfile = profiles.first()
                 val defaultSpanX = spanForSize(
                     padding.left + padding.right,
-                    info.minWidth,
+                    minWidthDp,
                     placementProfile.gapDp,
                     placementProfile.cellWidthDp,
                 ).coerceIn(1, columns)
                 val defaultSpanY = spanForSize(
                     padding.top + padding.bottom,
-                    info.minHeight,
+                    minHeightDp,
                     placementProfile.gapDp,
                     placementProfile.cellHeightDp,
                 ).coerceIn(1, rows)
+                android.util.Log.d(TAG, buildString {
+                    append("fromProviderInfo raw ")
+                    append("provider=${info.provider.flattenToShortString()} ")
+                    append("grid=${columns}x${rows} ")
+                    append("requestedProfile=$profile ")
+                    append("resolvedProfiles=${profiles.joinToString { it.toDebugString() }} ")
+                    append("placementCell=${placementProfile.cellWidthDp}x${placementProfile.cellHeightDp} ")
+                    append("gap=${placementProfile.gapDp} ")
+                    append("density=$density ")
+                    append("rawMinPx=${info.minWidth}x${info.minHeight} ")
+                    append("minDp=${minWidthDp}x${minHeightDp} ")
+                    append("rawMinResizePx=${info.minResizeWidth}x${info.minResizeHeight} ")
+                    append("minResizeDp=${minResizeWidthDp}x${minResizeHeightDp} ")
+                    append("resizeMode=${info.resizeMode} ")
+                    append("paddingDp=${padding.left}/${padding.top}/${padding.right}/${padding.bottom} ")
+                    append("defaultFromMin=${defaultSpanX}x${defaultSpanY} ")
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                        append("target=${info.targetCellWidth}x${info.targetCellHeight} ")
+                        append("rawMaxResizePx=${info.maxResizeWidth}x${info.maxResizeHeight} ")
+                        append("maxResizeDp=${maxResizeWidthDp}x${maxResizeHeightDp}")
+                    }
+                })
 
                 // Resize bounds and maxSpan still use the worst-case across all profiles
                 // so the widget is constrained correctly in every orientation.
@@ -444,7 +514,7 @@ class WidgetsChannel(
                         resizeMinSpanX,
                         spanForSize(
                             padding.left + padding.right,
-                            info.minResizeWidth,
+                            minResizeWidthDp,
                             current.gapDp,
                             current.cellWidthDp,
                         ),
@@ -453,7 +523,7 @@ class WidgetsChannel(
                         resizeMinSpanY,
                         spanForSize(
                             padding.top + padding.bottom,
-                            info.minResizeHeight,
+                            minResizeHeightDp,
                             current.gapDp,
                             current.cellHeightDp,
                         ),
@@ -465,7 +535,7 @@ class WidgetsChannel(
                                 maxSpanX,
                                 spanForSize(
                                     padding.left + padding.right,
-                                    info.maxResizeWidth,
+                                    maxResizeWidthDp,
                                     current.gapDp,
                                     current.cellWidthDp,
                                 ),
@@ -476,7 +546,7 @@ class WidgetsChannel(
                                 maxSpanY,
                                 spanForSize(
                                     padding.top + padding.bottom,
-                                    info.maxResizeHeight,
+                                    maxResizeHeightDp,
                                     current.gapDp,
                                     current.cellHeightDp,
                                 ),
@@ -508,6 +578,15 @@ class WidgetsChannel(
                     if (resizeMinSpanX > columns && info.resizeMode and 1 != 0) defaultSpanX else resizeMinSpanX
                 val effectiveResizeMinSpanY =
                     if (resizeMinSpanY > rows && info.resizeMode and 2 != 0) defaultSpanY else resizeMinSpanY
+                android.util.Log.d(TAG, buildString {
+                    append("resizeBounds ")
+                    append("provider=${info.provider.flattenToShortString()} ")
+                    append("rawResizeMinSpan=${resizeMinSpanX}x${resizeMinSpanY} ")
+                    append("effectiveResizeMinSpan=${effectiveResizeMinSpanX}x${effectiveResizeMinSpanY} ")
+                    append("targetSpan=${targetSpanX}x${targetSpanY} ")
+                    append("maxSpanBeforeClamp=${maxSpanX}x${maxSpanY} ")
+                    append("columnsRows=${columns}x${rows}")
+                })
 
                 // Use minResizeWidth/Height as the resize floor when the widget declares one.
                 // If the widget is resizable but declares no minimum, allow down to 1 cell —
@@ -545,6 +624,16 @@ class WidgetsChannel(
                     spanY = targetSpanY
                 }
 
+                android.util.Log.d(TAG, buildString {
+                    append("finalSizing ")
+                    append("provider=${info.provider.flattenToShortString()} ")
+                    append("hasTarget=$hasTargetSpan ")
+                    append("defaultFromMin=${defaultSpanX}x${defaultSpanY} ")
+                    append("finalDefaultSpan=${spanX}x${spanY} ")
+                    append("finalMinSpan=${minSpanX}x${minSpanY} ")
+                    append("finalMaxSpan=${maxSpanX}x${maxSpanY} ")
+                    append("grid=${columns}x${rows}")
+                })
                 return WidgetSizing(minSpanX, minSpanY, spanX, spanY, maxSpanX, maxSpanY)
             }
 
@@ -560,6 +649,14 @@ class WidgetsChannel(
                     widgetSizeDp(current, spanX, spanY)
                 }.distinctBy { "${it.width}x${it.height}" }
                 val rect = minMaxSizes(sizes)
+                android.util.Log.d(TAG, buildString {
+                    append("sizeOptionsForWidget ")
+                    append("provider=${component.flattenToShortString()} ")
+                    append("span=${spanX}x${spanY} ")
+                    append("profile=$profile ")
+                    append("resolvedSizes=${sizes.joinToString { "${it.width}x${it.height}" }} ")
+                    append("bounds=${rect.left}x${rect.top}-${rect.right}x${rect.bottom}")
+                })
                 return Bundle().apply {
                     putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, rect.left)
                     putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, rect.top)
@@ -596,13 +693,13 @@ class WidgetsChannel(
 
             private fun spanForSize(
                 widgetPaddingDp: Int,
-                widgetSize: Int,
+                widgetSizeDp: Float,
                 cellSpacingDp: Float,
                 cellSizeDp: Float,
             ): Int {
                 if (cellSizeDp <= 0f) return 1
                 val span = kotlin.math.ceil(
-                    (widgetSize + widgetPaddingDp + cellSpacingDp) /
+                    (widgetSizeDp + widgetPaddingDp + cellSpacingDp) /
                         (cellSizeDp + cellSpacingDp).toDouble(),
                 ).toInt()
                 return span.coerceAtLeast(1)
@@ -716,5 +813,9 @@ class WidgetsChannel(
         val cellHeightDp: Float,
         val gapDp: Float,
         val padding: Rect,
-    )
+    ) {
+        fun toDebugString(): String {
+            return "${columns}x$rows cell=${cellWidthDp}x$cellHeightDp gap=$gapDp pad=${padding.left}/${padding.top}/${padding.right}/${padding.bottom}"
+        }
+    }
 }

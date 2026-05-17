@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../models/app_info.dart';
 import '../models/widget_provider_info.dart';
@@ -41,6 +42,10 @@ class LauncherService {
     double? gap,
   }) async {
     try {
+      debugPrint(
+        '[LauncherServiceWidgets] getAvailableWidgets request '
+        'grid=${gridColumns}x$gridRows cell=${cellWidth?.toStringAsFixed(2)}x${cellHeight?.toStringAsFixed(2)} gap=$gap',
+      );
       final List<dynamic> raw = await _widgets.invokeMethod(
         'getAvailableWidgets',
         {
@@ -51,8 +56,31 @@ class LauncherService {
           if (gap != null) 'gap': gap,
         },
       );
-      return raw.map((e) => WidgetProviderInfo.fromMap(e as Map)).toList();
-    } catch (_) {
+      final providers =
+          raw.map((e) => WidgetProviderInfo.fromMap(e as Map)).toList();
+      debugPrint(
+        '[LauncherServiceWidgets] getAvailableWidgets response count=${providers.length}',
+      );
+      for (final provider in providers) {
+        debugPrint(
+          '[LauncherServiceWidgets] provider '
+          '${provider.packageName}/${provider.providerClass} '
+          'label="${provider.label}" '
+          'rawMin=${provider.minWidth}x${provider.minHeight} '
+          'rawMinResize=${provider.minResizeWidth}x${provider.minResizeHeight} '
+          'rawMaxResize=${provider.maxResizeWidth}x${provider.maxResizeHeight} '
+          'target=${provider.targetCellWidth}x${provider.targetCellHeight} '
+          'resizeMode=${provider.resizeMode} '
+          'span=${provider.spanX}x${provider.spanY} '
+          'minSpan=${provider.minSpanX}x${provider.minSpanY} '
+          'maxSpan=${provider.maxSpanX}x${provider.maxSpanY}',
+        );
+      }
+      return providers;
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[LauncherServiceWidgets] getAvailableWidgets error=$error\n$stackTrace',
+      );
       return [];
     }
   }
@@ -62,12 +90,19 @@ class LauncherService {
   static Future<int> bindWidget(
       String packageName, String providerClass) async {
     try {
+      debugPrint(
+        '[LauncherServiceWidgets] bindWidget request $packageName/$providerClass',
+      );
       final int id = await _widgets.invokeMethod('bindWidget', {
         'packageName': packageName,
         'providerClass': providerClass,
       });
+      debugPrint(
+        '[LauncherServiceWidgets] bindWidget response id=$id provider=$packageName/$providerClass',
+      );
       return id;
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('[LauncherServiceWidgets] bindWidget error=$error\n$stackTrace');
       return -1;
     }
   }
@@ -85,6 +120,12 @@ class LauncherService {
     double? gap,
   }) async {
     try {
+      debugPrint(
+        '[LauncherServiceWidgets] updateWidgetSize request '
+        'id=$appWidgetId provider=$providerPackage/$providerClass '
+        'span=${spanX}x$spanY grid=${gridColumns}x$gridRows '
+        'cell=${cellWidth?.toStringAsFixed(2)}x${cellHeight?.toStringAsFixed(2)} gap=$gap',
+      );
       await _widgets.invokeMethod('updateWidgetSize', {
         'appWidgetId': appWidgetId,
         'providerPackage': providerPackage,
@@ -97,6 +138,13 @@ class LauncherService {
         if (cellHeight != null) 'cellHeight': cellHeight,
         if (gap != null) 'gap': gap,
       });
-    } catch (_) {}
+      debugPrint(
+        '[LauncherServiceWidgets] updateWidgetSize complete id=$appWidgetId span=${spanX}x$spanY',
+      );
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[LauncherServiceWidgets] updateWidgetSize error=$error\n$stackTrace',
+      );
+    }
   }
 }

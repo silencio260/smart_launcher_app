@@ -69,6 +69,15 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
           16.0;
       final cellHeight =
           (workspaceHeight - (settings.gridRows - 1) * gap) / settings.gridRows;
+      debugPrint(
+        '[WidgetPickerSizing] loadWidgets '
+        'screen=${mediaQuery.size.width.toStringAsFixed(2)}x${mediaQuery.size.height.toStringAsFixed(2)} '
+        'padding=${mediaQuery.padding} '
+        'grid=${settings.gridColumns}x${settings.gridRows} '
+        'gap=$gap dock(show=${settings.showDock}, icon=${settings.dockIconSize}, labels=${settings.showDockLabels}) '
+        'workspaceHeight=${workspaceHeight.toStringAsFixed(2)} '
+        'cell=${cellWidth.toStringAsFixed(2)}x${cellHeight.toStringAsFixed(2)}',
+      );
       final list = await LauncherService.getAvailableWidgets(
         gridColumns: settings.gridColumns,
         gridRows: settings.gridRows,
@@ -118,6 +127,20 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
     final workspace = context.read<WorkspaceCubit>();
     final settings = context.read<SettingsCubit>().state;
     final initialSpan = _initialSpanForProvider(provider);
+    debugPrint(
+      '[WidgetPickerSizing] activate provider=${provider.packageName}/${provider.providerClass} '
+      'label="${provider.label}" '
+      'appWidgetId=$appWidgetId grid=${settings.gridColumns}x${settings.gridRows} '
+      'rawMin=${provider.minWidth}x${provider.minHeight} '
+      'rawMinResize=${provider.minResizeWidth}x${provider.minResizeHeight} '
+      'rawMaxResize=${provider.maxResizeWidth}x${provider.maxResizeHeight} '
+      'target=${provider.targetCellWidth}x${provider.targetCellHeight} '
+      'resizeMode=${provider.resizeMode} '
+      'providerSpan=${provider.spanX}x${provider.spanY} '
+      'providerMinSpan=${provider.minSpanX}x${provider.minSpanY} '
+      'providerMaxSpan=${provider.maxSpanX}x${provider.maxSpanY} '
+      'chosenInitialSpan=${initialSpan.$1}x${initialSpan.$2}',
+    );
 
     final info = LauncherWidgetInfo(
       id: appWidgetId,
@@ -143,6 +166,11 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
       info,
       settings.gridColumns,
       settings.gridRows,
+    );
+    debugPrint(
+      '[WidgetPickerSizing] placed provider=${provider.packageName}/${provider.providerClass} '
+      'page=${placement.page} slot=${placement.slot} '
+      'storedSpan=${info.spanX}x${info.spanY}',
     );
     widget.onWidgetAdded?.call(info, placement.page);
 
@@ -566,15 +594,24 @@ class _WidgetTile extends StatelessWidget {
   required int gridColumns,
   required int gridRows,
 }) {
-  final hasTargetCells =
-      provider.targetCellWidth > 0 && provider.targetCellHeight > 0;
-  final spanX = hasTargetCells ? provider.targetCellWidth : provider.spanX;
-  final spanY = hasTargetCells ? provider.targetCellHeight : provider.spanY;
-
-  return (
-    spanX.clamp(1, gridColumns).toInt(),
-    spanY.clamp(1, gridRows).toInt(),
+  // provider.spanX/Y already accounts for targetCellWidth/Height (clamped to
+  // this grid) via WidgetSizing.fromProviderInfo on the native side.
+  // Using raw targetCellWidth/Height here would apply the widget's declared
+  // cell count against a different (larger) reference grid.
+  final result = (
+    provider.spanX.clamp(1, gridColumns).toInt(),
+    provider.spanY.clamp(1, gridRows).toInt(),
   );
+  debugPrint(
+    '[WidgetPickerSizing] preferredCells provider=${provider.packageName}/${provider.providerClass} '
+    'grid=${gridColumns}x$gridRows '
+    'providerSpan=${provider.spanX}x${provider.spanY} '
+    'target=${provider.targetCellWidth}x${provider.targetCellHeight} '
+    'minSpan=${provider.minSpanX}x${provider.minSpanY} '
+    'maxSpan=${provider.maxSpanX}x${provider.maxSpanY} '
+    'result=${result.$1}x${result.$2}',
+  );
+  return result;
 }
 
 class _WidgetAppIcon extends StatelessWidget {

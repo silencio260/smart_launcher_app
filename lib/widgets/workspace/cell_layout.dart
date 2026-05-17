@@ -85,6 +85,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
   double _cellWidth = 0;
   double _cellHeight = 0;
   static String? _lastWidgetMetadataRefreshKey;
+  static String? _lastWidgetCellMetricsLogKey;
   OverlayEntry? _openFolderEntry;
   String? _openFolderId;
 
@@ -1135,6 +1136,26 @@ class _CellLayoutViewState extends State<CellLayoutView>
           // Keep instance copies so helpers called from onMove/onDrop can use them.
           _cellWidth = cellWidth;
           _cellHeight = cellHeight;
+          final metricsLogKey = [
+            widget.pageIndex,
+            columns,
+            rows,
+            constraints.maxWidth.round(),
+            constraints.maxHeight.round(),
+            cellWidth.round(),
+            cellHeight.round(),
+            _gridGap.round(),
+          ].join(':');
+          if (_lastWidgetCellMetricsLogKey != metricsLogKey) {
+            _lastWidgetCellMetricsLogKey = metricsLogKey;
+            debugPrint(
+              '[CellLayoutWidgetSizing] cellMetrics '
+              'page=${widget.pageIndex} constraints=${constraints.maxWidth.toStringAsFixed(2)}x${constraints.maxHeight.toStringAsFixed(2)} '
+              'grid=${columns}x$rows gap=$_gridGap '
+              'cell=${cellWidth.toStringAsFixed(2)}x${cellHeight.toStringAsFixed(2)} '
+              'padding=8 all',
+            );
+          }
           _refreshWorkspaceWidgetMetadata();
 
           return Stack(
@@ -2141,8 +2162,20 @@ class _CellLayoutViewState extends State<CellLayoutView>
       // allow free resize rather than blocking it entirely.
       if (span >= widget.settings.gridColumns &&
           _canResizeHorizontally(widgetInfo)) {
+        debugPrint(
+          '[CellLayoutWidgetSizing] minSpanX storedOverride '
+          'provider=${widgetInfo.providerPackage}/${widgetInfo.providerClass} '
+          'storedMinSpanX=${widgetInfo.minSpanX} gridColumns=${widget.settings.gridColumns} '
+          'resizeMode=${widgetInfo.resizeMode} result=1',
+        );
         return 1;
       }
+      debugPrint(
+        '[CellLayoutWidgetSizing] minSpanX stored '
+        'provider=${widgetInfo.providerPackage}/${widgetInfo.providerClass} '
+        'storedMinSpanX=${widgetInfo.minSpanX} gridColumns=${widget.settings.gridColumns} '
+        'result=$span',
+      );
       return span;
     }
     final sourceWidth = widgetInfo.minResizeWidth > 0
@@ -2154,8 +2187,21 @@ class _CellLayoutViewState extends State<CellLayoutView>
       widget.settings.gridColumns,
     );
     if (span >= widget.settings.gridColumns && _canResizeHorizontally(widgetInfo)) {
+      debugPrint(
+        '[CellLayoutWidgetSizing] minSpanX computedOverride '
+        'provider=${widgetInfo.providerPackage}/${widgetInfo.providerClass} '
+        'sourceWidth=$sourceWidth cellWidth=${_cellWidth.toStringAsFixed(2)} '
+        'computed=$span gridColumns=${widget.settings.gridColumns} '
+        'resizeMode=${widgetInfo.resizeMode} result=1',
+      );
       return 1;
     }
+    debugPrint(
+      '[CellLayoutWidgetSizing] minSpanX computed '
+      'provider=${widgetInfo.providerPackage}/${widgetInfo.providerClass} '
+      'sourceWidth=$sourceWidth cellWidth=${_cellWidth.toStringAsFixed(2)} '
+      'gridColumns=${widget.settings.gridColumns} result=$span',
+    );
     return span;
   }
 
@@ -2169,8 +2215,20 @@ class _CellLayoutViewState extends State<CellLayoutView>
       final span =
           widgetInfo.minSpanY.clamp(1, widget.settings.gridRows).toInt();
       if (span >= widget.settings.gridRows && _canResizeVertically(widgetInfo)) {
+        debugPrint(
+          '[CellLayoutWidgetSizing] minSpanY storedOverride '
+          'provider=${widgetInfo.providerPackage}/${widgetInfo.providerClass} '
+          'storedMinSpanY=${widgetInfo.minSpanY} gridRows=${widget.settings.gridRows} '
+          'resizeMode=${widgetInfo.resizeMode} result=1',
+        );
         return 1;
       }
+      debugPrint(
+        '[CellLayoutWidgetSizing] minSpanY stored '
+        'provider=${widgetInfo.providerPackage}/${widgetInfo.providerClass} '
+        'storedMinSpanY=${widgetInfo.minSpanY} gridRows=${widget.settings.gridRows} '
+        'result=$span',
+      );
       return span;
     }
     final sourceHeight = widgetInfo.minResizeHeight > 0
@@ -2182,8 +2240,21 @@ class _CellLayoutViewState extends State<CellLayoutView>
       widget.settings.gridRows,
     );
     if (span >= widget.settings.gridRows && _canResizeVertically(widgetInfo)) {
+      debugPrint(
+        '[CellLayoutWidgetSizing] minSpanY computedOverride '
+        'provider=${widgetInfo.providerPackage}/${widgetInfo.providerClass} '
+        'sourceHeight=$sourceHeight cellHeight=${_cellHeight.toStringAsFixed(2)} '
+        'computed=$span gridRows=${widget.settings.gridRows} '
+        'resizeMode=${widgetInfo.resizeMode} result=1',
+      );
       return 1;
     }
+    debugPrint(
+      '[CellLayoutWidgetSizing] minSpanY computed '
+      'provider=${widgetInfo.providerPackage}/${widgetInfo.providerClass} '
+      'sourceHeight=$sourceHeight cellHeight=${_cellHeight.toStringAsFixed(2)} '
+      'gridRows=${widget.settings.gridRows} result=$span',
+    );
     return span;
   }
 
@@ -2280,7 +2351,13 @@ class _CellLayoutViewState extends State<CellLayoutView>
   }
 
   void _refreshWorkspaceWidgetMetadata() {
-    if (_cellWidth <= 0 || _cellHeight <= 0) return;
+    if (_cellWidth <= 0 || _cellHeight <= 0) {
+      debugPrint(
+        '[CellLayoutWidgetSizing] refreshMetadata skipped invalidCell '
+        'cell=${_cellWidth.toStringAsFixed(2)}x${_cellHeight.toStringAsFixed(2)}',
+      );
+      return;
+    }
     final hasSystemWidgets = widget.page.slots.values.any((content) {
       if (content is WidgetSlot) return !content.widget.isCustomWidget;
       if (content is WidgetStackSlot) {
@@ -2288,7 +2365,13 @@ class _CellLayoutViewState extends State<CellLayoutView>
       }
       return false;
     });
-    if (!hasSystemWidgets) return;
+    if (!hasSystemWidgets) {
+      debugPrint(
+        '[CellLayoutWidgetSizing] refreshMetadata skipped noSystemWidgets '
+        'page=${widget.pageIndex}',
+      );
+      return;
+    }
 
     final key = [
       widget.settings.gridColumns,
@@ -2297,8 +2380,19 @@ class _CellLayoutViewState extends State<CellLayoutView>
       _cellHeight.round(),
       _gridGap.round(),
     ].join(':');
-    if (_lastWidgetMetadataRefreshKey == key) return;
+    if (_lastWidgetMetadataRefreshKey == key) {
+      debugPrint(
+        '[CellLayoutWidgetSizing] refreshMetadata skipped sameKey key=$key',
+      );
+      return;
+    }
     _lastWidgetMetadataRefreshKey = key;
+    debugPrint(
+      '[CellLayoutWidgetSizing] refreshMetadata request '
+      'page=${widget.pageIndex} key=$key '
+      'grid=${widget.settings.gridColumns}x${widget.settings.gridRows} '
+      'cell=${_cellWidth.toStringAsFixed(2)}x${_cellHeight.toStringAsFixed(2)} gap=$_gridGap',
+    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
@@ -2310,6 +2404,10 @@ class _CellLayoutViewState extends State<CellLayoutView>
         gap: _gridGap,
       );
       if (!mounted) return;
+      debugPrint(
+        '[CellLayoutWidgetSizing] refreshMetadata response '
+        'page=${widget.pageIndex} providers=${providers.length}',
+      );
       context.read<WorkspaceCubit>().refreshWidgetProviderMetadata(
             providers,
             widget.settings.gridColumns,
