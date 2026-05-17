@@ -4,6 +4,7 @@ import '../../models/launcher_widget_info.dart';
 import '../../services/launcher_service.dart';
 import '../../state/workspace_cubit.dart';
 import '../clock_widget.dart';
+import '../edit_mode/edit_mode_scope.dart';
 
 /// Renders a single Android app widget with resize handles. The
 /// LongPressDraggable for moving is owned by CellLayoutView, so this widget
@@ -96,6 +97,13 @@ class _WidgetView extends StatelessWidget {
             WorkspaceCubit.defaultClockProviderPackage &&
         widgetInfo.providerClass == WorkspaceCubit.defaultClockProviderClass) {
       return const Center(child: ClockWidget());
+    }
+
+    // While the edit overlay is mounted it owns the live AppWidgetHostView for
+    // each appWidgetId. Dropping the workspace's AndroidView here releases the
+    // hostview registration in AppWidgetHost.mViews so the overlay can take it.
+    if (EditModeScope.isActive(context)) {
+      return const SizedBox.shrink();
     }
 
     return _SpanSyncedWidgetHostView(

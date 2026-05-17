@@ -1,5 +1,5 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/folder_info.dart';
 import '../../models/launcher_settings.dart';
@@ -9,7 +9,6 @@ import '../icons/shaped_icon.dart';
 
 class EditModeOverlay extends StatefulWidget {
   final LauncherSettings settings;
-  final Map<int, Uint8List> initialWidgetSnapshots;
   final VoidCallback onDismiss;
   final VoidCallback onWallpaper;
   final VoidCallback onThemes;
@@ -19,7 +18,6 @@ class EditModeOverlay extends StatefulWidget {
   const EditModeOverlay({
     super.key,
     required this.settings,
-    this.initialWidgetSnapshots = const {},
     required this.onDismiss,
     required this.onWallpaper,
     required this.onThemes,
@@ -200,7 +198,6 @@ class _EditModeOverlayState extends State<EditModeOverlay>
             page: state.pages[i],
             folders: state.folders,
             settings: widget.settings,
-            widgetSnapshots: widget.initialWidgetSnapshots,
             onTap: () {
               context.read<WorkspaceCubit>().setCurrentPage(i);
               _dismiss();
@@ -383,7 +380,6 @@ class _PageCard extends StatelessWidget {
   final WorkspacePage page;
   final Map<String, FolderInfo> folders;
   final LauncherSettings settings;
-  final Map<int, Uint8List> widgetSnapshots;
   final VoidCallback onTap;
 
   const _PageCard({
@@ -391,7 +387,6 @@ class _PageCard extends StatelessWidget {
     required this.page,
     required this.folders,
     required this.settings,
-    required this.widgetSnapshots,
     required this.onTap,
   });
 
@@ -401,7 +396,6 @@ class _PageCard extends StatelessWidget {
       page: page,
       folders: folders,
       settings: settings,
-      widgetSnapshots: widgetSnapshots,
     );
     final framed = _PageFrame(child: preview);
     return Padding(
@@ -415,7 +409,6 @@ class _PageCard extends StatelessWidget {
             page: page,
             folders: folders,
             settings: settings,
-            widgetSnapshots: widgetSnapshots,
           ),
         ),
         childWhenDragging: Opacity(opacity: 0.35, child: framed),
@@ -494,13 +487,11 @@ class _PagePreview extends StatelessWidget {
   final WorkspacePage page;
   final Map<String, FolderInfo> folders;
   final LauncherSettings settings;
-  final Map<int, Uint8List> widgetSnapshots;
 
   const _PagePreview({
     required this.page,
     required this.folders,
     required this.settings,
-    required this.widgetSnapshots,
   });
 
   @override
@@ -573,12 +564,15 @@ class _PagePreview extends StatelessWidget {
           showLabel: settings.showLabels,
         );
       case WidgetSlot(:final widget):
-        return _WidgetTile(previewImage: widgetSnapshots[widget.appWidgetId]);
+        return _WidgetTile(appWidgetId: widget.appWidgetId);
       case WidgetStackSlot(:final widgets):
-        final first = widgets
-            .map((w) => widgetSnapshots[w.appWidgetId])
-            .firstWhere((b) => b != null, orElse: () => null);
-        return _WidgetTile(previewImage: first, isStack: true);
+        final firstId = widgets
+            .map((w) => w.appWidgetId)
+            .firstWhere((id) => id > 0, orElse: () => -1);
+        return _WidgetTile(
+          appWidgetId: firstId > 0 ? firstId : null,
+          isStack: true,
+        );
       case EmptySlot():
         return const SizedBox.shrink();
     }
@@ -710,26 +704,30 @@ class _FolderTile extends StatelessWidget {
 }
 
 class _WidgetTile extends StatelessWidget {
-  final Uint8List? previewImage;
+  final int? appWidgetId;
   final bool isStack;
 
-  const _WidgetTile({required this.previewImage, this.isStack = false});
+  const _WidgetTile({required this.appWidgetId, this.isStack = false});
 
   @override
   Widget build(BuildContext context) {
-    final container = Container(
+    final id = appWidgetId;
+    return Container(
       margin: const EdgeInsets.all(2),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: previewImage != null
-          ? Image.memory(
-              previewImage!,
-              fit: BoxFit.cover,
-              gaplessPlayback: true,
-              filterQuality: FilterQuality.medium,
+      child: id != null && id > 0
+          ? AndroidView(
+              // Keying on the appWidgetId keeps the PlatformView identity tied
+              // to the widget, not to the slot position, so swiping between
+              // pages doesn't dispose/recreate views unnecessarily.
+              key: ValueKey('edit-overlay-$id'),
+              viewType: 'com.genrevibes.smartlauncher/widget_host_view',
+              creationParams: {'appWidgetId': id},
+              creationParamsCodec: const StandardMessageCodec(),
             )
           : Center(
               child: Icon(
@@ -741,7 +739,6 @@ class _WidgetTile extends StatelessWidget {
               ),
             ),
     );
-    return container;
   }
 }
 

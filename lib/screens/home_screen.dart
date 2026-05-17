@@ -16,6 +16,7 @@ import '../state/workspace_cubit.dart';
 import '../widgets/allapps/all_apps_container.dart';
 import '../widgets/dock/hotseat_view.dart';
 import '../widgets/edit_mode/edit_mode_overlay.dart';
+import '../widgets/edit_mode/edit_mode_scope.dart';
 import '../widgets/drag/drag_layer.dart';
 import '../widgets/workspace/workspace_touch_listener.dart';
 import '../widgets/workspace/workspace_view.dart';
@@ -40,7 +41,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _editMode = false;
   bool _didEnsureDefaultClock = false;
   PageController? _pageController;
-  Map<int, Uint8List> _editModeWidgetSnapshots = const {};
 
   @override
   void initState() {
@@ -92,53 +92,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     context.read<LauncherCubit>().goToState(ls.LauncherState.normal);
   }
 
-  Future<void> _enterEditMode() async {
+  void _enterEditMode() {
     _dismissAppInfoTooltip();
-    // Snapshot every visible widget BEFORE the overlay covers them. The
-    // platform views are still on-screen and laid out, so the snapshots come
-    // back instantly. Once edit mode is on, the workspace is hidden behind the
-    // overlay (still in the tree via Visibility.maintainState) so further
-    // snapshot requests would race with the hide.
-    final snapshots = await _captureLiveWidgetSnapshots();
-    if (!mounted) return;
-    setState(() {
-      _editModeWidgetSnapshots = snapshots;
-      _editMode = true;
-    });
+    setState(() => _editMode = true);
   }
 
-  Future<Map<int, Uint8List>> _captureLiveWidgetSnapshots() async {
-    final workspace = context.read<WorkspaceCubit>().state;
-    final ids = <int>{};
-    for (final page in workspace.pages) {
-      page.slots.forEach((_, content) {
-        if (content is WidgetSlot) {
-          final id = content.widget.appWidgetId;
-          if (id > 0) ids.add(id);
-        } else if (content is WidgetStackSlot) {
-          for (final w in content.widgets) {
-            if (w.appWidgetId > 0) ids.add(w.appWidgetId);
-          }
-        }
-      });
-    }
-    if (ids.isEmpty) return const {};
-    final entries = await Future.wait(ids.map((id) async {
-      final bytes = await LauncherService.renderLiveWidget(id);
-      return MapEntry(id, bytes);
-    }));
-    final result = <int, Uint8List>{};
-    for (final e in entries) {
-      final v = e.value;
-      if (v != null) result[e.key] = v;
-    }
-    return result;
-  }
-
-  void _exitEditMode() => setState(() {
-        _editMode = false;
-        _editModeWidgetSnapshots = const {};
-      });
+  void _exitEditMode() => setState(() => _editMode = false);
 
   void _navigateToBestDragPage() {
     final workspace = context.read<WorkspaceCubit>();
@@ -368,11 +327,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             extendBody: true,
             body: Stack(
               children: [
-                DragLayer(
-                  dragController: _dragController,
-                  iconShape: settings.iconShape,
-                  pageController: _pageController,
-                  child: WorkspaceTouchListener(
+                // Workspace subtree sits under EditModeScope so its
+                // HomeWidgetSlot / HomeWidgetStackView short-circuit their
+                // AndroidViews while edit mode is active, freeing each
+                // appWidgetId for the overlay below to mount its own host
+                // views. The overlay is NOT inside this scope.
+                EditModeScope(
+                  active: _editMode,
+                  child: DragLayer(
+                    dragController: _dragController,
+                    iconShape: settings.iconShape,
+                    pageController: _pageController,
+                    child: WorkspaceTouchListener(
                     settings: settings,
                     dragController: _dragController,
                     onDoubleTap: () =>
@@ -450,6 +416,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ],
                     ),
                   ),
+                  ),
                 ),
                 if (_drawerOpen)
                   AllAppsContainer(
@@ -471,7 +438,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 if (_editMode)
                   EditModeOverlay(
                     settings: settings,
-                    initialWidgetSnapshots: _editModeWidgetSnapshots,
                     onDismiss: _exitEditMode,
                     onWallpaper: () {
                       _exitEditMode();

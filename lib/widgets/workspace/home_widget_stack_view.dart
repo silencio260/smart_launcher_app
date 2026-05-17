@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/launcher_widget_info.dart';
 import '../../services/launcher_service.dart';
+import '../edit_mode/edit_mode_scope.dart';
 
 /// Shows a swipeable stack of widgets. Long-press dragging is handled by the
 /// parent CellLayoutView (same as single widgets). Resize handles work on the
@@ -222,6 +223,10 @@ class _SpanSyncedStackWidgetViewState
 
   @override
   Widget build(BuildContext context) {
+    // See HomeWidgetSlot: edit overlay owns the live hostview while it's up.
+    if (EditModeScope.isActive(context)) {
+      return const SizedBox.shrink();
+    }
     return AndroidView(
       key: ValueKey(widget.widgetInfo.appWidgetId),
       viewType: 'com.genrevibes.smartlauncher/widget_host_view',
