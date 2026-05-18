@@ -7,6 +7,7 @@ import '../../models/workspace_item_info.dart';
 import '../../services/drag/drag_controller.dart';
 import '../../state/apps_cubit.dart';
 import '../../state/workspace_cubit.dart';
+import '../icons/badge_listener.dart';
 import '../icons/bubble_text_view.dart';
 
 class FolderView extends StatefulWidget {
@@ -14,7 +15,6 @@ class FolderView extends StatefulWidget {
   final int folderPage;
   final int folderSlot;
   final LauncherSettings settings;
-  final Map<String, int> badgeCounts;
   final DragController dragController;
   final void Function(AppInfo app) onAppTap;
   final VoidCallback onClose;
@@ -25,7 +25,6 @@ class FolderView extends StatefulWidget {
     required this.folderPage,
     required this.folderSlot,
     required this.settings,
-    required this.badgeCounts,
     required this.dragController,
     required this.onAppTap,
     required this.onClose,
@@ -313,13 +312,16 @@ class _FolderViewState extends State<FolderView>
           folderSlot: widget.folderSlot,
           onFolderDropCompleted: _close,
         );
-        final iconView = BubbleTextView(
-          app: app,
-          iconSize: widget.settings.iconSize,
-          showLabel: widget.settings.showFolderLabels,
-          labelSize: widget.settings.labelSize,
-          iconShape: widget.settings.iconShape,
-          badgeCount: widget.badgeCounts[app.packageName] ?? 0,
+        final iconView = BadgeListener(
+          packageName: app.packageName,
+          builder: (_, badge) => BubbleTextView(
+            app: app,
+            iconSize: widget.settings.iconSize,
+            showLabel: widget.settings.showFolderLabels,
+            labelSize: widget.settings.labelSize,
+            iconShape: widget.settings.iconShape,
+            badgeCount: badge,
+          ),
         );
 
         // Per-slot DragTarget enables reordering by hovering one icon over

@@ -431,7 +431,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                         settings,
                                       ),
                                       settings: settings,
-                                      badgeCounts: appsState.badgeCounts,
                                       dragController: _dragController,
                                       onSwipeUp: () => _handleGesture(
                                           settings.swipeUpAction),

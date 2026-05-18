@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
@@ -7,44 +8,90 @@ import '../services/launcher_service.dart';
 
 class AppsState extends Equatable {
   final List<AppInfo> apps;
-  final Map<String, int> badgeCounts;
   final bool loading;
+  // O(1) package -> AppInfo lookup. Built once per state instance so the
+  // workspace's per-tile BlocSelector doesn't do an O(N) scan of `apps`
+  // on every selector invocation.
+  final Map<String, AppInfo> appsByPackage;
 
-  const AppsState({
+  AppsState({
     this.apps = const [],
-    this.badgeCounts = const {},
     this.loading = false,
-  });
+  }) : appsByPackage = {for (final a in apps) a.packageName: a};
 
   AppsState copyWith({
     List<AppInfo>? apps,
-    Map<String, int>? badgeCounts,
     bool? loading,
   }) =>
       AppsState(
         apps: apps ?? this.apps,
-        badgeCounts: badgeCounts ?? this.badgeCounts,
         loading: loading ?? this.loading,
       );
 
   @override
-  List<Object?> get props => [apps, badgeCounts, loading];
+  List<Object?> get props => [apps, loading];
+}
+
+// Per-package badge notifier store. Each badge update only notifies the
+// ValueNotifier for packages whose count actually changed, so a single
+// app emitting a notification rebuilds exactly one tile instead of
+// fanning out to every tile, dock slot, and folder grid on screen.
+class BadgeStore {
+  final Map<String, ValueNotifier<int>> _byPackage = {};
+  Map<String, int> _snapshot = const {};
+
+  ValueListenable<int> listenable(String packageName) {
+    return _byPackage.putIfAbsent(
+      packageName,
+      () => ValueNotifier<int>(_snapshot[packageName] ?? 0),
+    );
+  }
+
+  int get(String packageName) => _snapshot[packageName] ?? 0;
+
+  Map<String, int> get snapshot => _snapshot;
+
+  void update(Map<String, int> next) {
+    final prev = _snapshot;
+    _snapshot = next;
+    final keys = <String>{...prev.keys, ...next.keys};
+    for (final k in keys) {
+      final n = next[k] ?? 0;
+      if ((prev[k] ?? 0) == n) continue;
+      final notifier = _byPackage[k];
+      if (notifier != null && notifier.value != n) notifier.value = n;
+    }
+  }
+
+  void dispose() {
+    for (final n in _byPackage.values) {
+      n.dispose();
+    }
+    _byPackage.clear();
+  }
 }
 
 class AppsCubit extends Cubit<AppsState> {
-  static const _badgeEvents = EventChannel('com.genrevibes.smartlauncher/notifications/badge_events');
-  static const _notificationChannel = MethodChannel('com.genrevibes.smartlauncher/notifications');
+  static const _badgeEvents =
+      EventChannel('com.genrevibes.smartlauncher/notifications/badge_events');
+  static const _notificationChannel =
+      MethodChannel('com.genrevibes.smartlauncher/notifications');
 
   StreamSubscription<dynamic>? _badgeSub;
 
-  AppsCubit() : super(const AppsState());
+  // Per-tile badge subscribers attach to this store instead of going
+  // through AppsCubit's Bloc state, so badge emits don't re-run every
+  // BlocSelector on every workspace/dock/folder tile.
+  final BadgeStore badges = BadgeStore();
+
+  AppsCubit() : super(AppsState());
 
   void startBadgeListening() {
     _badgeSub ??= _badgeEvents.receiveBroadcastStream().listen(
       (data) {
         if (data is Map) {
-          final counts = data.map((k, v) => MapEntry(k.toString(), (v as int?) ?? 0));
-          emit(state.copyWith(badgeCounts: counts));
+          badges.update(
+              data.map((k, v) => MapEntry(k.toString(), (v as int?) ?? 0)));
         }
       },
       onError: (_) {},
@@ -53,10 +100,11 @@ class AppsCubit extends Cubit<AppsState> {
 
   Future<void> refreshBadges() async {
     try {
-      final raw = await _notificationChannel.invokeMethod<Map>('getBadgeCounts');
+      final raw =
+          await _notificationChannel.invokeMethod<Map>('getBadgeCounts');
       if (raw != null) {
-        final counts = raw.map((k, v) => MapEntry(k.toString(), (v as int?) ?? 0));
-        emit(state.copyWith(badgeCounts: counts));
+        badges.update(
+            raw.map((k, v) => MapEntry(k.toString(), (v as int?) ?? 0)));
       }
     } catch (_) {}
   }
@@ -64,6 +112,7 @@ class AppsCubit extends Cubit<AppsState> {
   @override
   Future<void> close() {
     _badgeSub?.cancel();
+    badges.dispose();
     return super.close();
   }
 
@@ -78,7 +127,7 @@ class AppsCubit extends Cubit<AppsState> {
   }
 
   void updateBadges(Map<String, int> counts) {
-    emit(state.copyWith(badgeCounts: counts));
+    badges.update(counts);
   }
 
   void hideApp(String packageName) {

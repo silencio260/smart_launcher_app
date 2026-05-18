@@ -7,6 +7,7 @@ import '../../models/launcher_settings.dart';
 import '../../models/workspace_item_info.dart';
 import '../../state/workspace_cubit.dart';
 import '../icons/shaped_icon.dart';
+import 'threshold_reorderable_list.dart';
 
 class EditModeOverlay extends StatefulWidget {
   final LauncherSettings settings;
@@ -180,10 +181,9 @@ class _EditModeOverlayState extends State<EditModeOverlay>
         final horizontalInset =
             ((constraints.maxWidth - thumbW) / 2).clamp(12.0, 80.0);
 
-        return ReorderableListView.builder(
-          scrollController: _scrollController,
+        return ThresholdReorderableList(
+          controller: _scrollController,
           scrollDirection: Axis.horizontal,
-          buildDefaultDragHandles: false,
           padding: EdgeInsets.symmetric(horizontal: horizontalInset, vertical: 4),
           itemCount: state.pages.length,
           onReorder: _onReorder,
@@ -796,7 +796,7 @@ class _BottomBarItem extends StatelessWidget {
 /// long-press before pickup. Stock [ReorderableDelayedDragStartListener] uses
 /// the 500ms [kLongPressTimeout]; this one uses 700ms so casual taps and
 /// scrolls won't accidentally grab a page.
-class _LongPressReorderListener extends ReorderableDragStartListener {
+class _LongPressReorderListener extends ThresholdReorderableDragStartListener {
   const _LongPressReorderListener({
     required super.child,
     required super.index,

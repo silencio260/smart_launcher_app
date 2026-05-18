@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/app_info.dart';
@@ -31,7 +33,16 @@ class WorkspaceView extends StatefulWidget {
 }
 
 class _WorkspaceViewState extends State<WorkspaceView> {
+  // Wallpaper-offset MethodChannel calls are coalesced to ~30Hz: the call
+  // hops the UI<->platform boundary, and at 120Hz scrolling it was the
+  // dominant source of jank during page swipes.
+  static const Duration _kOffsetThrottle = Duration(milliseconds: 33);
+
   late PageController _controller;
+  DateTime _lastOffsetSentAt = DateTime.fromMillisecondsSinceEpoch(0);
+  double _lastOffsetSent = -1;
+  double _pendingOffset = 0;
+  Timer? _trailingOffsetTimer;
 
   @override
   void initState() {
@@ -45,6 +56,7 @@ class _WorkspaceViewState extends State<WorkspaceView> {
 
   @override
   void dispose() {
+    _trailingOffsetTimer?.cancel();
     _controller.removeListener(_onScroll);
     _controller.dispose();
     super.dispose();
@@ -54,7 +66,24 @@ class _WorkspaceViewState extends State<WorkspaceView> {
     final pages = context.read<WorkspaceCubit>().state.pages.length;
     if (!_controller.hasClients || pages == 0) return;
     final page = _controller.page ?? 0;
-    widget.onPageChanged(pages > 1 ? page / (pages - 1) : 0.0);
+    _pendingOffset = pages > 1 ? page / (pages - 1) : 0.0;
+    final now = DateTime.now();
+    if (now.difference(_lastOffsetSentAt) >= _kOffsetThrottle) {
+      _flushOffset(now);
+    } else {
+      _trailingOffsetTimer ??= Timer(_kOffsetThrottle, () {
+        _trailingOffsetTimer = null;
+        if (!mounted) return;
+        _flushOffset(DateTime.now());
+      });
+    }
+  }
+
+  void _flushOffset(DateTime now) {
+    if ((_pendingOffset - _lastOffsetSent).abs() < 0.001) return;
+    _lastOffsetSent = _pendingOffset;
+    _lastOffsetSentAt = now;
+    widget.onPageChanged(_pendingOffset);
   }
 
   @override

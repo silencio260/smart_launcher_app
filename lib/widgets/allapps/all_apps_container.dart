@@ -239,7 +239,6 @@ class _AllAppsContainerState extends State<AllAppsContainer>
         return AllAppsRecycler(
           apps: displayApps,
           settings: widget.settings,
-          badgeCounts: appsState.badgeCounts,
           dragController: widget.dragController,
           onAppTap: widget.onAppTap,
           onAppLongPress: _showMenu,

@@ -12,6 +12,7 @@ import '../../state/settings_cubit.dart';
 import '../../state/workspace_cubit.dart';
 import '../folder/folder_icon.dart';
 import '../folder/folder_view.dart';
+import '../icons/badge_listener.dart';
 import '../icons/bubble_text_view.dart';
 
 const String kDockFolderPrefix = 'folder:';
@@ -39,7 +40,6 @@ class DockFolderItem extends DockItem {
 class HotseatView extends StatelessWidget {
   final List<DockItem?> apps;
   final LauncherSettings settings;
-  final Map<String, int> badgeCounts;
   final DragController dragController;
   final VoidCallback onSwipeUp;
   final void Function(AppInfo app) onAppTap;
@@ -49,7 +49,6 @@ class HotseatView extends StatelessWidget {
     super.key,
     required this.apps,
     required this.settings,
-    required this.badgeCounts,
     required this.dragController,
     required this.onSwipeUp,
     required this.onAppTap,
@@ -71,7 +70,6 @@ class HotseatView extends StatelessWidget {
             slot: slot,
             apps: apps,
             settings: settings,
-            badgeCounts: badgeCounts,
             dragController: dragController,
             onAppTap: onAppTap,
             onAppLongPress: onAppLongPress,
@@ -114,7 +112,6 @@ class _DockSlot extends StatelessWidget {
   final int slot;
   final List<DockItem?> apps;
   final LauncherSettings settings;
-  final Map<String, int> badgeCounts;
   final DragController dragController;
   final void Function(AppInfo) onAppTap;
   final void Function(AppInfo) onAppLongPress;
@@ -124,7 +121,6 @@ class _DockSlot extends StatelessWidget {
     required this.slot,
     required this.apps,
     required this.settings,
-    required this.badgeCounts,
     required this.dragController,
     required this.onAppTap,
     required this.onAppLongPress,
@@ -228,7 +224,6 @@ class _DockSlot extends StatelessWidget {
     }
 
     final currentApp = (current as DockAppItem).app;
-    final badge = badgeCounts[currentApp.packageName] ?? 0;
     final payload = DragPayload(
       item: WorkspaceItemInfo(
         id: currentApp.id,
@@ -325,22 +320,28 @@ class _DockSlot extends StatelessWidget {
             ),
             childWhenDragging: Opacity(
               opacity: 0.3,
-              child: BubbleTextView(
+              child: BadgeListener(
+                packageName: currentApp.packageName,
+                builder: (_, badge) => BubbleTextView(
+                  app: currentApp,
+                  iconSize: dockIconSize,
+                  showLabel: settings.showDockLabels,
+                  iconShape: settings.iconShape,
+                  badgeCount: badge,
+                ),
+              ),
+            ),
+            child: BadgeListener(
+              packageName: currentApp.packageName,
+              builder: (_, badge) => BubbleTextView(
                 app: currentApp,
                 iconSize: dockIconSize,
                 showLabel: settings.showDockLabels,
                 iconShape: settings.iconShape,
                 badgeCount: badge,
+                onTap: () => onAppTap(currentApp),
+                onLongPress: () => onAppLongPress(currentApp),
               ),
-            ),
-            child: BubbleTextView(
-              app: currentApp,
-              iconSize: dockIconSize,
-              showLabel: settings.showDockLabels,
-              iconShape: settings.iconShape,
-              badgeCount: badge,
-              onTap: () => onAppTap(currentApp),
-              onLongPress: () => onAppLongPress(currentApp),
             ),
           ),
         );
@@ -431,7 +432,6 @@ class _DockSlot extends StatelessWidget {
           folderPage: -1,
           folderSlot: slot,
           settings: settings,
-          badgeCounts: badgeCounts,
           dragController: dragController,
           onClose: () {
             entry?.remove();

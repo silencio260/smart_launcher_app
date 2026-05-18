@@ -18,6 +18,7 @@ import '../../state/workspace_cubit.dart';
 import '../../utils/debug_flags.dart';
 import '../folder/folder_icon.dart';
 import '../folder/folder_view.dart';
+import '../icons/badge_listener.dart';
 import '../icons/bubble_text_view.dart';
 import 'home_widget_slot.dart';
 import 'home_widget_stack_view.dart';
@@ -2041,18 +2042,14 @@ class _CellLayoutViewState extends State<CellLayoutView>
 
   Widget _buildAppSlot(BuildContext context, AppSlot content, int slot) {
     final item = content.item;
-    // BlocSelector subscribes only this leaf to AppsCubit so badge updates
-    // and app metadata changes rebuild this tile — not the whole page.
+    // BlocSelector subscribes only this leaf to AppsCubit's apps list (O(1)
+    // map lookup, not an O(N) scan). Badge updates flow through BadgeStore
+    // instead of Bloc state, so a notification on one app doesn't run a
+    // selector on every other tile on the page.
     return Center(
-      child: BlocSelector<AppsCubit, AppsState, _AppSlotData>(
-        selector: (state) => _AppSlotData(
-          liveApp: state.apps
-              .where((a) => a.packageName == item.packageName)
-              .firstOrNull,
-          badge: state.badgeCounts[item.packageName] ?? 0,
-        ),
-        builder: (context, data) {
-          final liveApp = data.liveApp;
+      child: BlocSelector<AppsCubit, AppsState, AppInfo?>(
+        selector: (state) => state.appsByPackage[item.packageName],
+        builder: (context, liveApp) {
           final app = AppInfo(
             id: item.id,
             packageName: item.packageName,
@@ -2062,7 +2059,6 @@ class _CellLayoutViewState extends State<CellLayoutView>
             title: item.title ?? liveApp?.name,
             icon: liveApp?.icon ?? item.icon,
           );
-          final badge = data.badge;
           final payload = DragPayload(
               item: item, sourcePage: widget.pageIndex, sourceSlot: slot);
           return LongPressDraggable<DragPayload>(
@@ -2104,37 +2100,43 @@ class _CellLayoutViewState extends State<CellLayoutView>
             ),
             childWhenDragging: Opacity(
               opacity: 0.3,
-              child: BubbleTextView(
+              child: BadgeListener(
+                packageName: item.packageName,
+                builder: (_, badge) => BubbleTextView(
+                  app: app,
+                  iconSize: widget.settings.iconSize,
+                  showLabel: widget.settings.showLabels,
+                  labelSize: widget.settings.labelSize,
+                  iconShape: widget.settings.iconShape,
+                  badgeCount: badge,
+                ),
+              ),
+            ),
+            child: BadgeListener(
+              packageName: item.packageName,
+              builder: (_, badge) => BubbleTextView(
                 app: app,
                 iconSize: widget.settings.iconSize,
                 showLabel: widget.settings.showLabels,
                 labelSize: widget.settings.labelSize,
                 iconShape: widget.settings.iconShape,
                 badgeCount: badge,
+                onTap: () {
+                  _clearWidgetResizeSelection();
+                  widget.onAppTap(app);
+                },
+                onLongPress: _draggingSlot == slot
+                    ? null
+                    : () {
+                        _clearWidgetResizeSelection();
+                        final box = context.findRenderObject() as RenderBox?;
+                        final center = box == null
+                            ? Offset.zero
+                            : box.localToGlobal(Offset(
+                                box.size.width / 2, box.size.height / 2));
+                        widget.onAppLongPress(app, slot, center);
+                      },
               ),
-            ),
-            child: BubbleTextView(
-              app: app,
-              iconSize: widget.settings.iconSize,
-              showLabel: widget.settings.showLabels,
-              labelSize: widget.settings.labelSize,
-              iconShape: widget.settings.iconShape,
-              badgeCount: badge,
-              onTap: () {
-                _clearWidgetResizeSelection();
-                widget.onAppTap(app);
-              },
-              onLongPress: _draggingSlot == slot
-                  ? null
-                  : () {
-                      _clearWidgetResizeSelection();
-                      final box = context.findRenderObject() as RenderBox?;
-                      final center = box == null
-                          ? Offset.zero
-                          : box.localToGlobal(Offset(
-                              box.size.width / 2, box.size.height / 2));
-                      widget.onAppLongPress(app, slot, center);
-                    },
             ),
           );
         },
@@ -2259,18 +2261,19 @@ class _CellLayoutViewState extends State<CellLayoutView>
     _closeOpenFolder();
     final overlay = Overlay.of(context);
     final workspaceCubit = context.read<WorkspaceCubit>();
-    final badgeCounts =
-        Map<String, int>.from(context.read<AppsCubit>().state.badgeCounts);
+    final appsCubit = context.read<AppsCubit>();
     OverlayEntry? entry;
     entry = OverlayEntry(
-      builder: (overlayCtx) => BlocProvider.value(
-        value: workspaceCubit,
+      builder: (overlayCtx) => MultiBlocProvider(
+        providers: [
+          BlocProvider.value(value: workspaceCubit),
+          BlocProvider.value(value: appsCubit),
+        ],
         child: FolderView(
           folderId: folderId,
           folderPage: widget.pageIndex,
           folderSlot: slot,
           settings: widget.settings,
-          badgeCounts: badgeCounts,
           dragController: widget.dragController,
           onClose: () {
             if (_openFolderEntry == entry) {
@@ -3273,20 +3276,3 @@ class _WorkspaceResizeDragTargetState
   }
 }
 
-// Narrow projection of AppsState consumed per app slot. Equality on these two
-// fields means BlocSelector skips rebuilds when unrelated apps' metadata or
-// badges change.
-class _AppSlotData {
-  final AppInfo? liveApp;
-  final int badge;
-  const _AppSlotData({required this.liveApp, required this.badge});
-
-  @override
-  bool operator ==(Object other) =>
-      other is _AppSlotData &&
-      identical(other.liveApp, liveApp) &&
-      other.badge == badge;
-
-  @override
-  int get hashCode => Object.hash(identityHashCode(liveApp), badge);
-}

@@ -4,6 +4,7 @@ import '../../models/item_info.dart';
 import '../../models/launcher_settings.dart';
 import '../../models/workspace_item_info.dart';
 import '../../services/drag/drag_controller.dart';
+import '../icons/badge_listener.dart';
 import '../icons/bubble_text_view.dart';
 import '../workspace/cell_layout.dart' show kDrawerSourcePage;
 import 'all_apps_grid_adapter.dart';
@@ -11,7 +12,6 @@ import 'all_apps_grid_adapter.dart';
 class AllAppsRecycler extends StatelessWidget {
   final List<AppInfo> apps;
   final LauncherSettings settings;
-  final Map<String, int> badgeCounts;
   final DragController dragController;
   final void Function(AppInfo app) onAppTap;
   final void Function(AppInfo app, Offset globalPos) onAppLongPress;
@@ -23,7 +23,6 @@ class AllAppsRecycler extends StatelessWidget {
     super.key,
     required this.apps,
     required this.settings,
-    required this.badgeCounts,
     required this.dragController,
     required this.onAppTap,
     required this.onAppLongPress,
@@ -69,7 +68,6 @@ class AllAppsRecycler extends StatelessWidget {
                                 child: _DrawerAppIcon(
                                   app: app,
                                   settings: settings,
-                                  badgeCount: badgeCounts[app.packageName] ?? 0,
                                   dragController: dragController,
                                   onTap: () => onAppTap(app),
                                   onLongPress: (pos) => onAppLongPress(app, pos),
@@ -101,7 +99,6 @@ class AllAppsRecycler extends StatelessWidget {
 class _DrawerAppIcon extends StatefulWidget {
   final AppInfo app;
   final LauncherSettings settings;
-  final int badgeCount;
   final DragController dragController;
   final VoidCallback onTap;
   final void Function(Offset globalPos) onLongPress;
@@ -111,7 +108,6 @@ class _DrawerAppIcon extends StatefulWidget {
   const _DrawerAppIcon({
     required this.app,
     required this.settings,
-    required this.badgeCount,
     required this.dragController,
     required this.onTap,
     required this.onLongPress,
@@ -146,12 +142,15 @@ class _DrawerAppIconState extends State<_DrawerAppIcon> {
       sourceSlot: -1,
     );
 
-    final iconView = BubbleTextView(
-      app: widget.app,
-      iconSize: widget.settings.drawerIconSize,
-      showLabel: widget.settings.showDrawerLabels,
-      iconShape: widget.settings.iconShape,
-      badgeCount: widget.badgeCount,
+    final iconView = BadgeListener(
+      packageName: widget.app.packageName,
+      builder: (_, badge) => BubbleTextView(
+        app: widget.app,
+        iconSize: widget.settings.drawerIconSize,
+        showLabel: widget.settings.showDrawerLabels,
+        iconShape: widget.settings.iconShape,
+        badgeCount: badge,
+      ),
     );
 
     return LongPressDraggable<DragPayload>(
