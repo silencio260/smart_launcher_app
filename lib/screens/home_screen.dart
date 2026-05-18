@@ -381,24 +381,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               maintainState: true,
                               maintainAnimation: true,
                               maintainSize: true,
-                              child: BlocBuilder<AppsCubit, AppsState>(
-                                builder: (context, appsState) => WorkspaceView(
-                                  dragController: _dragController,
-                                  settings: settings,
-                                  badgeCounts: appsState.badgeCounts,
-                                  onAppTap: (app) => LauncherService.launchApp(
-                                      app.packageName),
-                                  onAppLongPress: (app, page, slot, center) =>
-                                      _showAppInfoTooltip(app, center),
-                                  onPageChanged: (offset) {
-                                    const MethodChannel(
-                                            'com.genrevibes.smartlauncher/wallpaper')
-                                        .invokeMethod('setWallpaperOffset',
-                                            {'xOffset': offset});
-                                  },
-                                  onControllerReady: (ctrl) =>
-                                      setState(() => _pageController = ctrl),
-                                ),
+                              // No BlocBuilder<AppsCubit> here — leaves
+                              // (BubbleTextView/FolderIconView via BlocSelector
+                              // in CellLayoutView) subscribe individually, so
+                              // notification badge updates don't rebuild the
+                              // entire PageView + AndroidView subtree.
+                              child: WorkspaceView(
+                                dragController: _dragController,
+                                settings: settings,
+                                onAppTap: (app) =>
+                                    LauncherService.launchApp(app.packageName),
+                                onAppLongPress: (app, page, slot, center) =>
+                                    _showAppInfoTooltip(app, center),
+                                onPageChanged: (offset) {
+                                  const MethodChannel(
+                                          'com.genrevibes.smartlauncher/wallpaper')
+                                      .invokeMethod('setWallpaperOffset',
+                                          {'xOffset': offset});
+                                },
+                                onControllerReady: (ctrl) =>
+                                    setState(() => _pageController = ctrl),
                               ),
                             ),
                           ),

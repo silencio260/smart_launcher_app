@@ -31,7 +31,6 @@ class CellLayoutView extends StatefulWidget {
   final int pageIndex;
   final LauncherSettings settings;
   final DragController dragController;
-  final Map<String, int> badgeCounts;
   final void Function(AppInfo app) onAppTap;
   final void Function(AppInfo app, int slot, Offset iconCenter) onAppLongPress;
 
@@ -41,7 +40,6 @@ class CellLayoutView extends StatefulWidget {
     required this.pageIndex,
     required this.settings,
     required this.dragController,
-    required this.badgeCounts,
     required this.onAppTap,
     required this.onAppLongPress,
   });
@@ -90,7 +88,11 @@ class _CellLayoutViewState extends State<CellLayoutView>
   int _widgetDropPreviewSpanX = 1;
   int _widgetDropPreviewSpanY = 1;
   static String? _lastWidgetMetadataRefreshKey;
-  static String? _lastWidgetCellMetricsLogKey;
+  // Cell dimensions last observed when we requested a widget metadata refresh.
+  // Gating the post-frame schedule on these avoids re-entering the dedupe path
+  // (and its string/key work) on every PageView scroll frame.
+  double _lastRefreshedCellWidth = -1;
+  double _lastRefreshedCellHeight = -1;
   OverlayEntry? _openFolderEntry;
   String? _openFolderId;
 
@@ -1215,7 +1217,6 @@ class _CellLayoutViewState extends State<CellLayoutView>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final appsState = context.watch<AppsCubit>().state;
     final totalSlots = widget.settings.gridColumns * widget.settings.gridRows;
     final coveredSlots = _occupiedWidgetSlots(
       widget.page,
@@ -1246,27 +1247,16 @@ class _CellLayoutViewState extends State<CellLayoutView>
           // Keep instance copies so helpers called from onMove/onDrop can use them.
           _cellWidth = cellWidth;
           _cellHeight = cellHeight;
-          final metricsLogKey = [
-            widget.pageIndex,
-            columns,
-            rows,
-            constraints.maxWidth.round(),
-            constraints.maxHeight.round(),
-            cellWidth.round(),
-            cellHeight.round(),
-            _gridGap.round(),
-          ].join(':');
-          if (_lastWidgetCellMetricsLogKey != metricsLogKey) {
-            _lastWidgetCellMetricsLogKey = metricsLogKey;
-            widgetLog(
-              '[CellLayoutWidgetSizing] cellMetrics '
-              'page=${widget.pageIndex} constraints=${constraints.maxWidth.toStringAsFixed(2)}x${constraints.maxHeight.toStringAsFixed(2)} '
-              'grid=${columns}x$rows gap=$_gridGap '
-              'cell=${cellWidth.toStringAsFixed(2)}x${cellHeight.toStringAsFixed(2)} '
-              'padding=8 all',
-            );
+          // Only schedule a metadata refresh when cell dimensions actually
+          // change — not on every PageView scroll frame.
+          if (_lastRefreshedCellWidth != cellWidth ||
+              _lastRefreshedCellHeight != cellHeight) {
+            _lastRefreshedCellWidth = cellWidth;
+            _lastRefreshedCellHeight = cellHeight;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _refreshWorkspaceWidgetMetadata();
+            });
           }
-          _refreshWorkspaceWidgetMetadata();
 
           return Stack(
             key: _stackKey,
@@ -1327,7 +1317,6 @@ class _CellLayoutViewState extends State<CellLayoutView>
                 ..._buildPositionedContent(
                   context,
                   slot,
-                  appsState,
                   coveredSlots,
                   cellWidth,
                   cellHeight,
@@ -1567,7 +1556,6 @@ class _CellLayoutViewState extends State<CellLayoutView>
   List<Widget> _buildPositionedContent(
     BuildContext context,
     int slot,
-    AppsState appsState,
     Set<int> coveredSlots,
     double cellWidth,
     double cellHeight,
@@ -1625,7 +1613,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
 
     final previewCtrl = _displacementPreviewControllers[slot];
     final previewDir = _displacementPreviewDirections[slot];
-    Widget slotWidget = _buildSlotContent(context, content, slot, appsState);
+    Widget slotWidget = _buildSlotContent(context, content, slot);
     if (previewCtrl != null && previewDir != null) {
       slotWidget = AnimatedBuilder(
         animation: previewCtrl,
@@ -1683,7 +1671,6 @@ class _CellLayoutViewState extends State<CellLayoutView>
     BuildContext context,
     SlotContent? content,
     int slot,
-    AppsState appsState,
   ) {
     if (content == null || content is EmptySlot) {
       return const SizedBox.shrink();
@@ -1698,11 +1685,11 @@ class _CellLayoutViewState extends State<CellLayoutView>
     }
 
     if (content is AppSlot) {
-      return _buildAppSlot(context, content, slot, appsState);
+      return _buildAppSlot(context, content, slot);
     }
 
     if (content is FolderSlot) {
-      return _buildFolderSlot(context, content, slot, appsState);
+      return _buildFolderSlot(context, content, slot);
     }
 
     return const SizedBox.shrink();
@@ -2052,111 +2039,118 @@ class _CellLayoutViewState extends State<CellLayoutView>
     );
   }
 
-  Widget _buildAppSlot(
-      BuildContext context, AppSlot content, int slot, AppsState appsState) {
+  Widget _buildAppSlot(BuildContext context, AppSlot content, int slot) {
     final item = content.item;
-    final liveApp = appsState.apps
-        .where((a) => a.packageName == item.packageName)
-        .firstOrNull;
-    final app = AppInfo(
-      id: item.id,
-      packageName: item.packageName,
-      appComponentName:
-          item.componentName ?? liveApp?.appComponentName ?? item.packageName,
-      title: item.title ?? liveApp?.name,
-      icon: liveApp?.icon ?? item.icon,
-    );
-
-    final badge = widget.badgeCounts[item.packageName] ?? 0;
-    final payload =
-        DragPayload(item: item, sourcePage: widget.pageIndex, sourceSlot: slot);
-
+    // BlocSelector subscribes only this leaf to AppsCubit so badge updates
+    // and app metadata changes rebuild this tile — not the whole page.
     return Center(
-      child: LongPressDraggable<DragPayload>(
-        data: payload,
-        delay: const Duration(milliseconds: 350),
-        onDragStarted: () {
-          setState(() {
-            _draggingSlot = slot;
-            _selectedWidgetSlot = null;
-          });
-          widget.dragController
-              .startDrag(item, widget.pageIndex, slot, Offset.zero);
-        },
-        onDragCompleted: () {
-          setState(() => _draggingSlot = null);
-        },
-        onDragEnd: (_) {
-          setState(() => _draggingSlot = null);
-          widget.dragController.cancelDrag();
-        },
-        onDraggableCanceled: (_, __) {
-          setState(() => _draggingSlot = null);
-          widget.dragController.cancelDrag();
-        },
-        feedback: Material(
-          color: Colors.transparent,
-          child: Opacity(
-            opacity: 0.85,
-            child: Transform.scale(
-              scale: 1.15,
+      child: BlocSelector<AppsCubit, AppsState, _AppSlotData>(
+        selector: (state) => _AppSlotData(
+          liveApp: state.apps
+              .where((a) => a.packageName == item.packageName)
+              .firstOrNull,
+          badge: state.badgeCounts[item.packageName] ?? 0,
+        ),
+        builder: (context, data) {
+          final liveApp = data.liveApp;
+          final app = AppInfo(
+            id: item.id,
+            packageName: item.packageName,
+            appComponentName: item.componentName ??
+                liveApp?.appComponentName ??
+                item.packageName,
+            title: item.title ?? liveApp?.name,
+            icon: liveApp?.icon ?? item.icon,
+          );
+          final badge = data.badge;
+          final payload = DragPayload(
+              item: item, sourcePage: widget.pageIndex, sourceSlot: slot);
+          return LongPressDraggable<DragPayload>(
+            data: payload,
+            delay: const Duration(milliseconds: 350),
+            onDragStarted: () {
+              setState(() {
+                _draggingSlot = slot;
+                _selectedWidgetSlot = null;
+              });
+              widget.dragController
+                  .startDrag(item, widget.pageIndex, slot, Offset.zero);
+            },
+            onDragCompleted: () {
+              setState(() => _draggingSlot = null);
+            },
+            onDragEnd: (_) {
+              setState(() => _draggingSlot = null);
+              widget.dragController.cancelDrag();
+            },
+            onDraggableCanceled: (_, __) {
+              setState(() => _draggingSlot = null);
+              widget.dragController.cancelDrag();
+            },
+            feedback: Material(
+              color: Colors.transparent,
+              child: Opacity(
+                opacity: 0.85,
+                child: Transform.scale(
+                  scale: 1.15,
+                  child: BubbleTextView(
+                    app: app,
+                    iconSize: widget.settings.iconSize,
+                    showLabel: false,
+                    iconShape: widget.settings.iconShape,
+                  ),
+                ),
+              ),
+            ),
+            childWhenDragging: Opacity(
+              opacity: 0.3,
               child: BubbleTextView(
                 app: app,
                 iconSize: widget.settings.iconSize,
-                showLabel: false,
+                showLabel: widget.settings.showLabels,
+                labelSize: widget.settings.labelSize,
                 iconShape: widget.settings.iconShape,
+                badgeCount: badge,
               ),
             ),
-          ),
-        ),
-        childWhenDragging: Opacity(
-          opacity: 0.3,
-          child: BubbleTextView(
-            app: app,
-            iconSize: widget.settings.iconSize,
-            showLabel: widget.settings.showLabels,
-            labelSize: widget.settings.labelSize,
-            iconShape: widget.settings.iconShape,
-            badgeCount: badge,
-          ),
-        ),
-        child: BubbleTextView(
-          app: app,
-          iconSize: widget.settings.iconSize,
-          showLabel: widget.settings.showLabels,
-          labelSize: widget.settings.labelSize,
-          iconShape: widget.settings.iconShape,
-          badgeCount: badge,
-          onTap: () {
-            _clearWidgetResizeSelection();
-            widget.onAppTap(app);
-          },
-          onLongPress: _draggingSlot == slot
-              ? null
-              : () {
-                  _clearWidgetResizeSelection();
-                  final box = context.findRenderObject() as RenderBox?;
-                  final center = box == null
-                      ? Offset.zero
-                      : box.localToGlobal(
-                          Offset(box.size.width / 2, box.size.height / 2));
-                  widget.onAppLongPress(app, slot, center);
-                },
-        ),
+            child: BubbleTextView(
+              app: app,
+              iconSize: widget.settings.iconSize,
+              showLabel: widget.settings.showLabels,
+              labelSize: widget.settings.labelSize,
+              iconShape: widget.settings.iconShape,
+              badgeCount: badge,
+              onTap: () {
+                _clearWidgetResizeSelection();
+                widget.onAppTap(app);
+              },
+              onLongPress: _draggingSlot == slot
+                  ? null
+                  : () {
+                      _clearWidgetResizeSelection();
+                      final box = context.findRenderObject() as RenderBox?;
+                      final center = box == null
+                          ? Offset.zero
+                          : box.localToGlobal(Offset(
+                              box.size.width / 2, box.size.height / 2));
+                      widget.onAppLongPress(app, slot, center);
+                    },
+            ),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildFolderSlot(
-      BuildContext context, FolderSlot content, int slot, AppsState appsState) {
+  Widget _buildFolderSlot(BuildContext context, FolderSlot content, int slot) {
     final folders = context.watch<WorkspaceCubit>().state.folders;
     final folder = folders[content.folderId];
     if (folder == null) return const SizedBox.shrink();
 
-    final resolvedFolder = _resolveFolderIcons(folder, appsState);
-
     return Center(
-      child: LongPressDraggable<DragPayload>(
+      child: BlocSelector<AppsCubit, AppsState, FolderInfo>(
+        selector: (state) => _resolveFolderIcons(folder, state),
+        builder: (context, resolvedFolder) => LongPressDraggable<DragPayload>(
         data: DragPayload(
           item: WorkspaceItemInfo(
             id: folder.id,
@@ -2230,6 +2224,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
           onLongPress: _draggingSlot == slot ? () {} : () {},
         ),
       ),
+      ),
     );
   }
 
@@ -2264,6 +2259,8 @@ class _CellLayoutViewState extends State<CellLayoutView>
     _closeOpenFolder();
     final overlay = Overlay.of(context);
     final workspaceCubit = context.read<WorkspaceCubit>();
+    final badgeCounts =
+        Map<String, int>.from(context.read<AppsCubit>().state.badgeCounts);
     OverlayEntry? entry;
     entry = OverlayEntry(
       builder: (overlayCtx) => BlocProvider.value(
@@ -2273,7 +2270,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
           folderPage: widget.pageIndex,
           folderSlot: slot,
           settings: widget.settings,
-          badgeCounts: widget.badgeCounts,
+          badgeCounts: badgeCounts,
           dragController: widget.dragController,
           onClose: () {
             if (_openFolderEntry == entry) {
@@ -3274,4 +3271,22 @@ class _WorkspaceResizeDragTargetState
     if (delta.abs() < step * 0.16) return 0;
     return (delta / step).round();
   }
+}
+
+// Narrow projection of AppsState consumed per app slot. Equality on these two
+// fields means BlocSelector skips rebuilds when unrelated apps' metadata or
+// badges change.
+class _AppSlotData {
+  final AppInfo? liveApp;
+  final int badge;
+  const _AppSlotData({required this.liveApp, required this.badge});
+
+  @override
+  bool operator ==(Object other) =>
+      other is _AppSlotData &&
+      identical(other.liveApp, liveApp) &&
+      other.badge == badge;
+
+  @override
+  int get hashCode => Object.hash(identityHashCode(liveApp), badge);
 }
