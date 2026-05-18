@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../models/launcher_settings.dart';
 import '../../models/launcher_widget_info.dart';
-import '../../state/settings_cubit.dart';
 import 'general_settings_screen.dart';
 import 'home_screen_settings_screen.dart';
 import 'smartspace_settings_screen.dart';
@@ -14,6 +11,7 @@ import 'gesture_settings_screen.dart';
 import 'recents_settings_screen.dart';
 import 'backup_restore_screen.dart';
 import 'about_screen.dart';
+import 'developer_options_screen.dart';
 import 'widget_picker_screen.dart';
 
 class SettingsRootScreen extends StatelessWidget {
@@ -27,8 +25,8 @@ class SettingsRootScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Launcher Settings'),
       ),
-      body: BlocBuilder<SettingsCubit, dynamic>(
-        builder: (context, _) {
+      body: Builder(
+        builder: (context) {
           return ListView(
             children: [
               _Tile(
@@ -125,8 +123,13 @@ class SettingsRootScreen extends StatelessWidget {
               _Tile(
                 icon: Icons.science_outlined,
                 title: 'Developer Options',
-                subtitle: 'Experimental features',
-                onTap: () => _showDeveloperOptions(context),
+                subtitle: 'Debug overlays and logs',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const DeveloperOptionsScreen(),
+                  ),
+                ),
               ),
             ],
           );
@@ -135,70 +138,6 @@ class SettingsRootScreen extends StatelessWidget {
     );
   }
 
-  void _showDeveloperOptions(BuildContext context) {
-    final cubit = context.read<SettingsCubit>();
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Developer Options'),
-        content: BlocBuilder<SettingsCubit, LauncherSettings>(
-          bloc: cubit,
-          builder: (context, state) {
-            return SizedBox(
-              width: 360,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    secondary: const Icon(Icons.bug_report_outlined),
-                    title: const Text('Grid Debug Overlay'),
-                    subtitle: const Text(
-                      'Show free cells in green and blocked or occupied cells in red',
-                    ),
-                    value: state.showGridDebugOverlay,
-                    onChanged: (value) => cubit.update(
-                      state.copyWith(showGridDebugOverlay: value),
-                    ),
-                  ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    secondary: const Icon(Icons.article_outlined),
-                    title: const Text('Widget Debug Logs'),
-                    subtitle: const Text(
-                      'Print widget sizing/resize/binding logs to logcat and the Dart console',
-                    ),
-                    value: state.showWidgetDebugLogs,
-                    onChanged: (value) => cubit.update(
-                      state.copyWith(showWidgetDebugLogs: value),
-                    ),
-                  ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    secondary: const Icon(Icons.info_outline),
-                    title: const Text('Widget Picker Debug Info'),
-                    subtitle: const Text(
-                      'Show min/max spans, dp sizes, and resize mode under each widget in the picker',
-                    ),
-                    value: state.showWidgetPickerDebugInfo,
-                    onChanged: (value) => cubit.update(
-                      state.copyWith(showWidgetPickerDebugInfo: value),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _Tile extends StatelessWidget {
