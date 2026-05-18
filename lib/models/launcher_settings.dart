@@ -38,6 +38,8 @@ class LauncherSettings extends Equatable {
   final bool autoAddShortcuts;
   final bool infiniteScrolling;
   final bool showGridDebugOverlay;
+  final bool showWidgetDebugLogs;
+  final bool showWidgetPickerDebugInfo;
   final double iconSize;
   final bool showLabels;
   final double labelSize;
@@ -104,6 +106,8 @@ class LauncherSettings extends Equatable {
     this.autoAddShortcuts = true,
     this.infiniteScrolling = false,
     this.showGridDebugOverlay = false,
+    this.showWidgetDebugLogs = false,
+    this.showWidgetPickerDebugInfo = false,
     this.iconSize = 56,
     this.showLabels = true,
     this.labelSize = 12,
@@ -161,6 +165,8 @@ class LauncherSettings extends Equatable {
     bool? autoAddShortcuts,
     bool? infiniteScrolling,
     bool? showGridDebugOverlay,
+    bool? showWidgetDebugLogs,
+    bool? showWidgetPickerDebugInfo,
     double? iconSize,
     bool? showLabels,
     double? labelSize,
@@ -218,6 +224,9 @@ class LauncherSettings extends Equatable {
       autoAddShortcuts: autoAddShortcuts ?? this.autoAddShortcuts,
       infiniteScrolling: infiniteScrolling ?? this.infiniteScrolling,
       showGridDebugOverlay: showGridDebugOverlay ?? this.showGridDebugOverlay,
+      showWidgetDebugLogs: showWidgetDebugLogs ?? this.showWidgetDebugLogs,
+      showWidgetPickerDebugInfo:
+          showWidgetPickerDebugInfo ?? this.showWidgetPickerDebugInfo,
       iconSize: iconSize ?? this.iconSize,
       showLabels: showLabels ?? this.showLabels,
       labelSize: labelSize ?? this.labelSize,
@@ -283,6 +292,8 @@ class LauncherSettings extends Equatable {
         autoAddShortcuts,
         infiniteScrolling,
         showGridDebugOverlay,
+        showWidgetDebugLogs,
+        showWidgetPickerDebugInfo,
         iconSize,
         showLabels,
         labelSize,

@@ -65,15 +65,17 @@ class HotseatView extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: List.generate(slotCount, (slot) {
         final item = slot < apps.length ? apps[slot] : null;
-        return _DockSlot(
-          item: item,
-          slot: slot,
-          apps: apps,
-          settings: settings,
-          badgeCounts: badgeCounts,
-          dragController: dragController,
-          onAppTap: onAppTap,
-          onAppLongPress: onAppLongPress,
+        return Flexible(
+          child: _DockSlot(
+            item: item,
+            slot: slot,
+            apps: apps,
+            settings: settings,
+            badgeCounts: badgeCounts,
+            dragController: dragController,
+            onAppTap: onAppTap,
+            onAppLongPress: onAppLongPress,
+          ),
         );
       }),
     );

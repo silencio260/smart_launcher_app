@@ -161,6 +161,30 @@ class SettingsRootScreen extends StatelessWidget {
                       state.copyWith(showGridDebugOverlay: value),
                     ),
                   ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    secondary: const Icon(Icons.article_outlined),
+                    title: const Text('Widget Debug Logs'),
+                    subtitle: const Text(
+                      'Print widget sizing/resize/binding logs to logcat and the Dart console',
+                    ),
+                    value: state.showWidgetDebugLogs,
+                    onChanged: (value) => cubit.update(
+                      state.copyWith(showWidgetDebugLogs: value),
+                    ),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    secondary: const Icon(Icons.info_outline),
+                    title: const Text('Widget Picker Debug Info'),
+                    subtitle: const Text(
+                      'Show min/max spans, dp sizes, and resize mode under each widget in the picker',
+                    ),
+                    value: state.showWidgetPickerDebugInfo,
+                    onChanged: (value) => cubit.update(
+                      state.copyWith(showWidgetPickerDebugInfo: value),
+                    ),
+                  ),
                 ],
               ),
             );

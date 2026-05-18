@@ -15,6 +15,7 @@ import '../../services/launcher_service.dart';
 import '../../state/apps_cubit.dart';
 import '../../state/settings_cubit.dart';
 import '../../state/workspace_cubit.dart';
+import '../../utils/debug_flags.dart';
 import '../folder/folder_icon.dart';
 import '../folder/folder_view.dart';
 import '../icons/bubble_text_view.dart';
@@ -1257,7 +1258,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
           ].join(':');
           if (_lastWidgetCellMetricsLogKey != metricsLogKey) {
             _lastWidgetCellMetricsLogKey = metricsLogKey;
-            debugPrint(
+            widgetLog(
               '[CellLayoutWidgetSizing] cellMetrics '
               'page=${widget.pageIndex} constraints=${constraints.maxWidth.toStringAsFixed(2)}x${constraints.maxHeight.toStringAsFixed(2)} '
               'grid=${columns}x$rows gap=$_gridGap '
@@ -2313,7 +2314,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
       // allow free resize rather than blocking it entirely.
       if (span >= widget.settings.gridColumns &&
           _canResizeHorizontally(widgetInfo)) {
-        debugPrint(
+        widgetLog(
           '[CellLayoutWidgetSizing] minSpanX storedOverride '
           'provider=${widgetInfo.providerPackage}/${widgetInfo.providerClass} '
           'storedMinSpanX=${widgetInfo.minSpanX} gridColumns=${widget.settings.gridColumns} '
@@ -2321,7 +2322,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
         );
         return 1;
       }
-      debugPrint(
+      widgetLog(
         '[CellLayoutWidgetSizing] minSpanX stored '
         'provider=${widgetInfo.providerPackage}/${widgetInfo.providerClass} '
         'storedMinSpanX=${widgetInfo.minSpanX} gridColumns=${widget.settings.gridColumns} '
@@ -2339,7 +2340,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
     );
     if (span >= widget.settings.gridColumns &&
         _canResizeHorizontally(widgetInfo)) {
-      debugPrint(
+      widgetLog(
         '[CellLayoutWidgetSizing] minSpanX computedOverride '
         'provider=${widgetInfo.providerPackage}/${widgetInfo.providerClass} '
         'sourceWidth=$sourceWidth cellWidth=${_cellWidth.toStringAsFixed(2)} '
@@ -2348,7 +2349,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
       );
       return 1;
     }
-    debugPrint(
+    widgetLog(
       '[CellLayoutWidgetSizing] minSpanX computed '
       'provider=${widgetInfo.providerPackage}/${widgetInfo.providerClass} '
       'sourceWidth=$sourceWidth cellWidth=${_cellWidth.toStringAsFixed(2)} '
@@ -2368,7 +2369,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
           widgetInfo.minSpanY.clamp(1, widget.settings.gridRows).toInt();
       if (span >= widget.settings.gridRows &&
           _canResizeVertically(widgetInfo)) {
-        debugPrint(
+        widgetLog(
           '[CellLayoutWidgetSizing] minSpanY storedOverride '
           'provider=${widgetInfo.providerPackage}/${widgetInfo.providerClass} '
           'storedMinSpanY=${widgetInfo.minSpanY} gridRows=${widget.settings.gridRows} '
@@ -2376,7 +2377,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
         );
         return 1;
       }
-      debugPrint(
+      widgetLog(
         '[CellLayoutWidgetSizing] minSpanY stored '
         'provider=${widgetInfo.providerPackage}/${widgetInfo.providerClass} '
         'storedMinSpanY=${widgetInfo.minSpanY} gridRows=${widget.settings.gridRows} '
@@ -2393,7 +2394,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
       widget.settings.gridRows,
     );
     if (span >= widget.settings.gridRows && _canResizeVertically(widgetInfo)) {
-      debugPrint(
+      widgetLog(
         '[CellLayoutWidgetSizing] minSpanY computedOverride '
         'provider=${widgetInfo.providerPackage}/${widgetInfo.providerClass} '
         'sourceHeight=$sourceHeight cellHeight=${_cellHeight.toStringAsFixed(2)} '
@@ -2402,7 +2403,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
       );
       return 1;
     }
-    debugPrint(
+    widgetLog(
       '[CellLayoutWidgetSizing] minSpanY computed '
       'provider=${widgetInfo.providerPackage}/${widgetInfo.providerClass} '
       'sourceHeight=$sourceHeight cellHeight=${_cellHeight.toStringAsFixed(2)} '
@@ -2505,7 +2506,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
 
   void _refreshWorkspaceWidgetMetadata() {
     if (_cellWidth <= 0 || _cellHeight <= 0) {
-      debugPrint(
+      widgetLog(
         '[CellLayoutWidgetSizing] refreshMetadata skipped invalidCell '
         'cell=${_cellWidth.toStringAsFixed(2)}x${_cellHeight.toStringAsFixed(2)}',
       );
@@ -2519,7 +2520,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
       return false;
     });
     if (!hasSystemWidgets) {
-      debugPrint(
+      widgetLog(
         '[CellLayoutWidgetSizing] refreshMetadata skipped noSystemWidgets '
         'page=${widget.pageIndex}',
       );
@@ -2534,13 +2535,13 @@ class _CellLayoutViewState extends State<CellLayoutView>
       _gridGap.round(),
     ].join(':');
     if (_lastWidgetMetadataRefreshKey == key) {
-      debugPrint(
+      widgetLog(
         '[CellLayoutWidgetSizing] refreshMetadata skipped sameKey key=$key',
       );
       return;
     }
     _lastWidgetMetadataRefreshKey = key;
-    debugPrint(
+    widgetLog(
       '[CellLayoutWidgetSizing] refreshMetadata request '
       'page=${widget.pageIndex} key=$key '
       'grid=${widget.settings.gridColumns}x${widget.settings.gridRows} '
@@ -2557,7 +2558,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
         gap: _gridGap,
       );
       if (!mounted) return;
-      debugPrint(
+      widgetLog(
         '[CellLayoutWidgetSizing] refreshMetadata response '
         'page=${widget.pageIndex} providers=${providers.length}',
       );
@@ -2588,7 +2589,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
         final (currentSpanX, currentSpanY) = _effectiveSpanForContent(content);
         final computedMaxSpanX = _maxSpanXForWidget(widget, minSpanX: minSpanX);
         final computedMaxSpanY = _maxSpanYForWidget(widget, minSpanY: minSpanY);
-        debugPrint('[RESIZE] slot=$slot dir=$direction dx=$dxSteps dy=$dySteps '
+        widgetLog('[RESIZE] slot=$slot dir=$direction dx=$dxSteps dy=$dySteps '
             'minSpanX=$minSpanX maxSpanX=$computedMaxSpanX '
             'minSpanY=$minSpanY maxSpanY=$computedMaxSpanY '
             'currentSpanX=$currentSpanX currentSpanY=$currentSpanY '
@@ -2607,7 +2608,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
           dxSteps: dxSteps,
           dySteps: dySteps,
         );
-        debugPrint('[RESIZE] candidate=$candidate');
+        widgetLog('[RESIZE] candidate=$candidate');
         if (candidate == null) return;
         final (nextSlot, nextSpanX, nextSpanY) = candidate;
         _resizeWidget(slot, widget, nextSlot, nextSpanX, nextSpanY);

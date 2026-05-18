@@ -36,6 +36,17 @@ class WidgetsChannel(
         private const val CHANNEL = "com.genrevibes.smartlauncher/widgets"
         private const val REQUEST_BIND_WIDGET = 8731
         private const val TAG = "WidgetSizing"
+
+        @Volatile
+        var widgetDebugLogsEnabled: Boolean = false
+
+        fun logD(message: String) {
+            if (widgetDebugLogsEnabled) android.util.Log.d(TAG, message)
+        }
+
+        fun logW(message: String) {
+            if (widgetDebugLogsEnabled) android.util.Log.w(TAG, message)
+        }
     }
 
     private val context: Context get() = activity
@@ -53,7 +64,7 @@ class WidgetsChannel(
                         cellHeightDp = (call.argument<Double>("cellHeight") ?: 0.0).toFloat(),
                         gapDp = (call.argument<Double>("gap") ?: 8.0).toFloat(),
                     )
-                    android.util.Log.d(TAG, "getAvailableWidgets args=$profile")
+                    logD("getAvailableWidgets args=$profile")
                     getAvailableWidgets(profile, result)
                 }
                 "bindWidget" -> {
@@ -74,8 +85,7 @@ class WidgetsChannel(
                         cellHeightDp = (call.argument<Double>("cellHeight") ?: 0.0).toFloat(),
                         gapDp = (call.argument<Double>("gap") ?: 8.0).toFloat(),
                     )
-                    android.util.Log.d(
-                        TAG,
+                    logD(
                         "updateWidgetSize args id=$appWidgetId provider=$providerPackage/$providerClass span=${spanX}x${spanY} profile=$profile",
                     )
                     updateWidgetSize(appWidgetId, providerPackage, providerClass, spanX, spanY, profile, result)
@@ -85,6 +95,10 @@ class WidgetsChannel(
                     val maxWidthPx = call.argument<Int>("maxWidthPx") ?: 0
                     val maxHeightPx = call.argument<Int>("maxHeightPx") ?: 0
                     renderLiveWidget(appWidgetId, maxWidthPx, maxHeightPx, result)
+                }
+                "setWidgetDebugLogs" -> {
+                    widgetDebugLogsEnabled = call.argument<Boolean>("enabled") ?: false
+                    result.success(null)
                 }
                 else -> result.notImplemented()
             }
@@ -135,7 +149,7 @@ class WidgetsChannel(
                             null
                         }
                         val sizing = WidgetSizing.fromProviderInfo(context, info, profile)
-                        android.util.Log.d(TAG, buildString {
+                        logD(buildString {
                             append("providerResult ")
                             append("provider=${info.provider.flattenToShortString()} ")
                             append("label=$label app=$appName ")
@@ -371,7 +385,7 @@ class WidgetsChannel(
             }
             val options = WidgetSizing.sizeOptionsForWidget(context, provider, spanX, spanY, profile)
             val manager = AppWidgetManager.getInstance(context)
-            android.util.Log.d(TAG, buildString {
+            logD(buildString {
                 append("updateWidgetSize options ")
                 append("id=$appWidgetId provider=${provider?.flattenToShortString()} ")
                 append("span=${spanX}x${spanY} profile=$profile ")
@@ -408,7 +422,7 @@ class WidgetsChannel(
             try {
                 result.success(snapshotWidget(appWidgetId, maxWidthPx, maxHeightPx))
             } catch (e: Exception) {
-                android.util.Log.w(TAG, "renderLiveWidget id=$appWidgetId failed: ${e.message}")
+                logW("renderLiveWidget id=$appWidgetId failed: ${e.message}")
                 result.success(null)
             }
         }
@@ -568,7 +582,7 @@ class WidgetsChannel(
                     placementProfile.gapDp,
                     placementProfile.cellHeightDp,
                 ).coerceIn(1, rows)
-                android.util.Log.d(TAG, buildString {
+                logD(buildString {
                     append("fromProviderInfo raw ")
                     append("provider=${info.provider.flattenToShortString()} ")
                     append("grid=${columns}x${rows} ")
@@ -662,7 +676,7 @@ class WidgetsChannel(
                     if (resizeMinSpanX > columns && info.resizeMode and 1 != 0) defaultSpanX else resizeMinSpanX
                 val effectiveResizeMinSpanY =
                     if (resizeMinSpanY > rows && info.resizeMode and 2 != 0) defaultSpanY else resizeMinSpanY
-                android.util.Log.d(TAG, buildString {
+                logD(buildString {
                     append("resizeBounds ")
                     append("provider=${info.provider.flattenToShortString()} ")
                     append("rawResizeMinSpan=${resizeMinSpanX}x${resizeMinSpanY} ")
@@ -708,7 +722,7 @@ class WidgetsChannel(
                     spanY = targetSpanY
                 }
 
-                android.util.Log.d(TAG, buildString {
+                logD(buildString {
                     append("finalSizing ")
                     append("provider=${info.provider.flattenToShortString()} ")
                     append("hasTarget=$hasTargetSpan ")
@@ -733,7 +747,7 @@ class WidgetsChannel(
                     widgetSizeDp(current, spanX, spanY)
                 }.distinctBy { "${it.width}x${it.height}" }
                 val rect = minMaxSizes(sizes)
-                android.util.Log.d(TAG, buildString {
+                logD(buildString {
                     append("sizeOptionsForWidget ")
                     append("provider=${component.flattenToShortString()} ")
                     append("span=${spanX}x${spanY} ")

@@ -8,6 +8,7 @@ import '../../services/launcher_service.dart';
 import '../../state/apps_cubit.dart';
 import '../../state/settings_cubit.dart';
 import '../../state/workspace_cubit.dart';
+import '../../utils/debug_flags.dart';
 import '../../widgets/icons/shaped_icon.dart';
 
 class WidgetPickerScreen extends StatefulWidget {
@@ -69,7 +70,7 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
           16.0;
       final cellHeight =
           (workspaceHeight - (settings.gridRows - 1) * gap) / settings.gridRows;
-      debugPrint(
+      widgetLog(
         '[WidgetPickerSizing] loadWidgets '
         'screen=${mediaQuery.size.width.toStringAsFixed(2)}x${mediaQuery.size.height.toStringAsFixed(2)} '
         'padding=${mediaQuery.padding} '
@@ -127,7 +128,7 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
     final workspace = context.read<WorkspaceCubit>();
     final settings = context.read<SettingsCubit>().state;
     final initialSpan = _initialSpanForProvider(provider);
-    debugPrint(
+    widgetLog(
       '[WidgetPickerSizing] activate provider=${provider.packageName}/${provider.providerClass} '
       'label="${provider.label}" '
       'appWidgetId=$appWidgetId grid=${settings.gridColumns}x${settings.gridRows} '
@@ -167,7 +168,7 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
       settings.gridColumns,
       settings.gridRows,
     );
-    debugPrint(
+    widgetLog(
       '[WidgetPickerSizing] placed provider=${provider.packageName}/${provider.providerClass} '
       'page=${placement.page} slot=${placement.slot} '
       'storedSpan=${info.spanX}x${info.spanY}',
@@ -326,7 +327,7 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
                                 16.0) -
                             (settings.gridRows - 1) * 8.0) /
                         settings.gridRows,
-                    showDebugOverlay: settings.showGridDebugOverlay,
+                    showDebugOverlay: settings.showWidgetPickerDebugInfo,
                     onActivate: () => _activateWidget(p),
                   )),
             const Divider(height: 1, indent: 16, endIndent: 16),
@@ -619,7 +620,7 @@ class _WidgetTile extends StatelessWidget {
     provider.spanX.clamp(1, gridColumns).toInt(),
     provider.spanY.clamp(1, gridRows).toInt(),
   );
-  debugPrint(
+  widgetLog(
     '[WidgetPickerSizing] preferredCells provider=${provider.packageName}/${provider.providerClass} '
     'grid=${gridColumns}x$gridRows '
     'providerSpan=${provider.spanX}x${provider.spanY} '

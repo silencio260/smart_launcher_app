@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/launcher_settings.dart';
+import '../services/launcher_service.dart';
+import '../utils/debug_flags.dart';
 
 class SettingsCubit extends Cubit<LauncherSettings> {
   static const _key = 'launcher_settings_v1';
@@ -17,12 +19,20 @@ class SettingsCubit extends Cubit<LauncherSettings> {
         emit(_fromJson(jsonDecode(json) as Map<String, dynamic>));
       } catch (_) {}
     }
+    _applyDebugFlags(state);
   }
 
   Future<void> update(LauncherSettings settings) async {
     emit(settings);
+    _applyDebugFlags(settings);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key, jsonEncode(_toJson(settings)));
+  }
+
+  void _applyDebugFlags(LauncherSettings s) {
+    DebugFlags.widgetLogs = s.showWidgetDebugLogs;
+    DebugFlags.widgetPickerInfo = s.showWidgetPickerDebugInfo;
+    LauncherService.setWidgetDebugLogsEnabled(s.showWidgetDebugLogs);
   }
 
   Future<void> reset() => update(const LauncherSettings());
@@ -40,6 +50,8 @@ class SettingsCubit extends Cubit<LauncherSettings> {
         'autoAddShortcuts': s.autoAddShortcuts,
         'infiniteScrolling': s.infiniteScrolling,
         'showGridDebugOverlay': s.showGridDebugOverlay,
+        'showWidgetDebugLogs': s.showWidgetDebugLogs,
+        'showWidgetPickerDebugInfo': s.showWidgetPickerDebugInfo,
         'iconSize': s.iconSize,
         'showLabels': s.showLabels,
         'labelSize': s.labelSize,
@@ -104,6 +116,9 @@ class SettingsCubit extends Cubit<LauncherSettings> {
       autoAddShortcuts: j['autoAddShortcuts'] as bool? ?? true,
       infiniteScrolling: j['infiniteScrolling'] as bool? ?? false,
       showGridDebugOverlay: j['showGridDebugOverlay'] as bool? ?? false,
+      showWidgetDebugLogs: j['showWidgetDebugLogs'] as bool? ?? false,
+      showWidgetPickerDebugInfo:
+          j['showWidgetPickerDebugInfo'] as bool? ?? false,
       iconSize: (j['iconSize'] as num?)?.toDouble() ?? 56,
       showLabels: j['showLabels'] as bool? ?? true,
       labelSize: (j['labelSize'] as num?)?.toDouble() ?? 12,

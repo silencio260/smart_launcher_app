@@ -1,7 +1,7 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../models/app_info.dart';
 import '../models/widget_provider_info.dart';
+import '../utils/debug_flags.dart';
 
 class LauncherService {
   static const _apps = MethodChannel('com.genrevibes.smartlauncher/apps');
@@ -33,6 +33,16 @@ class LauncherService {
     await _system.invokeMethod('changeWallpaper');
   }
 
+  /// Toggles widget-related Log.d/w output on the native side.
+  static Future<void> setWidgetDebugLogsEnabled(bool enabled) async {
+    try {
+      await _widgets.invokeMethod('setWidgetDebugLogs', {'enabled': enabled});
+    } catch (_) {
+      // Channel may not be ready on the very first call during cold start;
+      // SettingsCubit will re-apply on the next settings change.
+    }
+  }
+
   /// Returns a list of all app widget providers installed on the device.
   static Future<List<WidgetProviderInfo>> getAvailableWidgets({
     int? gridColumns,
@@ -42,7 +52,7 @@ class LauncherService {
     double? gap,
   }) async {
     try {
-      debugPrint(
+      widgetLog(
         '[LauncherServiceWidgets] getAvailableWidgets request '
         'grid=${gridColumns}x$gridRows cell=${cellWidth?.toStringAsFixed(2)}x${cellHeight?.toStringAsFixed(2)} gap=$gap',
       );
@@ -58,11 +68,12 @@ class LauncherService {
       );
       final providers =
           raw.map((e) => WidgetProviderInfo.fromMap(e as Map)).toList();
-      debugPrint(
+      widgetLog(
         '[LauncherServiceWidgets] getAvailableWidgets response count=${providers.length}',
       );
       for (final provider in providers) {
-        debugPrint(
+        if (!DebugFlags.widgetLogs) break;
+        widgetLog(
           '[LauncherServiceWidgets] provider '
           '${provider.packageName}/${provider.providerClass} '
           'label="${provider.label}" '
@@ -78,7 +89,7 @@ class LauncherService {
       }
       return providers;
     } catch (error, stackTrace) {
-      debugPrint(
+      widgetLog(
         '[LauncherServiceWidgets] getAvailableWidgets error=$error\n$stackTrace',
       );
       return [];
@@ -90,19 +101,21 @@ class LauncherService {
   static Future<int> bindWidget(
       String packageName, String providerClass) async {
     try {
-      debugPrint(
+      widgetLog(
         '[LauncherServiceWidgets] bindWidget request $packageName/$providerClass',
       );
       final int id = await _widgets.invokeMethod('bindWidget', {
         'packageName': packageName,
         'providerClass': providerClass,
       });
-      debugPrint(
+      widgetLog(
         '[LauncherServiceWidgets] bindWidget response id=$id provider=$packageName/$providerClass',
       );
       return id;
     } catch (error, stackTrace) {
-      debugPrint('[LauncherServiceWidgets] bindWidget error=$error\n$stackTrace');
+      widgetLog(
+        '[LauncherServiceWidgets] bindWidget error=$error\n$stackTrace',
+      );
       return -1;
     }
   }
@@ -128,7 +141,7 @@ class LauncherService {
       );
       return result;
     } catch (error, stackTrace) {
-      debugPrint(
+      widgetLog(
         '[LauncherServiceWidgets] renderLiveWidget error=$error\n$stackTrace',
       );
       return null;
@@ -148,7 +161,7 @@ class LauncherService {
     double? gap,
   }) async {
     try {
-      debugPrint(
+      widgetLog(
         '[LauncherServiceWidgets] updateWidgetSize request '
         'id=$appWidgetId provider=$providerPackage/$providerClass '
         'span=${spanX}x$spanY grid=${gridColumns}x$gridRows '
@@ -166,11 +179,11 @@ class LauncherService {
         if (cellHeight != null) 'cellHeight': cellHeight,
         if (gap != null) 'gap': gap,
       });
-      debugPrint(
+      widgetLog(
         '[LauncherServiceWidgets] updateWidgetSize complete id=$appWidgetId span=${spanX}x$spanY',
       );
     } catch (error, stackTrace) {
-      debugPrint(
+      widgetLog(
         '[LauncherServiceWidgets] updateWidgetSize error=$error\n$stackTrace',
       );
     }

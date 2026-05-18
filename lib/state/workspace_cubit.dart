@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,6 +8,7 @@ import '../models/launcher_widget_info.dart';
 import '../models/widget_provider_info.dart';
 import '../models/item_info.dart';
 import '../widgets/workspace/widget_grid_math.dart';
+import '../utils/debug_flags.dart';
 
 sealed class SlotContent {}
 
@@ -321,7 +321,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     int columns,
     int rows,
   ) {
-    debugPrint(
+    widgetLog(
       '[WorkspaceWidgetSizing] addWidget request '
       'provider=${widget.providerPackage}/${widget.providerClass} '
       'grid=${columns}x$rows incomingSpan=${widget.spanX}x${widget.spanY} '
@@ -336,7 +336,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
       spanX: widget.spanX.clamp(1, columns),
       spanY: widget.spanY.clamp(1, rows),
     );
-    debugPrint(
+    widgetLog(
       '[WorkspaceWidgetSizing] addWidget clamped '
       'provider=${widget.providerPackage}/${widget.providerClass} '
       'placeableSpan=${placeableWidget.spanX}x${placeableWidget.spanY}',
@@ -347,7 +347,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
       columns,
       rows,
     );
-    debugPrint(
+    widgetLog(
       '[WorkspaceWidgetSizing] addWidget placement '
       'provider=${widget.providerPackage}/${widget.providerClass} '
       'page=${placement.page} slot=${placement.slot} '
@@ -358,7 +358,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
   }
 
   void addWidget(LauncherWidgetInfo widget, int page, int slot) {
-    debugPrint(
+    widgetLog(
       '[WorkspaceWidgetSizing] addWidget save '
       'provider=${widget.providerPackage}/${widget.providerClass} '
       'page=$page slot=$slot span=${widget.spanX}x${widget.spanY} '
@@ -999,7 +999,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     int rows,
   ) {
     if (providers.isEmpty) return;
-    debugPrint(
+    widgetLog(
       '[WorkspaceWidgetSizing] refreshMetadata start '
       'providerCount=${providers.length} grid=${columns}x$rows',
     );
@@ -1072,7 +1072,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     }).toList();
 
     if (!changed) return;
-    debugPrint('[WorkspaceWidgetSizing] refreshMetadata changed=true saving layout');
+    widgetLog('[WorkspaceWidgetSizing] refreshMetadata changed=true saving layout');
     emit(state.copyWith(pages: pages));
     saveLayout();
   }
@@ -1087,7 +1087,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     final provider =
         providers['${widget.providerPackage}/${widget.providerClass}'];
     if (provider == null) {
-      debugPrint(
+      widgetLog(
         '[WorkspaceWidgetSizing] refreshWidget missingProvider '
         '${widget.providerPackage}/${widget.providerClass} '
         'storedSpan=${widget.spanX}x${widget.spanY}',
@@ -1103,7 +1103,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     if (minSpanY >= rows && provider.resizeMode & 2 != 0) minSpanY = 1;
     final maxSpanX = provider.maxSpanX.clamp(minSpanX, columns).toInt();
     final maxSpanY = provider.maxSpanY.clamp(minSpanY, rows).toInt();
-    debugPrint(
+    widgetLog(
       '[WorkspaceWidgetSizing] refreshWidget beforeClamp '
       '${provider.packageName}/${provider.providerClass} '
       'storedSpan=${widget.spanX}x${widget.spanY} '
@@ -1133,7 +1133,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
         provider.spanY < widget.spanY) {
       spanY = provider.spanY.clamp(minSpanY, maxSpanY).toInt();
     }
-    debugPrint(
+    widgetLog(
       '[WorkspaceWidgetSizing] refreshWidget afterClamp '
       '${provider.packageName}/${provider.providerClass} '
       'wasAtOldMin=${wasAtOldMinX}x$wasAtOldMinY '
