@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -31,11 +32,9 @@ class EditModeOverlay extends StatefulWidget {
 
 class _EditModeOverlayState extends State<EditModeOverlay>
     with SingleTickerProviderStateMixin {
-  static const double _viewportFraction = 0.84;
-
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
-  late PageController _pageController;
+  late ScrollController _scrollController;
   int _displayedPage = 0;
 
   @override
@@ -49,31 +48,15 @@ class _EditModeOverlayState extends State<EditModeOverlay>
         CurvedAnimation(parent: _animController, curve: Curves.easeOut);
     _animController.forward();
 
-    final initialPage = context.read<WorkspaceCubit>().state.currentPage;
-    _displayedPage = initialPage;
-    _pageController = PageController(
-      initialPage: initialPage,
-      viewportFraction: _viewportFraction,
-    );
-    _pageController.addListener(_handlePageScroll);
+    _displayedPage = context.read<WorkspaceCubit>().state.currentPage;
+    _scrollController = ScrollController();
   }
 
   @override
   void dispose() {
-    _pageController.removeListener(_handlePageScroll);
-    _pageController.dispose();
+    _scrollController.dispose();
     _animController.dispose();
     super.dispose();
-  }
-
-  void _handlePageScroll() {
-    if (!_pageController.hasClients) return;
-    final page = _pageController.page;
-    if (page == null) return;
-    final rounded = page.round();
-    if (rounded != _displayedPage) {
-      setState(() => _displayedPage = rounded);
-    }
   }
 
   void _dismiss() {
@@ -93,10 +76,11 @@ class _EditModeOverlayState extends State<EditModeOverlay>
   void _addPage() {
     final cubit = context.read<WorkspaceCubit>();
     cubit.addPage();
+    setState(() => _displayedPage = cubit.state.pages.length - 1);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_pageController.hasClients) return;
-      _pageController.animateToPage(
-        cubit.state.pages.length - 1,
+      if (!mounted || !_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOut,
       );
@@ -131,14 +115,16 @@ class _EditModeOverlayState extends State<EditModeOverlay>
     final newLength = cubit.state.pages.length - 1;
     cubit.removePage(pageIndex);
     if (!mounted) return;
-    // Keep the overlay open. Adjust the displayed page so it stays in range
-    // and the PageView doesn't jump unexpectedly.
     final target = _displayedPage.clamp(0, (newLength - 1).clamp(0, newLength));
     setState(() => _displayedPage = target);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_pageController.hasClients) return;
-      _pageController.jumpToPage(target);
-    });
+  }
+
+  void _onReorder(int oldIndex, int newIndex) {
+    if (newIndex > oldIndex) newIndex -= 1;
+    if (oldIndex == newIndex) return;
+    final cubit = context.read<WorkspaceCubit>();
+    cubit.movePage(oldIndex, newIndex);
+    setState(() => _displayedPage = newIndex);
   }
 
   @override
@@ -185,26 +171,76 @@ class _EditModeOverlayState extends State<EditModeOverlay>
   }
 
   Widget _buildPagesRow(WorkspaceState state) {
-    return GestureDetector(
-      onTap: () {},
-      behavior: HitTestBehavior.opaque,
-      child: PageView.builder(
-        controller: _pageController,
-        itemCount: state.pages.length,
-        onPageChanged: (i) => setState(() => _displayedPage = i),
-        itemBuilder: (context, i) {
-          return _PageCard(
-            pageIndex: i,
-            page: state.pages[i],
-            folders: state.folders,
-            settings: widget.settings,
-            onTap: () {
-              context.read<WorkspaceCubit>().setCurrentPage(i);
-              _dismiss();
-            },
-          );
-        },
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Show ~2 thumbnails per screen so dragging between slots feels natural.
+        final viewH = constraints.maxHeight - 8; // vertical padding allowance
+        final thumbH = viewH;
+        final thumbW = thumbH * 9 / 16;
+        final horizontalInset =
+            ((constraints.maxWidth - thumbW) / 2).clamp(12.0, 80.0);
+
+        return ReorderableListView.builder(
+          scrollController: _scrollController,
+          scrollDirection: Axis.horizontal,
+          buildDefaultDragHandles: false,
+          padding: EdgeInsets.symmetric(horizontal: horizontalInset, vertical: 4),
+          itemCount: state.pages.length,
+          onReorder: _onReorder,
+          // Slow the edge auto-scroll way down so neighbors don't whip past
+          // when the dragged page gets near the left/right edge. Stock value
+          // is ~50; 8 makes it a calm crawl.
+          autoScrollerVelocityScalar: 8,
+          proxyDecorator: (child, index, animation) {
+            // Lifted card shrinks to ~60% of the original so it reads as a
+            // distinct "picked-up" object rather than a near-full-size ghost.
+            return AnimatedBuilder(
+              animation: animation,
+              builder: (context, c) {
+                final t = Curves.easeOut.transform(animation.value);
+                final scale = 1.0 - 0.40 * t; // 1.0 → 0.60
+                return Transform.scale(
+                  scale: scale,
+                  child: Material(
+                    color: Colors.transparent,
+                    elevation: 14 * t,
+                    shadowColor: Colors.black.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(22),
+                    child: Opacity(opacity: 0.92, child: c),
+                  ),
+                );
+              },
+              child: child,
+            );
+          },
+          itemBuilder: (context, i) {
+            final page = state.pages[i];
+            return Padding(
+              key: ObjectKey(page),
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: SizedBox(
+                width: thumbW,
+                child: _LongPressReorderListener(
+                  index: i,
+                  // Deliberate ~700ms long-press to pick up — longer than the
+                  // stock 500ms delayed listener so casual taps/scrolls don't
+                  // grab a page. Once lifted, neighbors shift one-at-a-time
+                  // as you cross each one's midpoint. Release to drop.
+                  child: _PageCard(
+                    page: page,
+                    folders: state.folders,
+                    settings: widget.settings,
+                    onJump: () {
+                      context.read<WorkspaceCubit>().setCurrentPage(i);
+                      _dismiss();
+                    },
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -376,105 +412,77 @@ class _PageDots extends StatelessWidget {
 // ─── Page card (chromeless, draggable, tappable) ─────────────────────────────
 
 class _PageCard extends StatelessWidget {
-  final int pageIndex;
   final WorkspacePage page;
   final Map<String, FolderInfo> folders;
   final LauncherSettings settings;
-  final VoidCallback onTap;
+  final VoidCallback onJump;
 
   const _PageCard({
-    required this.pageIndex,
     required this.page,
     required this.folders,
     required this.settings,
-    required this.onTap,
+    required this.onJump,
   });
 
   @override
   Widget build(BuildContext context) {
-    final preview = _PagePreview(
-      page: page,
-      folders: folders,
-      settings: settings,
-    );
-    final framed = _PageFrame(child: preview);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: LongPressDraggable<int>(
-        data: pageIndex,
-        delay: const Duration(milliseconds: 280),
-        feedback: _DragFeedback(
-          width: MediaQuery.of(context).size.width * 0.55,
+    // NOTE: deliberately no GestureDetector on the body. A tap detector here
+    // would compete with the ReorderableDragStartListener wrapping this card
+    // and swallow pointer-down events before the reorder can begin. Jump-to-
+    // page is exposed via a dedicated chevron button instead.
+    return Stack(
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.55),
+              width: 1.4,
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          padding: const EdgeInsets.all(6),
           child: _PagePreview(
             page: page,
             folders: folders,
             settings: settings,
           ),
         ),
-        childWhenDragging: Opacity(opacity: 0.35, child: framed),
-        child: GestureDetector(
-          onTap: onTap,
-          child: framed,
+        Positioned(
+          right: 6,
+          bottom: 6,
+          child: _JumpToPageButton(onTap: onJump),
         ),
-      ),
+      ],
     );
   }
 }
 
-class _PageFrame extends StatelessWidget {
-  final Widget child;
-  const _PageFrame({required this.child});
+class _JumpToPageButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _JumpToPageButton({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.55),
-          width: 1.4,
-        ),
-      ),
-      clipBehavior: Clip.antiAlias,
-      padding: const EdgeInsets.all(6),
-      child: child,
-    );
-  }
-}
-
-class _DragFeedback extends StatelessWidget {
-  final double width;
-  final Widget child;
-
-  const _DragFeedback({required this.width, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: SizedBox(
-        width: width,
-        child: AspectRatio(
-          aspectRatio: 9 / 16,
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.9),
-                width: 1.6,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.45),
-                  blurRadius: 18,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            padding: const EdgeInsets.all(10),
-            child: child,
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.55),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.4),
+            width: 1,
           ),
+        ),
+        child: const Icon(
+          Icons.open_in_full,
+          color: Colors.white,
+          size: 14,
         ),
       ),
     );
@@ -780,6 +788,25 @@ class _BottomBarItem extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// A drag-start listener for ReorderableListView that requires a deliberate
+/// long-press before pickup. Stock [ReorderableDelayedDragStartListener] uses
+/// the 500ms [kLongPressTimeout]; this one uses 700ms so casual taps and
+/// scrolls won't accidentally grab a page.
+class _LongPressReorderListener extends ReorderableDragStartListener {
+  const _LongPressReorderListener({
+    required super.child,
+    required super.index,
+  });
+
+  @override
+  MultiDragGestureRecognizer createRecognizer() {
+    return DelayedMultiDragGestureRecognizer(
+      delay: const Duration(milliseconds: 700),
+      debugOwner: this,
     );
   }
 }
