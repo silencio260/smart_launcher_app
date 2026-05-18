@@ -88,7 +88,7 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
       );
       if (mounted) {
         setState(() {
-          _providers = list;
+          _providers = [_builtinClockProvider(), ...list];
           _loading = false;
         });
       }
@@ -112,6 +112,10 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
   }
 
   Future<void> _activateWidget(WidgetProviderInfo provider) async {
+    if (_isBuiltinClock(provider)) {
+      await _activateBuiltinClock();
+      return;
+    }
     final appWidgetId = await LauncherService.bindWidget(
         provider.packageName, provider.providerClass);
     if (!mounted) return;
@@ -177,6 +181,43 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
 
     if (!mounted) return;
     // Pop settings stack back to home
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
+  bool _isBuiltinClock(WidgetProviderInfo provider) =>
+      provider.packageName == WorkspaceCubit.defaultClockProviderPackage &&
+      provider.providerClass == WorkspaceCubit.defaultClockProviderClass;
+
+  WidgetProviderInfo _builtinClockProvider() => const WidgetProviderInfo(
+        packageName: WorkspaceCubit.defaultClockProviderPackage,
+        appName: 'Smart Launcher',
+        providerClass: WorkspaceCubit.defaultClockProviderClass,
+        label: 'Clock',
+        minSpanX: WorkspaceCubit.defaultClockMinSpanX,
+        minSpanY: WorkspaceCubit.defaultClockMinSpanY,
+        spanX: WorkspaceCubit.defaultClockMaxSpanX,
+        spanY: WorkspaceCubit.defaultClockMaxSpanY,
+        maxSpanX: WorkspaceCubit.defaultClockMaxSpanX,
+        maxSpanY: WorkspaceCubit.defaultClockMaxSpanY,
+        resizeMode: 3,
+      );
+
+  Future<void> _activateBuiltinClock() async {
+    final workspace = context.read<WorkspaceCubit>();
+    final settings = context.read<SettingsCubit>().state;
+    final added = workspace.ensureDefaultClockWidget(
+      settings.gridColumns,
+      settings.gridRows,
+    );
+    if (!mounted) return;
+    if (!added) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Clock is already on your home screen.'),
+        ),
+      );
+      return;
+    }
     Navigator.of(context).popUntil((route) => route.isFirst);
   }
 

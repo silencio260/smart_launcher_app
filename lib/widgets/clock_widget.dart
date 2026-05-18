@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 class ClockWidget extends StatefulWidget {
@@ -10,65 +11,122 @@ class ClockWidget extends StatefulWidget {
 
 class _ClockWidgetState extends State<ClockWidget> {
   late DateTime _now;
-  late Timer _timer;
+  Timer? _timer;
 
   @override
   void initState() {
     super.initState();
     _now = DateTime.now();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+    _scheduleNextMinuteTick();
+  }
+
+  void _scheduleNextMinuteTick() {
+    final now = DateTime.now();
+    final nextMinute =
+        DateTime(now.year, now.month, now.day, now.hour, now.minute)
+            .add(const Duration(minutes: 1));
+    _timer = Timer(nextMinute.difference(now), () {
+      if (!mounted) return;
       setState(() => _now = DateTime.now());
+      _scheduleNextMinuteTick();
     });
   }
 
   @override
   void dispose() {
-    _timer.cancel();
+    _timer?.cancel();
     super.dispose();
   }
 
-  String get _time {
+  String get _timeText {
     final h = _now.hour;
-    final m = _now.minute.toString().padLeft(2, '0');
     final hour = h > 12 ? h - 12 : (h == 0 ? 12 : h);
-    final period = h >= 12 ? 'PM' : 'AM';
-    return '$hour:$m $period';
+    final m = _now.minute.toString().padLeft(2, '0');
+    return '$hour:$m';
   }
 
-  String get _date {
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  String get _period => _now.hour >= 12 ? 'PM' : 'AM';
+
+  String get _dateText {
+    const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
     const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
+      'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+      'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC',
     ];
-    return '${days[_now.weekday % 7]}, ${months[_now.month - 1]} ${_now.day}';
+    final dow = days[_now.weekday % 7];
+    return '$dow  ·  ${months[_now.month - 1]} ${_now.day}';
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          _time,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 56,
-            fontWeight: FontWeight.w200,
-            letterSpacing: -1,
-            shadows: [Shadow(color: Colors.black38, blurRadius: 8)],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxByWidth = constraints.maxWidth * 0.30;
+        final maxByHeight = constraints.maxHeight * 0.58;
+        final timeSize = math.min(maxByWidth, maxByHeight).clamp(28.0, 104.0);
+        final periodSize = (timeSize * 0.26).clamp(10.0, 22.0);
+        final dateSize = (timeSize * 0.22).clamp(10.0, 16.0);
+
+        return Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    _timeText,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: timeSize,
+                      fontWeight: FontWeight.w200,
+                      letterSpacing: -2,
+                      height: 1.0,
+                      shadows: const [
+                        Shadow(
+                          color: Colors.black45,
+                          blurRadius: 14,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: EdgeInsets.only(
+                      left: timeSize * 0.12,
+                      bottom: timeSize * 0.12,
+                    ),
+                    child: Text(
+                      _period,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: periodSize,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 1.5,
+                        height: 1.0,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: timeSize * 0.14),
+              Text(
+                _dateText,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.72),
+                  fontSize: dateSize,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 2.2,
+                  shadows: const [
+                    Shadow(color: Colors.black38, blurRadius: 6),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ),
-        Text(
-          _date,
-          style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 15,
-            fontWeight: FontWeight.w400,
-            shadows: [Shadow(color: Colors.black38, blurRadius: 4)],
-          ),
-        ),
-      ],
+        );
+      },
     );
   }
 }
