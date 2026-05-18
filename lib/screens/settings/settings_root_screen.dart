@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../models/launcher_settings.dart';
 import '../../models/launcher_widget_info.dart';
+import '../../state/settings_cubit.dart';
 import 'general_settings_screen.dart';
 import 'home_screen_settings_screen.dart';
 import 'smartspace_settings_screen.dart';
@@ -11,7 +14,6 @@ import 'gesture_settings_screen.dart';
 import 'recents_settings_screen.dart';
 import 'backup_restore_screen.dart';
 import 'about_screen.dart';
-import 'developer_options_screen.dart';
 import 'widget_picker_screen.dart';
 
 class SettingsRootScreen extends StatelessWidget {
@@ -120,16 +122,52 @@ class SettingsRootScreen extends StatelessWidget {
                     MaterialPageRoute(builder: (_) => const AboutScreen())),
               ),
               const Divider(),
-              _Tile(
+              const _SectionHeader(
                 icon: Icons.science_outlined,
                 title: 'Developer Options',
-                subtitle: 'Debug overlays and logs',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const DeveloperOptionsScreen(),
-                  ),
-                ),
+              ),
+              BlocBuilder<SettingsCubit, LauncherSettings>(
+                bloc: context.read<SettingsCubit>(),
+                builder: (context, state) {
+                  final cubit = context.read<SettingsCubit>();
+                  return Column(
+                    children: [
+                      SwitchListTile(
+                        secondary: const Icon(Icons.bug_report_outlined),
+                        title: const Text('Grid Debug Overlay'),
+                        subtitle: const Text(
+                          'Show free cells in green and blocked or occupied cells in red',
+                        ),
+                        value: state.showGridDebugOverlay,
+                        onChanged: (value) => cubit.update(
+                          state.copyWith(showGridDebugOverlay: value),
+                        ),
+                      ),
+                      SwitchListTile(
+                        secondary: const Icon(Icons.article_outlined),
+                        title: const Text('Widget Debug Logs'),
+                        subtitle: const Text(
+                          'Print widget sizing/resize/binding logs to logcat and the Dart console',
+                        ),
+                        value: state.showWidgetDebugLogs,
+                        onChanged: (value) => cubit.update(
+                          state.copyWith(showWidgetDebugLogs: value),
+                        ),
+                      ),
+                      SwitchListTile(
+                        secondary: const Icon(Icons.info_outline),
+                        title: const Text('Widget Picker Debug Info'),
+                        subtitle: const Text(
+                          'Show min/max spans, dp sizes, and resize mode under each widget in the picker',
+                        ),
+                        value: state.showWidgetPickerDebugInfo,
+                        onChanged: (value) => cubit.update(
+                          state.copyWith(showWidgetPickerDebugInfo: value),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ],
           );
@@ -138,6 +176,34 @@ class SettingsRootScreen extends StatelessWidget {
     );
   }
 
+}
+
+class _SectionHeader extends StatelessWidget {
+  final IconData icon;
+  final String title;
+
+  const _SectionHeader({required this.icon, required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: theme.colorScheme.primary),
+          const SizedBox(width: 12),
+          Text(
+            title,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _Tile extends StatelessWidget {
