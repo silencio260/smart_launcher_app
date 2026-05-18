@@ -23,12 +23,16 @@ class DragLayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Pass `child` (the entire workspace subtree) through the `child:` param so
+    // it does NOT rebuild on every drag-position notification — the controller
+    // notifies on each pointer move, but only the overlay needs that cadence.
     return ListenableBuilder(
       listenable: dragController,
-      builder: (context, _) {
+      child: child,
+      builder: (context, staticChild) {
         return Stack(
           children: [
-            child,
+            staticChild!,
             if (dragController.isDragging) ...[
               // Subtle background dim while dragging
               Positioned.fill(

@@ -154,23 +154,29 @@ class _SpanSyncedWidgetHostViewState extends State<_SpanSyncedWidgetHostView> {
     _scheduleSizeSync();
   }
 
+  String? _computeSizeKey() {
+    if (widget.widgetInfo.spanX <= 0 || widget.widgetInfo.spanY <= 0) {
+      return null;
+    }
+    return [
+      widget.widgetInfo.appWidgetId,
+      widget.widgetInfo.spanX,
+      widget.widgetInfo.spanY,
+      widget.gridColumns,
+      widget.gridRows,
+      widget.cellWidth.round(),
+      widget.cellHeight.round(),
+      widget.gap.round(),
+    ].join(':');
+  }
+
   void _scheduleSizeSync() {
+    // Dedupe BEFORE scheduling so we don't post a frame callback per build.
+    final sizeKey = _computeSizeKey();
+    if (sizeKey == null || _lastSizeKey == sizeKey) return;
+    _lastSizeKey = sizeKey;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (widget.widgetInfo.spanX <= 0 || widget.widgetInfo.spanY <= 0) return;
-      final sizeKey = [
-        widget.widgetInfo.appWidgetId,
-        widget.widgetInfo.spanX,
-        widget.widgetInfo.spanY,
-        widget.gridColumns,
-        widget.gridRows,
-        widget.cellWidth.round(),
-        widget.cellHeight.round(),
-        widget.gap.round(),
-      ].join(':');
-      if (_lastSizeKey == sizeKey) return;
-
-      _lastSizeKey = sizeKey;
       LauncherService.updateWidgetSize(
         widget.widgetInfo.appWidgetId,
         widget.widgetInfo.providerPackage,
@@ -188,12 +194,16 @@ class _SpanSyncedWidgetHostViewState extends State<_SpanSyncedWidgetHostView> {
 
   @override
   Widget build(BuildContext context) {
-    return AndroidView(
-      key: ValueKey(widget.widgetInfo.appWidgetId),
-      viewType: 'com.genrevibes.smartlauncher/widget_host_view',
-      creationParams: {'appWidgetId': widget.widgetInfo.appWidgetId},
-      creationParamsCodec: const StandardMessageCodec(),
-      onPlatformViewCreated: (_) => _scheduleSizeSync(),
+    // RepaintBoundary isolates the platform view's compositor layer so
+    // PageView translation during scroll doesn't invalidate its raster.
+    return RepaintBoundary(
+      child: AndroidView(
+        key: ValueKey(widget.widgetInfo.appWidgetId),
+        viewType: 'com.genrevibes.smartlauncher/widget_host_view',
+        creationParams: {'appWidgetId': widget.widgetInfo.appWidgetId},
+        creationParamsCodec: const StandardMessageCodec(),
+        onPlatformViewCreated: (_) => _scheduleSizeSync(),
+      ),
     );
   }
 }

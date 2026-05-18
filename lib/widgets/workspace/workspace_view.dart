@@ -10,7 +10,6 @@ import 'cell_layout.dart';
 class WorkspaceView extends StatefulWidget {
   final LauncherSettings settings;
   final DragController dragController;
-  final Map<String, int> badgeCounts;
   final void Function(AppInfo app) onAppTap;
   final void Function(AppInfo app, int page, int slot, Offset iconCenter)
       onAppLongPress;
@@ -21,7 +20,6 @@ class WorkspaceView extends StatefulWidget {
     super.key,
     required this.settings,
     required this.dragController,
-    required this.badgeCounts,
     required this.onAppTap,
     required this.onAppLongPress,
     required this.onPageChanged,
@@ -72,6 +70,9 @@ class _WorkspaceViewState extends State<WorkspaceView> {
           builder: (context, isResizing, _) {
             return PageView.builder(
               controller: _controller,
+              // Keeps adjacent pages alive across swipes so their AndroidView
+              // widget hosts don't tear down/re-attach on every page change.
+              allowImplicitScrolling: true,
               physics: isResizing
                   ? const NeverScrollableScrollPhysics()
                   : const BouncingScrollPhysics(),
@@ -87,7 +88,6 @@ class _WorkspaceViewState extends State<WorkspaceView> {
                   pageIndex: i,
                   settings: widget.settings,
                   dragController: widget.dragController,
-                  badgeCounts: widget.badgeCounts,
                   onAppTap: widget.onAppTap,
                   onAppLongPress: (app, slot, center) =>
                       widget.onAppLongPress(app, i, slot, center),
