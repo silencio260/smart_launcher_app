@@ -192,13 +192,13 @@ class _EditModeOverlayState extends State<EditModeOverlay>
           // is ~50; 8 makes it a calm crawl.
           autoScrollerVelocityScalar: 8,
           proxyDecorator: (child, index, animation) {
-            // Lifted card shrinks to ~60% of the original so it reads as a
-            // distinct "picked-up" object rather than a near-full-size ghost.
+            // Lifted card shrinks to 85% of the original so it reads as a
+            // distinct "picked-up" object rather than a full-size ghost.
             return AnimatedBuilder(
               animation: animation,
               builder: (context, c) {
                 final t = Curves.easeOut.transform(animation.value);
-                final scale = 1.0 - 0.40 * t; // 1.0 → 0.60
+                final scale = 1.0 - 0.15 * t; // 1.0 → 0.85
                 return Transform.scale(
                   scale: scale,
                   child: Material(
