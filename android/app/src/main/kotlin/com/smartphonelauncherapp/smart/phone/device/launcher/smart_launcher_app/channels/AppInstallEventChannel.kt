@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.AppQueryHelper
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.helpers.AppInstallReceiver
 
 class AppInstallEventChannel(private val activity: Activity) {
@@ -16,6 +17,8 @@ class AppInstallEventChannel(private val activity: Activity) {
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
                     receiver = AppInstallReceiver { pkg, eventType ->
+                        // Drop the cached icon so the next getApps pass re-rasterizes.
+                        AppQueryHelper.invalidatePackage(pkg)
                         activity.runOnUiThread {
                             events.success(mapOf("packageName" to pkg, "eventType" to eventType))
                         }

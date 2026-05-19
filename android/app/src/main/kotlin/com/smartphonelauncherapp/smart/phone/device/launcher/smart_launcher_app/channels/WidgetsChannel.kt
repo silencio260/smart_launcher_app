@@ -19,6 +19,7 @@ import android.view.View
 import android.widget.RemoteViews
 import android.appwidget.AppWidgetHostView
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.widget.WidgetHostViewRegistry
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.AppQueryHelper
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
@@ -127,6 +128,12 @@ class WidgetsChannel(
                 val pm = context.packageManager
                 val providers = manager.getInstalledProviders()
 
+                // Per-call icon dedupe. Samsung exposes 7 clock providers and
+                // 4 calendar providers — without this we'd hit LiveIconLoader
+                // 11 extra times per refreshMetadata pass. AppQueryHelper's
+                // cache is process-wide, so this also shares with the drawer.
+                val appIconCache = HashMap<String, ByteArray?>(providers.size)
+
                 val list = providers.mapNotNull { info ->
                     try {
                         val appName = try {
@@ -142,11 +149,13 @@ class WidgetsChannel(
                             info.provider.className.substringAfterLast('.')
                         }
 
-                        val appIconBytes: ByteArray? = try {
-                            pm.getApplicationIcon(info.provider.packageName)
-                                ?.let { drawableToBytes(it, maxWidth = 120, maxHeight = 120) }
-                        } catch (_: Exception) {
-                            null
+                        val providerPkg = info.provider.packageName
+                        val appIconBytes: ByteArray? = appIconCache.getOrPut(providerPkg) {
+                            try {
+                                AppQueryHelper.getCachedAppIconBytes(pm, providerPkg)
+                            } catch (_: Exception) {
+                                null
+                            }
                         }
                         val sizing = WidgetSizing.fromProviderInfo(context, info, profile)
                         logD(buildString {
