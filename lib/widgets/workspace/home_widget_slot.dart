@@ -1,10 +1,11 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/launcher_widget_info.dart';
 import '../../services/launcher_service.dart';
 import '../../state/workspace_cubit.dart';
 import '../clock_widget.dart';
-import '../edit_mode/edit_mode_scope.dart';
 
 /// Renders a single Android app widget with resize handles. The
 /// LongPressDraggable for moving is owned by CellLayoutView, so this widget
@@ -99,13 +100,14 @@ class _WidgetView extends StatelessWidget {
       return const Center(child: ClockWidget());
     }
 
-    // While the edit overlay is mounted it owns the live AppWidgetHostView for
-    // each appWidgetId. Dropping the workspace's AndroidView here releases the
-    // hostview registration in AppWidgetHost.mViews so the overlay can take it.
-    if (EditModeScope.isActive(context)) {
-      return const SizedBox.shrink();
-    }
-
+    // The AndroidView stays mounted across edit-mode transitions. Previously
+    // we returned SizedBox.shrink() here so the edit overlay could mount its
+    // own AndroidView for the same appWidgetId, but that dispose/recreate
+    // cycle is the main source of the "Unable to acquire a buffer item"
+    // ImageReader warnings — the abandoned host view kept producing frames
+    // into a buffer queue Flutter had already stopped draining. The edit
+    // overlay now shows a static tile placeholder instead of a duplicate
+    // platform view, so a single AppWidgetHostView per id is enough.
     return _SpanSyncedWidgetHostView(
       widgetInfo: widgetInfo,
       gridColumns: gridColumns,
@@ -203,6 +205,12 @@ class _SpanSyncedWidgetHostViewState extends State<_SpanSyncedWidgetHostView> {
         creationParams: {'appWidgetId': widget.widgetInfo.appWidgetId},
         creationParamsCodec: const StandardMessageCodec(),
         onPlatformViewCreated: (_) => _scheduleSizeSync(),
+        // Empty set: the platform view only receives a pointer sequence when
+        // no Flutter recognizer in the arena claimed it (i.e. taps). Horizontal
+        // drags go to PageView; vertical drags go to the workspace touch
+        // listener. Adding drag recognizers here would route those gestures TO
+        // the widget instead.
+        gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
       ),
     );
   }

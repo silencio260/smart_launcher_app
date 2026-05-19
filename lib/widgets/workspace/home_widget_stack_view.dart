@@ -1,8 +1,9 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/launcher_widget_info.dart';
 import '../../services/launcher_service.dart';
-import '../edit_mode/edit_mode_scope.dart';
 
 /// Shows a swipeable stack of widgets. Long-press dragging is handled by the
 /// parent CellLayoutView (same as single widgets). Resize handles work on the
@@ -227,10 +228,10 @@ class _SpanSyncedStackWidgetViewState
 
   @override
   Widget build(BuildContext context) {
-    // See HomeWidgetSlot: edit overlay owns the live hostview while it's up.
-    if (EditModeScope.isActive(context)) {
-      return const SizedBox.shrink();
-    }
+    // The AndroidView stays mounted across edit-mode transitions. See
+    // HomeWidgetSlot for the full rationale — dropping the hostview here
+    // and remounting it from the edit overlay is what was producing the
+    // "Unable to acquire a buffer item" ImageReader warnings.
     // RepaintBoundary isolates the platform view's compositor layer so
     // PageView translation during scroll doesn't invalidate its raster.
     return RepaintBoundary(
@@ -240,6 +241,11 @@ class _SpanSyncedStackWidgetViewState
         creationParams: {'appWidgetId': widget.widgetInfo.appWidgetId},
         creationParamsCodec: const StandardMessageCodec(),
         onPlatformViewCreated: (_) => _scheduleSizeSync(),
+        // Empty set: the platform view only receives the pointer sequence when
+        // no Flutter recognizer in the arena claimed it (taps). Horizontal
+        // drags flow to the nearest PageView (the stack's own pager, or the
+        // workspace pager), and vertical drags flow to the workspace listener.
+        gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
       ),
     );
   }

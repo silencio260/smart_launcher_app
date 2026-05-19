@@ -55,3 +55,5 @@ lib/firebase_options.dart
 # ─── Hive generated type adapters ────────────────────────────────────────────
 # (uncomment if you prefer to regenerate rather than commit these)
 # **/*.g.dart
+# CocoIndex Code (ccc)
+/.cocoindex_code/

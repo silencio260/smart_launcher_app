@@ -38,6 +38,14 @@ class _WorkspaceTouchListenerState extends State<WorkspaceTouchListener>
   double _springFrom = 0;
   bool _longPressFired = false;
 
+  // Pointer-level tracking that bypasses the gesture arena. Curving/slanted
+  // swipes often lose the vertical recognizer to PageView's horizontal one
+  // or to an AndroidView's recognizers mid-gesture, so _onVerticalDragEnd
+  // never fires. Listener sees every PointerMove regardless of arena state,
+  // so we can decide based on raw net displacement from the touch-down.
+  final Map<int, _PointerTrack> _tracks = {};
+  static const double _fireThreshold = 56.0;
+
   @override
   void initState() {
     super.initState();
@@ -75,14 +83,9 @@ class _WorkspaceTouchListenerState extends State<WorkspaceTouchListener>
   }
 
   void _onVerticalDragEnd(DragEndDetails d) {
-    if (!_longPressFired && !_blocked) {
-      final v = d.primaryVelocity ?? 0;
-      if (v < -300) {
-        widget.onSwipeUp();
-      } else if (v > 300) {
-        widget.onSwipeDown();
-      }
-    }
+    // Action firing is handled by the raw Listener path (see _onPointerMove)
+    // so curving/slanted swipes that lose the arena still trigger. Here we
+    // only spring the visual offset back to rest.
     _longPressFired = false;
     _springFrom = _verticalOffset.value;
     if (_springFrom != 0) _spring.forward(from: 0);
@@ -99,9 +102,43 @@ class _WorkspaceTouchListenerState extends State<WorkspaceTouchListener>
     widget.onDoubleTap();
   }
 
+  void _onPointerDown(PointerDownEvent e) {
+    _tracks[e.pointer] = _PointerTrack(e.position);
+  }
+
+  void _onPointerMove(PointerMoveEvent e) {
+    final t = _tracks[e.pointer];
+    if (t == null || t.fired) return;
+    if (_blocked || _longPressFired) return;
+    final dy = e.position.dy - t.start.dy;
+    // Net displacement from touch-down — robust to curved paths because we
+    // ignore the intermediate trajectory entirely.
+    if (dy <= -_fireThreshold) {
+      t.fired = true;
+      widget.onSwipeUp();
+    } else if (dy >= _fireThreshold) {
+      t.fired = true;
+      widget.onSwipeDown();
+    }
+  }
+
+  void _onPointerUp(PointerUpEvent e) {
+    _tracks.remove(e.pointer);
+  }
+
+  void _onPointerCancel(PointerCancelEvent e) {
+    _tracks.remove(e.pointer);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return RawGestureDetector(
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _onPointerDown,
+      onPointerMove: _onPointerMove,
+      onPointerUp: _onPointerUp,
+      onPointerCancel: _onPointerCancel,
+      child: RawGestureDetector(
       behavior: HitTestBehavior.translucent,
       gestures: <Type, GestureRecognizerFactory>{
         _TolerantLongPressGestureRecognizer:
@@ -110,9 +147,10 @@ class _WorkspaceTouchListenerState extends State<WorkspaceTouchListener>
           () => _TolerantLongPressGestureRecognizer(),
           (r) => r..onLongPressStart = _onLongPressStart,
         ),
-        VerticalDragGestureRecognizer: GestureRecognizerFactoryWithHandlers<
-            VerticalDragGestureRecognizer>(
-          () => VerticalDragGestureRecognizer(),
+        _ResponsiveVerticalDragGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<
+                _ResponsiveVerticalDragGestureRecognizer>(
+          () => _ResponsiveVerticalDragGestureRecognizer(),
           (r) => r
             ..onUpdate = _onVerticalDragUpdate
             ..onEnd = _onVerticalDragEnd
@@ -136,8 +174,15 @@ class _WorkspaceTouchListenerState extends State<WorkspaceTouchListener>
           );
         },
       ),
+      ),
     );
   }
+}
+
+class _PointerTrack {
+  final Offset start;
+  bool fired = false;
+  _PointerTrack(this.start);
 }
 
 // Long-press recognizer that tolerates finger wobble both before and after
@@ -151,4 +196,17 @@ class _TolerantLongPressGestureRecognizer extends LongPressGestureRecognizer {
 
   @override
   double? get preAcceptSlopTolerance => 48;
+}
+
+// Vertical drag recognizer that claims the arena sooner than the default
+// kTouchSlop (~18px). A slow, deliberate upward swipe to open the drawer
+// otherwise loses the arena to the PageView's horizontal recognizer on the
+// slightest horizontal wobble.
+class _ResponsiveVerticalDragGestureRecognizer
+    extends VerticalDragGestureRecognizer {
+  @override
+  bool hasSufficientGlobalDistanceToAccept(
+      PointerDeviceKind pointerDeviceKind, double? deviceTouchSlop) {
+    return globalDistanceMoved.abs() > 8.0;
+  }
 }
