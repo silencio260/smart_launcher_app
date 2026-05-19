@@ -22,7 +22,13 @@ class DragView extends StatelessWidget {
 
     if (payload.item is AppInfo) {
       final app = payload.item as AppInfo;
-      icon = ShapedIcon(iconBytes: app.icon, shape: iconShape, size: size);
+      icon = ShapedIcon(
+        iconBytes: app.icon,
+        iconPath: app.iconPath,
+        shape: iconShape,
+        size: size,
+        cacheKey: app.packageName,
+      );
     } else {
       icon = Container(
         width: size,

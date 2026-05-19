@@ -23,6 +23,7 @@ class AppSearchService {
         type: SearchResultType.app,
         title: app.name,
         icon: app.icon,
+        iconPath: app.iconPath,
         packageName: app.packageName,
         score: score,
       ));

@@ -8,6 +8,7 @@ class AppInfo extends ItemInfo {
   bool isDisabled;
   bool isHidden;
   Uint8List? icon;
+  String? iconPath;
 
   AppInfo({
     required super.id,
@@ -17,20 +18,26 @@ class AppInfo extends ItemInfo {
     this.isDisabled = false,
     this.isHidden = false,
     this.icon,
+    this.iconPath,
     super.title,
     super.rank,
     super.user,
   }) : super(itemType: ItemType.application, componentName: appComponentName);
 
   factory AppInfo.fromMap(Map<dynamic, dynamic> map) {
+    final rawIcon = map['icon'];
     return AppInfo(
       id: 0,
       packageName: map['packageName'] as String,
-      appComponentName: map['componentName'] as String? ?? map['packageName'] as String,
+      appComponentName:
+          map['componentName'] as String? ?? map['packageName'] as String,
       title: map['name'] as String? ?? map['packageName'] as String,
-      icon: map['icon'] != null
-          ? Uint8List.fromList(List<int>.from(map['icon'] as List))
-          : null,
+      icon: rawIcon is Uint8List
+          ? rawIcon
+          : rawIcon is List
+              ? Uint8List.fromList(List<int>.from(rawIcon))
+              : null,
+      iconPath: map['iconPath'] as String?,
     );
   }
 

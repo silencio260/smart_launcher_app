@@ -26,7 +26,8 @@ class _SearchOverlayScreenState extends State<SearchOverlayScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _focusNode.requestFocus());
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _focusNode.requestFocus());
   }
 
   @override
@@ -71,7 +72,8 @@ class _SearchOverlayScreenState extends State<SearchOverlayScreen> {
         break;
       case SearchResultType.webSearch:
         final q = context.read<SearchCubit>().state.query;
-        final intent = Uri.parse('https://www.google.com/search?q=${Uri.encodeComponent(q)}');
+        final intent = Uri.parse(
+            'https://www.google.com/search?q=${Uri.encodeComponent(q)}');
         SystemChannels.platform.invokeMethod<void>('SystemNavigator.pop');
         // Launch via platform
         const MethodChannel('com.genrevibes.smartlauncher/system')
@@ -121,9 +123,11 @@ class _SearchOverlayScreenState extends State<SearchOverlayScreen> {
                       final r = state.results[i];
                       return ListTile(
                         leading: _buildLeading(r),
-                        title: Text(r.title, style: const TextStyle(color: Colors.white)),
+                        title: Text(r.title,
+                            style: const TextStyle(color: Colors.white)),
                         subtitle: r.subtitle != null
-                            ? Text(r.subtitle!, style: const TextStyle(color: Colors.white54))
+                            ? Text(r.subtitle!,
+                                style: const TextStyle(color: Colors.white54))
                             : null,
                         onTap: () => _onResultTap(context, r),
                       );
@@ -139,8 +143,14 @@ class _SearchOverlayScreenState extends State<SearchOverlayScreen> {
   }
 
   Widget _buildLeading(SearchResult r) {
-    if (r.icon != null) {
-      return ShapedIcon(iconBytes: r.icon, shape: widget.iconShape, size: 40);
+    if (r.icon != null || (r.iconPath?.isNotEmpty ?? false)) {
+      return ShapedIcon(
+        iconBytes: r.icon,
+        iconPath: r.iconPath,
+        shape: widget.iconShape,
+        size: 40,
+        cacheKey: r.packageName,
+      );
     }
     final icon = switch (r.type) {
       SearchResultType.calculator => Icons.calculate_outlined,

@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -9,6 +12,7 @@ import '../models/launcher_settings.dart';
 import '../models/launcher_state.dart' as ls;
 import '../models/workspace_item_info.dart';
 import '../services/launcher_service.dart';
+import '../services/icons/decoded_icon_cache.dart';
 import '../state/apps_cubit.dart';
 import '../state/launcher_cubit.dart';
 import '../state/search_cubit.dart';
@@ -44,6 +48,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _didEnsureDefaultClock = false;
   bool _normalizingDock = false;
   PageController? _pageController;
+  Timer? _drawerPrewarmTimer;
+  bool _drawerPrewarmRunning = false;
 
   @override
   void initState() {
@@ -56,6 +62,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     ));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AppsCubit>().startBadgeListening();
+      context.read<AppsCubit>().startAppInstallListening();
     });
     _dragController.addListener(_onDragChange);
     _dragController.onRevertDisplacements = (displacements) {
@@ -72,6 +79,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _drawerPrewarmTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _dragController.removeListener(_onDragChange);
     _dragController.dispose();
@@ -95,7 +103,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     context.read<AppsCubit>().loadApps();
   }
 
-  void _openDrawer() => setState(() => _drawerOpen = true);
+  void _openDrawer() {
+    setState(() => _drawerOpen = true);
+  }
 
   void _closeDrawer() {
     setState(() {
@@ -153,6 +163,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         componentName: app.appComponentName,
         title: app.name,
         icon: app.icon,
+        iconPath: app.iconPath,
         screenId: 0,
       ),
       settings.gridColumns,
@@ -362,9 +373,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             _normalizeDockForCurrentState();
           },
         ),
+        BlocListener<SettingsCubit, LauncherSettings>(
+          listenWhen: (prev, next) =>
+              prev.drawerIconSize != next.drawerIconSize,
+          listener: (context, settings) {
+            _scheduleDrawerIconPrewarm(
+              context.read<AppsCubit>().state.apps,
+              settings: settings,
+            );
+          },
+        ),
         BlocListener<AppsCubit, AppsState>(
           listenWhen: (prev, next) => prev.apps != next.apps,
-          listener: (_, __) => _normalizeDockForCurrentState(),
+          listener: (_, state) {
+            _normalizeDockForCurrentState();
+            _scheduleDrawerIconPrewarm(state.apps);
+          },
         ),
       ],
       child: BlocBuilder<SettingsCubit, LauncherSettings>(
@@ -612,6 +636,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       componentName: app?.appComponentName ?? ref,
       title: app?.name ?? ref,
       icon: app?.icon,
+      iconPath: app?.iconPath,
     );
   }
 
@@ -681,10 +706,67 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _normalizingDock = false;
   }
 
+  void _scheduleDrawerIconPrewarm(
+    List<AppInfo> apps, {
+    LauncherSettings? settings,
+  }) {
+    if (!mounted || apps.isEmpty) return;
+    final effectiveSettings = settings ?? context.read<SettingsCubit>().state;
+    final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
+    final targetPx =
+        (effectiveSettings.drawerIconSize * dpr).ceil().clamp(1, 512).toInt();
+    final visibleApps =
+        apps.where((app) => !app.isHidden).toList(growable: false);
+    if (visibleApps.isEmpty) return;
+
+    _drawerPrewarmTimer?.cancel();
+    _drawerPrewarmTimer = Timer(const Duration(milliseconds: 700), () {
+      if (!mounted || _drawerPrewarmRunning || _drawerOpen) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _drawerPrewarmRunning || _drawerOpen) return;
+        _drawerPrewarmRunning = true;
+        _precacheDrawerIcons(visibleApps, targetPx).whenComplete(() {
+          _drawerPrewarmRunning = false;
+        });
+      });
+    });
+  }
+
+  Future<void> _precacheDrawerIcons(List<AppInfo> apps, int targetPx) async {
+    var fileCount = 0;
+    for (final app in apps) {
+      if (!mounted || _drawerOpen || _drawerDraggingToHome) return;
+      final iconPath = app.iconPath;
+      if (iconPath == null || iconPath.isEmpty) continue;
+      try {
+        final provider = ResizeImage.resizeIfNeeded(
+          targetPx,
+          targetPx,
+          FileImage(File(iconPath)),
+        );
+        await precacheImage(provider, context);
+      } catch (_) {
+        // A missing cache file just falls through to ShapedIcon's fallback.
+      }
+      fileCount += 1;
+      if (fileCount >= 48) break;
+      await Future<void>.delayed(const Duration(milliseconds: 8));
+    }
+
+    if (!mounted || _drawerOpen || _drawerDraggingToHome) return;
+    await DecodedIconCache.instance.prewarm(
+      apps,
+      targetPx: targetPx,
+      limit: 32,
+      concurrency: 1,
+      pauseBetweenDecodes: const Duration(milliseconds: 16),
+      shouldContinue: () => mounted && !_drawerOpen && !_drawerDraggingToHome,
+    );
+  }
+
   FolderInfo _resolveFolderIcons(FolderInfo folder, AppsState appsState) {
     final byPackage = appsState.appsByPackage;
     final resolved = folder.contents.map((item) {
-      if (item.icon != null) return item;
       final live = byPackage[item.packageName];
       if (live == null) return item;
       return WorkspaceItemInfo(
@@ -694,6 +776,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         componentName: item.componentName ?? live.appComponentName,
         title: item.title ?? live.name,
         icon: live.icon,
+        iconPath: live.iconPath,
       );
     }).toList();
     return FolderInfo(

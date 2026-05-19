@@ -5,6 +5,7 @@ class WorkspaceItemInfo extends ItemInfo {
   String packageName;
   String? intentAction;
   Uint8List? icon;
+  String? iconPath;
   bool isDisabled;
   String? disabledMessage;
   bool isSystemApp;
@@ -26,6 +27,7 @@ class WorkspaceItemInfo extends ItemInfo {
     super.rank,
     this.intentAction,
     this.icon,
+    this.iconPath,
     this.isDisabled = false,
     this.disabledMessage,
     this.isSystemApp = false,

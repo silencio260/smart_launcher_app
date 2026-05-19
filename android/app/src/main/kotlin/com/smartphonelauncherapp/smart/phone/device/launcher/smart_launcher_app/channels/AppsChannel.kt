@@ -45,6 +45,44 @@ class AppsChannel(private val activity: Activity) {
                             }
                         }
                     }
+                    "getAppsIfChanged" -> {
+                        val knownSnapshotKey = call.argument<String>("snapshotKey")
+                        ioExecutor.execute {
+                            try {
+                                val snapshotKey = AppQueryHelper.getLauncherSnapshotKey(activity)
+                                if (
+                                    knownSnapshotKey != null &&
+                                    knownSnapshotKey == snapshotKey &&
+                                    AppQueryHelper.hasValidLauncherIconCache(activity)
+                                ) {
+                                    activity.runOnUiThread {
+                                        result.success(
+                                            mapOf(
+                                                "changed" to false,
+                                                "snapshotKey" to snapshotKey,
+                                            )
+                                        )
+                                    }
+                                    return@execute
+                                }
+
+                                val apps = AppQueryHelper.getLauncherActivities(activity)
+                                activity.runOnUiThread {
+                                    result.success(
+                                        mapOf(
+                                            "changed" to true,
+                                            "snapshotKey" to snapshotKey,
+                                            "apps" to apps,
+                                        )
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                activity.runOnUiThread {
+                                    result.error("GET_APPS_ERROR", e.message, null)
+                                }
+                            }
+                        }
+                    }
                     "launchApp" -> {
                         val pkg = call.argument<String>("packageName")
                         if (pkg != null) {

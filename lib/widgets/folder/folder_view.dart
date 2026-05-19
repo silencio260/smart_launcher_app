@@ -292,17 +292,18 @@ class _FolderViewState extends State<FolderView>
       itemCount: apps.length,
       itemBuilder: (context, i) {
         final item = apps[i];
-        final resolvedIcon = item.icon ??
-            liveApps
-                .where((a) => a.packageName == item.packageName)
-                .firstOrNull
-                ?.icon;
+        final liveApp = liveApps
+            .where((a) => a.packageName == item.packageName)
+            .firstOrNull;
+        final resolvedIcon = item.icon ?? liveApp?.icon;
+        final resolvedIconPath = item.iconPath ?? liveApp?.iconPath;
         final app = AppInfo(
           id: item.id,
           packageName: item.packageName,
           appComponentName: item.componentName ?? item.packageName,
           title: item.title,
           icon: resolvedIcon,
+          iconPath: resolvedIconPath,
         );
         final payload = DragPayload(
           item: item,

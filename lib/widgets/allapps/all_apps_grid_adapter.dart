@@ -1,4 +1,7 @@
+import 'package:characters/characters.dart';
 import '../../models/app_info.dart';
+
+final _asciiSectionLetter = RegExp(r'^[A-Z]$');
 
 sealed class DrawerItem {}
 
@@ -13,15 +16,12 @@ class AppRow extends DrawerItem {
 }
 
 List<DrawerItem> buildSections(List<AppInfo> apps, int columns) {
-  final visible = apps.where((a) => !a.isHidden).toList()
-    ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-
   final items = <DrawerItem>[];
   String? currentLetter;
 
-  for (var i = 0; i < visible.length;) {
-    final app = visible[i];
-    final letter = app.name.isNotEmpty ? app.name[0].toUpperCase() : '#';
+  for (var i = 0; i < apps.length;) {
+    final app = apps[i];
+    final letter = _sectionLetter(app.name);
 
     if (letter != currentLetter) {
       currentLetter = letter;
@@ -29,9 +29,9 @@ List<DrawerItem> buildSections(List<AppInfo> apps, int columns) {
     }
 
     final row = <AppInfo>[];
-    while (i < visible.length) {
-      final a = visible[i];
-      final l = a.name.isNotEmpty ? a.name[0].toUpperCase() : '#';
+    while (i < apps.length) {
+      final a = apps[i];
+      final l = _sectionLetter(a.name);
       if (l != currentLetter || row.length >= columns) break;
       row.add(a);
       i++;
@@ -40,4 +40,11 @@ List<DrawerItem> buildSections(List<AppInfo> apps, int columns) {
   }
 
   return items;
+}
+
+String _sectionLetter(String name) {
+  final chars = name.trim().characters;
+  if (chars.isEmpty) return '#';
+  final upper = chars.first.toUpperCase();
+  return _asciiSectionLetter.hasMatch(upper) ? upper : '#';
 }

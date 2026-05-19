@@ -37,6 +37,7 @@ class BubbleTextView extends StatelessWidget {
         children: [
           ShapedIcon(
             iconBytes: app.icon,
+            iconPath: app.iconPath,
             shape: iconShape,
             size: iconSize,
             cacheKey: app.packageName,

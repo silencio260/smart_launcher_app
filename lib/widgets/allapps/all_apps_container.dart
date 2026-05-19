@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/app_info.dart';
@@ -17,6 +16,7 @@ class AllAppsContainer extends StatefulWidget {
   final void Function(AppInfo app) onAddToHome;
   final VoidCallback onDismiss;
   final VoidCallback? onDragToHome;
+
   /// Called when the user started a drag-to-home but cancelled it (did not drop
   /// on a valid target). Lets the home screen reset its workspace visibility.
   final VoidCallback? onDragCancelled;
@@ -62,7 +62,8 @@ class _AllAppsContainerState extends State<AllAppsContainer>
     _slideAnim = Tween<Offset>(
       begin: const Offset(0, 1),
       end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic));
+    ).animate(
+        CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic));
     _animController.forward();
   }
 
@@ -134,14 +135,8 @@ class _AllAppsContainerState extends State<AllAppsContainer>
   }
 
   Widget _buildContent(double screenH, double screenW, double dismissProgress) {
-    // Skip BackdropFilter entirely when the drawer paints a near-opaque
-    // background on top — the blur is invisible there and was the single
-    // biggest paint cost in the drawer. When the background is transparent
-    // or low-opacity we keep a milder blur (sigma 12 vs 25) which is still
-    // well within the Material spec range.
-    final showBg = widget.settings.drawerShowBackground;
-    final bgOpacity = widget.settings.drawerBackgroundOpacity;
-    final needsBlur = !showBg || bgOpacity < 0.92;
+    // Keep the steady-state drawer path free of BackdropFilter. Full-screen
+    // blur was the most expensive part of first-open + initial scroll.
     // Opacity-based fade only matters while the user is dragging to dismiss.
     // Skipping the Opacity wrapper otherwise removes a saveLayer from the
     // steady-state scroll path.
@@ -150,12 +145,7 @@ class _AllAppsContainerState extends State<AllAppsContainer>
 
     Widget content = Material(
       color: Colors.transparent,
-      child: needsBlur
-          ? BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-              child: _buildStack(screenH, screenW),
-            )
-          : _buildStack(screenH, screenW),
+      child: _buildStack(screenH, screenW),
     );
     if (isDragging) {
       content = Opacity(opacity: fade, child: content);
@@ -330,7 +320,10 @@ class _AppContextMenu extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.grey[850]!.withValues(alpha: 0.97),
           borderRadius: BorderRadius.circular(16),
-          boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 14, offset: Offset(0, 4))],
+          boxShadow: const [
+            BoxShadow(
+                color: Colors.black54, blurRadius: 14, offset: Offset(0, 4))
+          ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -340,14 +333,21 @@ class _AppContextMenu extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 13, 16, 8),
               child: Text(
                 app.name,
-                style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
             ),
             const Divider(color: Colors.white12, height: 1, thickness: 1),
-            _ContextMenuItem(icon: Icons.add_to_home_screen, label: 'Add to Home', onTap: onAddToHome),
-            _ContextMenuItem(icon: Icons.info_outline, label: 'App Info', onTap: onAppInfo),
+            _ContextMenuItem(
+                icon: Icons.add_to_home_screen,
+                label: 'Add to Home',
+                onTap: onAddToHome),
+            _ContextMenuItem(
+                icon: Icons.info_outline, label: 'App Info', onTap: onAppInfo),
           ],
         ),
       ),
@@ -360,7 +360,8 @@ class _ContextMenuItem extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
 
-  const _ContextMenuItem({required this.icon, required this.label, required this.onTap});
+  const _ContextMenuItem(
+      {required this.icon, required this.label, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -373,7 +374,8 @@ class _ContextMenuItem extends StatelessWidget {
           children: [
             Icon(icon, color: Colors.white70, size: 18),
             const SizedBox(width: 10),
-            Text(label, style: const TextStyle(color: Colors.white, fontSize: 14)),
+            Text(label,
+                style: const TextStyle(color: Colors.white, fontSize: 14)),
           ],
         ),
       ),
@@ -404,7 +406,8 @@ class _SearchRow extends StatelessWidget {
                 color: Colors.white.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.keyboard_arrow_down, color: Colors.white70, size: 22),
+              child: const Icon(Icons.keyboard_arrow_down,
+                  color: Colors.white70, size: 22),
             ),
           ),
         ],

@@ -9,6 +9,10 @@ import io.flutter.plugin.common.MethodChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.services.LauncherNotificationService
 
 class NotificationChannel(private val activity: Activity) {
+    @Volatile
+    private var active = false
+    private var badgeCallback: Runnable? = null
+    private var eventSink: EventChannel.EventSink? = null
 
     fun register(messenger: BinaryMessenger) {
         MethodChannel(messenger, "com.genrevibes.smartlauncher/notifications")
@@ -28,15 +32,30 @@ class NotificationChannel(private val activity: Activity) {
         EventChannel(messenger, "com.genrevibes.smartlauncher/notifications/badge_events")
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
-                    LauncherNotificationService.onBadgeChanged = Runnable {
+                    dispose()
+                    active = true
+                    eventSink = events
+                    val callback = Runnable {
                         activity.runOnUiThread {
-                            events.success(LauncherNotificationService.badgeCounts.toMap())
+                            if (!active || activity.isFinishing || activity.isDestroyed) return@runOnUiThread
+                            eventSink?.success(LauncherNotificationService.badgeCounts.toMap())
                         }
                     }
+                    badgeCallback = callback
+                    LauncherNotificationService.onBadgeChanged = callback
                 }
                 override fun onCancel(arguments: Any?) {
-                    LauncherNotificationService.onBadgeChanged = null
+                    dispose()
                 }
             })
+    }
+
+    fun dispose() {
+        active = false
+        if (LauncherNotificationService.onBadgeChanged === badgeCallback) {
+            LauncherNotificationService.onBadgeChanged = null
+        }
+        badgeCallback = null
+        eventSink = null
     }
 }

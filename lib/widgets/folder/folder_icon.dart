@@ -84,6 +84,7 @@ class FolderIconView extends StatelessWidget {
         alignment: Alignment.topCenter,
         child: ShapedIcon(
           iconBytes: folder.contents[0].icon,
+          iconPath: folder.contents[0].iconPath,
           shape: settings.iconShape,
           size: miniSize * 1.4,
         ),
@@ -100,6 +101,7 @@ class FolderIconView extends StatelessWidget {
               .take(4)
               .map((item) => ShapedIcon(
                     iconBytes: item.icon,
+                    iconPath: item.iconPath,
                     shape: settings.iconShape,
                     size: miniSize,
                   ))

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ class ShapedIcon extends StatefulWidget {
   final Uint8List? iconBytes;
   final String shape;
   final double size;
+  final String? iconPath;
 
   /// Optional stable cache key (typically the package name). When provided,
   /// the icon is decoded once via [DecodedIconCache] and rendered with
@@ -20,6 +22,7 @@ class ShapedIcon extends StatefulWidget {
     required this.shape,
     required this.size,
     this.cacheKey,
+    this.iconPath,
   });
 
   @override
@@ -46,6 +49,7 @@ class _ShapedIconState extends State<ShapedIcon> {
   void _ensureImage() {
     final bytes = widget.iconBytes;
     final key = widget.cacheKey;
+    if (widget.iconPath != null) return;
     if (bytes == null || key == null) return;
     final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
     final targetPx = (widget.size * dpr).ceil().clamp(1, 512);
@@ -59,9 +63,7 @@ class _ShapedIconState extends State<ShapedIcon> {
       _image = cached;
       return;
     }
-    DecodedIconCache.instance
-        .getOrDecode(key, bytes, targetPx)
-        .then((img) {
+    DecodedIconCache.instance.getOrDecode(key, bytes, targetPx).then((img) {
       if (!mounted) return;
       if (key != _activeKey || targetPx != _activePx) return;
       setState(() => _image = img);
@@ -80,7 +82,10 @@ class _ShapedIconState extends State<ShapedIcon> {
 
   Widget _buildInner(BuildContext context) {
     final bytes = widget.iconBytes;
-    if (bytes == null) return _FallbackIcon(size: widget.size);
+    final iconPath = widget.iconPath;
+    if (bytes == null && (iconPath == null || iconPath.isEmpty)) {
+      return _FallbackIcon(size: widget.size);
+    }
 
     // RawImage fast path: decoded ui.Image cached by package+pixel size.
     if (widget.cacheKey != null && _image != null) {
@@ -93,11 +98,37 @@ class _ShapedIconState extends State<ShapedIcon> {
       );
     }
 
-    // Fallback for callers without a cache key, or while the decode is in
-    // flight on first paint. Image.memory still uses Flutter's image cache.
     final dpr = MediaQuery.devicePixelRatioOf(context);
+    if (iconPath != null && iconPath.isNotEmpty) {
+      return Image.file(
+        File(iconPath),
+        width: widget.size,
+        height: widget.size,
+        fit: BoxFit.cover,
+        cacheWidth: (widget.size * dpr).ceil(),
+        cacheHeight: (widget.size * dpr).ceil(),
+        filterQuality: FilterQuality.medium,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) {
+          if (bytes == null) return _FallbackIcon(size: widget.size);
+          return Image.memory(
+            bytes,
+            width: widget.size,
+            height: widget.size,
+            fit: BoxFit.cover,
+            cacheWidth: (widget.size * dpr).ceil(),
+            cacheHeight: (widget.size * dpr).ceil(),
+            filterQuality: FilterQuality.medium,
+            gaplessPlayback: true,
+          );
+        },
+      );
+    }
+
+    // Fallback for callers without a file path, or while the byte decode is in
+    // flight on first paint. Image.memory still uses Flutter's image cache.
     return Image.memory(
-      bytes,
+      bytes!,
       width: widget.size,
       height: widget.size,
       fit: BoxFit.cover,

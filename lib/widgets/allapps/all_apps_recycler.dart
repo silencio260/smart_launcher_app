@@ -87,7 +87,8 @@ class _AllAppsRecyclerState extends State<AllAppsRecycler> {
                 if (item is AppRow) {
                   return RepaintBoundary(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 6),
                       child: Row(
                         children: [
                           for (final app in item.apps)
@@ -99,7 +100,8 @@ class _AllAppsRecyclerState extends State<AllAppsRecycler> {
                                   settings: widget.settings,
                                   dragController: widget.dragController,
                                   onTap: () => widget.onAppTap(app),
-                                  onLongPress: (pos) => widget.onAppLongPress(app, pos),
+                                  onLongPress: (pos) =>
+                                      widget.onAppLongPress(app, pos),
                                   onDragStarted: widget.onDragStarted,
                                   onDragEnded: widget.onDragEnded,
                                 ),
@@ -164,6 +166,7 @@ class _DrawerAppIconState extends State<_DrawerAppIcon> {
       componentName: widget.app.appComponentName,
       title: widget.app.name,
       icon: widget.app.icon,
+      iconPath: widget.app.iconPath,
     );
     final payload = DragPayload(
       item: item,
@@ -190,7 +193,8 @@ class _DrawerAppIconState extends State<_DrawerAppIcon> {
         // Do NOT navigate yet; wait until the user drags far enough.
         _dragArmed = true;
         _dragMoved = false;
-        widget.dragController.startDrag(item, kDrawerSourcePage, -1, Offset.zero);
+        widget.dragController
+            .startDrag(item, kDrawerSourcePage, -1, Offset.zero);
         if (mounted) setState(() => _dragging = true);
         final box = context.findRenderObject() as RenderBox?;
         if (box != null && mounted) {

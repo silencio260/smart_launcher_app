@@ -7,6 +7,7 @@ class SearchResult {
   final String title;
   final String? subtitle;
   final Uint8List? icon;
+  final String? iconPath;
   final String? packageName;
   final String? shortcutId;
   final String? query;
@@ -17,6 +18,7 @@ class SearchResult {
     required this.title,
     this.subtitle,
     this.icon,
+    this.iconPath,
     this.packageName,
     this.shortcutId,
     this.query,

@@ -3,6 +3,18 @@ import '../models/app_info.dart';
 import '../models/widget_provider_info.dart';
 import '../utils/debug_flags.dart';
 
+class AppListRefresh {
+  final bool changed;
+  final String? snapshotKey;
+  final List<AppInfo>? apps;
+
+  const AppListRefresh({
+    required this.changed,
+    required this.snapshotKey,
+    required this.apps,
+  });
+}
+
 class LauncherService {
   static const _apps = MethodChannel('com.genrevibes.smartlauncher/apps');
   static const _system = MethodChannel('com.genrevibes.smartlauncher/system');
@@ -10,6 +22,35 @@ class LauncherService {
 
   static Future<List<AppInfo>> getInstalledApps() async {
     final List<dynamic> raw = await _apps.invokeMethod('getApps');
+    return _sortedApps(raw);
+  }
+
+  static Future<AppListRefresh> refreshInstalledApps({
+    String? knownSnapshotKey,
+  }) async {
+    final raw = await _apps.invokeMethod<Map<dynamic, dynamic>>(
+      'getAppsIfChanged',
+      {'snapshotKey': knownSnapshotKey},
+    );
+    if (raw == null) {
+      final apps = await getInstalledApps();
+      return AppListRefresh(
+        changed: true,
+        snapshotKey: null,
+        apps: apps,
+      );
+    }
+    final changed = raw['changed'] as bool? ?? true;
+    final snapshotKey = raw['snapshotKey'] as String?;
+    final appsRaw = raw['apps'] as List?;
+    return AppListRefresh(
+      changed: changed,
+      snapshotKey: snapshotKey,
+      apps: appsRaw == null ? null : _sortedApps(appsRaw),
+    );
+  }
+
+  static List<AppInfo> _sortedApps(List<dynamic> raw) {
     final apps = raw.map((e) => AppInfo.fromMap(e as Map)).toList();
     apps.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     return apps;

@@ -27,7 +27,7 @@ class SmartLauncherApp extends StatelessWidget {
     return MultiBlocProvider(
       providers: [
         BlocProvider(create: (_) => SettingsCubit()..load()),
-        BlocProvider(create: (_) => AppsCubit()..loadApps()),
+        BlocProvider(create: (_) => AppsCubit()..loadCachedThenRefresh()),
         BlocProvider(create: (_) => WorkspaceCubit()..loadLayout()),
         BlocProvider(create: (_) => LauncherCubit()),
         BlocProvider(create: (_) => SearchCubit()),

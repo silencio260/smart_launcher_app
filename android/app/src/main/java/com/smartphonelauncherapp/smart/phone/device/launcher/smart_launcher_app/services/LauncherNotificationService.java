@@ -10,7 +10,7 @@ public class LauncherNotificationService extends NotificationListenerService {
 
     public static final ConcurrentHashMap<String, Integer> badgeCounts = new ConcurrentHashMap<>();
     public static final ConcurrentHashMap<String, Set<String>> activeNotifications = new ConcurrentHashMap<>();
-    public static Runnable onBadgeChanged = null;
+    public static volatile Runnable onBadgeChanged = null;
 
     @Override
     public void onNotificationPosted(StatusBarNotification sbn) {

@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import '../models/app_info.dart';
+import '../services/app_snapshot_cache.dart';
+import '../services/icons/decoded_icon_cache.dart';
 import '../services/launcher_service.dart';
 
 class AppsState extends Equatable {
@@ -92,10 +94,15 @@ class BadgeStore {
 class AppsCubit extends Cubit<AppsState> {
   static const _badgeEvents =
       EventChannel('com.genrevibes.smartlauncher/notifications/badge_events');
+  static const _appInstallEvents =
+      EventChannel('com.genrevibes.smartlauncher/app_installs');
   static const _notificationChannel =
       MethodChannel('com.genrevibes.smartlauncher/notifications');
 
   StreamSubscription<dynamic>? _badgeSub;
+  StreamSubscription<dynamic>? _appInstallSub;
+  String? _snapshotKey;
+  bool _loadedSnapshot = false;
 
   // Per-tile badge subscribers attach to this store instead of going
   // through AppsCubit's Bloc state, so badge emits don't re-run every
@@ -116,6 +123,21 @@ class AppsCubit extends Cubit<AppsState> {
     );
   }
 
+  void startAppInstallListening() {
+    _appInstallSub ??= _appInstallEvents.receiveBroadcastStream().listen(
+      (data) {
+        if (data is Map) {
+          final pkg = data['packageName']?.toString();
+          if (pkg != null && pkg.isNotEmpty) {
+            DecodedIconCache.instance.evict(pkg);
+          }
+        }
+        loadApps(forceFull: true);
+      },
+      onError: (_) {},
+    );
+  }
+
   Future<void> refreshBadges() async {
     try {
       final raw =
@@ -130,15 +152,49 @@ class AppsCubit extends Cubit<AppsState> {
   @override
   Future<void> close() {
     _badgeSub?.cancel();
+    _appInstallSub?.cancel();
     badges.dispose();
     return super.close();
   }
 
-  Future<void> loadApps() async {
-    emit(state.copyWith(loading: true));
+  Future<void> loadCachedThenRefresh() async {
+    if (!_loadedSnapshot) {
+      _loadedSnapshot = true;
+      final snapshot = await AppSnapshotCache.instance.load();
+      if (snapshot != null && state.apps.isEmpty) {
+        _snapshotKey = snapshot.snapshotKey;
+        emit(state.copyWith(apps: snapshot.apps, loading: false));
+      }
+    }
+    await loadApps();
+  }
+
+  Future<void> loadApps({bool forceFull = false}) async {
+    if (state.apps.isEmpty) {
+      emit(state.copyWith(loading: true));
+    }
     try {
-      final apps = await LauncherService.getInstalledApps();
+      final refresh = await LauncherService.refreshInstalledApps(
+        knownSnapshotKey: forceFull ? null : _snapshotKey,
+      );
+      final snapshotKey = refresh.snapshotKey;
+      if (!refresh.changed && snapshotKey != null) {
+        _snapshotKey = snapshotKey;
+        if (state.loading) emit(state.copyWith(loading: false));
+        return;
+      }
+
+      final apps = refresh.apps ?? await LauncherService.getInstalledApps();
+      _snapshotKey = snapshotKey;
       emit(state.copyWith(apps: apps, loading: false));
+      if (snapshotKey != null) {
+        unawaited(
+          AppSnapshotCache.instance.save(
+            snapshotKey: snapshotKey,
+            apps: apps,
+          ),
+        );
+      }
     } catch (_) {
       emit(state.copyWith(loading: false));
     }
@@ -159,6 +215,7 @@ class AppsCubit extends Cubit<AppsState> {
           isDisabled: a.isDisabled,
           isHidden: true,
           icon: a.icon,
+          iconPath: a.iconPath,
           title: a.title,
           rank: a.rank,
         );
@@ -179,6 +236,7 @@ class AppsCubit extends Cubit<AppsState> {
           isDisabled: a.isDisabled,
           isHidden: false,
           icon: a.icon,
+          iconPath: a.iconPath,
           title: a.title,
           rank: a.rank,
         );

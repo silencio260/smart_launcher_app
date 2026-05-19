@@ -45,8 +45,7 @@ class _EditModeOverlayState extends State<EditModeOverlay>
       vsync: this,
       duration: const Duration(milliseconds: 220),
     );
-    _fadeAnim =
-        CurvedAnimation(parent: _animController, curve: Curves.easeOut);
+    _fadeAnim = CurvedAnimation(parent: _animController, curve: Curves.easeOut);
     _animController.forward();
 
     _displayedPage = context.read<WorkspaceCubit>().state.currentPage;
@@ -184,7 +183,8 @@ class _EditModeOverlayState extends State<EditModeOverlay>
         return ThresholdReorderableList(
           controller: _scrollController,
           scrollDirection: Axis.horizontal,
-          padding: EdgeInsets.symmetric(horizontal: horizontalInset, vertical: 4),
+          padding:
+              EdgeInsets.symmetric(horizontal: horizontalInset, vertical: 4),
           itemCount: state.pages.length,
           onReorder: _onReorder,
           // Slow the edge auto-scroll way down so neighbors don't whip past
@@ -334,9 +334,8 @@ class _RemoveDropTarget extends StatelessWidget {
           ),
           child: Icon(
             hovering ? Icons.delete_forever : Icons.delete_outline,
-            color: enabled
-                ? Colors.white
-                : Colors.white.withValues(alpha: 0.35),
+            color:
+                enabled ? Colors.white : Colors.white.withValues(alpha: 0.35),
             size: 24,
           ),
         );
@@ -608,7 +607,12 @@ class _AppTile extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       mainAxisSize: MainAxisSize.min,
       children: [
-        ShapedIcon(iconBytes: item.icon, shape: shape, size: iconSize),
+        ShapedIcon(
+          iconBytes: item.icon,
+          iconPath: item.iconPath,
+          shape: shape,
+          size: iconSize,
+        ),
         if (showLabel && label.isNotEmpty) ...[
           const SizedBox(height: 3),
           Padding(
@@ -682,6 +686,7 @@ class _FolderTile extends StatelessWidget {
                         height: miniSize,
                         child: ShapedIcon(
                           iconBytes: item.icon,
+                          iconPath: item.iconPath,
                           shape: shape,
                           size: miniSize,
                         ),

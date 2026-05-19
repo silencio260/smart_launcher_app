@@ -23,6 +23,7 @@ class MainActivity : FlutterActivity() {
 
     private val appWidgetHost by lazy { AppWidgetHost(this, 1024) }
     private var widgetsChannel: WidgetsChannel? = null
+    private var notificationChannel: NotificationChannel? = null
 
     override fun getRenderMode(): RenderMode = RenderMode.texture
     override fun getTransparencyMode(): TransparencyMode = TransparencyMode.transparent
@@ -34,6 +35,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        notificationChannel?.dispose()
         appWidgetHost.stopListening()
         super.onDestroy()
     }
@@ -45,7 +47,7 @@ class MainActivity : FlutterActivity() {
         AppsChannel(this).register(messenger)
         SystemChannel(this).register(messenger)
         WallpaperChannel(this).register(messenger)
-        NotificationChannel(this).register(messenger)
+        notificationChannel = NotificationChannel(this).also { it.register(messenger) }
         ContactsChannel(this).register(messenger)
         CalendarChannel(this).register(messenger)
         AlarmChannel(this).register(messenger)
@@ -56,6 +58,12 @@ class MainActivity : FlutterActivity() {
             "com.genrevibes.smartlauncher/widget_host_view",
             WidgetHostViewFactory(this, appWidgetHost),
         )
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        notificationChannel?.dispose()
+        notificationChannel = null
+        super.cleanUpFlutterEngine(flutterEngine)
     }
 
     @Deprecated("Deprecated in Java")

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import '../models/app_info.dart';
 import '../services/launcher_service.dart';
@@ -47,6 +49,27 @@ class AppIcon extends StatelessWidget {
   }
 
   Widget _buildIcon() {
+    final iconPath = app.iconPath;
+    if (iconPath != null && iconPath.isNotEmpty) {
+      return Image.file(
+        File(iconPath),
+        width: iconSize,
+        height: iconSize,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) {
+          if (app.icon != null) {
+            return Image.memory(
+              app.icon!,
+              width: iconSize,
+              height: iconSize,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => _fallbackIcon(),
+            );
+          }
+          return _fallbackIcon();
+        },
+      );
+    }
     if (app.icon != null) {
       return Image.memory(
         app.icon!,
@@ -107,7 +130,8 @@ class _AppMenu extends StatelessWidget {
           const SizedBox(height: 16),
           Text(
             app.name,
-            style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+            style: const TextStyle(
+                color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           const Divider(color: Colors.white12),
@@ -119,14 +143,16 @@ class _AppMenu extends StatelessWidget {
             Navigator.pop(context);
             LauncherService.uninstallApp(app.packageName);
           }),
-          _menuItem(context, Icons.close, 'Cancel', () => Navigator.pop(context)),
+          _menuItem(
+              context, Icons.close, 'Cancel', () => Navigator.pop(context)),
           const SizedBox(height: 8),
         ],
       ),
     );
   }
 
-  Widget _menuItem(BuildContext context, IconData icon, String label, VoidCallback onTap) {
+  Widget _menuItem(
+      BuildContext context, IconData icon, String label, VoidCallback onTap) {
     return ListTile(
       leading: Icon(icon, color: Colors.white70),
       title: Text(label, style: const TextStyle(color: Colors.white)),

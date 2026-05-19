@@ -2177,6 +2177,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
                 item.packageName,
             title: item.title ?? liveApp?.name,
             icon: liveApp?.icon ?? item.icon,
+            iconPath: liveApp?.iconPath ?? item.iconPath,
           );
           final payload = DragPayload(
               item: item, sourcePage: widget.pageIndex, sourceSlot: slot);
@@ -2339,7 +2340,6 @@ class _CellLayoutViewState extends State<CellLayoutView>
 
   FolderInfo _resolveFolderIcons(FolderInfo folder, AppsState appsState) {
     final resolved = folder.contents.map((item) {
-      if (item.icon != null) return item;
       final live = appsState.apps
           .where((a) => a.packageName == item.packageName)
           .firstOrNull;
@@ -2351,6 +2351,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
         componentName: item.componentName ?? live.appComponentName,
         title: item.title ?? live.name,
         icon: live.icon,
+        iconPath: live.iconPath,
       );
     }).toList();
     return FolderInfo(

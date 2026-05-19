@@ -268,6 +268,7 @@ class _DockSlot extends StatelessWidget {
         componentName: currentApp.appComponentName,
         title: currentApp.name,
         icon: currentApp.icon,
+        iconPath: currentApp.iconPath,
       ),
       sourcePage: -1, // -1 = dock source
       sourceSlot: slot,
@@ -301,6 +302,7 @@ class _DockSlot extends StatelessWidget {
             componentName: currentApp.appComponentName,
             title: currentApp.name,
             icon: currentApp.icon,
+            iconPath: currentApp.iconPath,
           );
           workspaceCubit.addItem(
               displacedItem, incoming.sourcePage, incoming.sourceSlot);

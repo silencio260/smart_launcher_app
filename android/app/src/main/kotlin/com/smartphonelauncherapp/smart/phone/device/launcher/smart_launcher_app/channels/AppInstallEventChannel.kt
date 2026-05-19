@@ -18,7 +18,7 @@ class AppInstallEventChannel(private val activity: Activity) {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
                     receiver = AppInstallReceiver { pkg, eventType ->
                         // Drop the cached icon so the next getApps pass re-rasterizes.
-                        AppQueryHelper.invalidatePackage(pkg)
+                        AppQueryHelper.invalidatePackage(pkg, activity)
                         activity.runOnUiThread {
                             events.success(mapOf("packageName" to pkg, "eventType" to eventType))
                         }

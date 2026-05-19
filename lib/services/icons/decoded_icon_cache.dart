@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import '../../models/app_info.dart';
 
 /// Process-wide LRU cache of decoded [ui.Image] icons keyed by
 /// `package@sizePx`. Decoding happens once per (package, target pixel size);
@@ -47,6 +48,52 @@ class DecodedIconCache {
     });
     _pending[k] = future;
     return future;
+  }
+
+  Future<void> prewarm(
+    Iterable<AppInfo> apps, {
+    required int targetPx,
+    int limit = 32,
+    int concurrency = 2,
+    Duration pauseBetweenDecodes = Duration.zero,
+    bool Function()? shouldContinue,
+  }) async {
+    if (limit <= 0 || concurrency <= 0) return;
+    final targets = <AppInfo>[];
+    for (final app in apps) {
+      if (targets.length >= limit) break;
+      if (app.iconPath != null && app.iconPath!.isNotEmpty) continue;
+      if (app.icon == null) continue;
+      if (peek(app.packageName, targetPx) != null) continue;
+      targets.add(app);
+    }
+    if (targets.isEmpty) return;
+
+    var next = 0;
+    final workerCount = concurrency.clamp(1, targets.length);
+    Future<void> worker() async {
+      while (true) {
+        if (shouldContinue?.call() == false) return;
+        final index = next;
+        if (index >= targets.length) return;
+        next++;
+        final app = targets[index];
+        final bytes = app.icon;
+        if (bytes == null) continue;
+        try {
+          await getOrDecode(app.packageName, bytes, targetPx);
+        } catch (_) {
+          // Broken app icons should not block warming the rest of the drawer.
+        }
+        if (pauseBetweenDecodes > Duration.zero) {
+          await Future<void>.delayed(pauseBetweenDecodes);
+        }
+      }
+    }
+
+    await Future.wait<void>([
+      for (var i = 0; i < workerCount; i++) worker(),
+    ]);
   }
 
   void _insert(String key, ui.Image img) {
