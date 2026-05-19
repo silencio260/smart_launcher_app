@@ -24,15 +24,8 @@ class MainActivity : FlutterActivity() {
     private val appWidgetHost by lazy { AppWidgetHost(this, 1024) }
     private var widgetsChannel: WidgetsChannel? = null
 
-    // RenderMode.surface uses a SurfaceView for Flutter output instead of a
-    // TextureView. SurfaceView doesn't route frames through ImageReader, which
-    // eliminates the "Unable to acquire a buffer item, very likely client tried
-    // to acquire more than maxImages buffers" warning that fired whenever the
-    // hosted AppWidgetHostView platform views (resize/scroll/edit-mode toggle)
-    // produced frames faster than the ImageReader could drain. SurfaceView is
-    // opaque — TransparencyMode must be opaque to match.
-    override fun getRenderMode(): RenderMode = RenderMode.surface
-    override fun getTransparencyMode(): TransparencyMode = TransparencyMode.opaque
+    override fun getRenderMode(): RenderMode = RenderMode.texture
+    override fun getTransparencyMode(): TransparencyMode = TransparencyMode.transparent
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
