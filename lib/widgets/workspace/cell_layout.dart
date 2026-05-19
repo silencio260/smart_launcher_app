@@ -50,9 +50,14 @@ class CellLayoutView extends StatefulWidget {
 }
 
 class _CellLayoutViewState extends State<CellLayoutView>
-    with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
-  @override
-  bool get wantKeepAlive => true;
+    with TickerProviderStateMixin {
+  // Intentionally not AutomaticKeepAliveClientMixin: keep-alive holds every
+  // visited page's AndroidView host surfaces live but undrained while off-
+  // screen, overflowing the hybrid-composition ImageReader buffer pool
+  // ("Unable to acquire a buffer item"). PageView.allowImplicitScrolling=true
+  // already keeps the adjacent page warm, which is the only one worth paying
+  // for. Distant pages rebuild from WorkspaceCubit state on return — there
+  // is no in-page scroll/animation state worth preserving.
   static const double _gridGap = 8;
   static const int _resizeHorizontal = 1;
   static const int _resizeVertical = 2;
@@ -1243,7 +1248,6 @@ class _CellLayoutViewState extends State<CellLayoutView>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     final totalSlots = widget.settings.gridColumns * widget.settings.gridRows;
     final coveredSlots = _occupiedWidgetSlots(
       widget.page,
