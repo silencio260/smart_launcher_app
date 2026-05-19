@@ -2977,9 +2977,19 @@ class _WorkspaceWidgetResizeFrameState
           children: [
             Positioned.fromRect(
               rect: contentRect,
+              // While a widget is selected, the body should swallow swipes so
+              // the workspace PageView can't page through them — any swipe
+              // dismisses the selection instead. Long-press is deliberately
+              // left uncaught so it falls through to the sibling
+              // LongPressDraggable wrapping the widget below, re-arming a
+              // move drag. Translucent (not opaque) is required for that
+              // fall-through path; opaque would block the LongPressDraggable
+              // from receiving any pointer events.
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
                 onTap: widget.onDismiss,
+                onHorizontalDragStart: (_) => widget.onDismiss(),
+                onVerticalDragStart: (_) => widget.onDismiss(),
                 child: const SizedBox.expand(),
               ),
             ),

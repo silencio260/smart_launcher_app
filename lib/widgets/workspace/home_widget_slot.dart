@@ -58,8 +58,15 @@ class _HomeWidgetSlotState extends State<HomeWidgetSlot> {
     return Stack(
       children: [
         Positioned.fill(
-          child: IgnorePointer(
-            ignoring: widget.isSelected,
+          // AbsorbPointer (not IgnorePointer): while selected, we still want
+          // the parent LongPressDraggable to receive pointer events so a
+          // long-press on the widget body re-arms the move drag. IgnorePointer
+          // makes the subtree invisible to hit-testing, which would block the
+          // ancestor Listener (deferToChild) from ever firing. AbsorbPointer
+          // keeps the subtree hit-testable but stops events from reaching the
+          // AndroidView underneath.
+          child: AbsorbPointer(
+            absorbing: widget.isSelected,
             child: _WidgetView(
               widgetInfo: w,
               gridColumns: widget.gridColumns,

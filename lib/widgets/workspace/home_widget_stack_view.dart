@@ -74,8 +74,12 @@ class _HomeWidgetStackViewState extends State<HomeWidgetStackView> {
     return Stack(
       children: [
         Positioned.fill(
-          child: IgnorePointer(
-            ignoring: widget.isSelected,
+          // AbsorbPointer (not IgnorePointer): same reason as HomeWidgetSlot —
+          // keeps the subtree hit-testable so the parent LongPressDraggable
+          // can re-arm a move drag on long-press, while blocking events from
+          // reaching the inner PageView/AndroidViews.
+          child: AbsorbPointer(
+            absorbing: widget.isSelected,
             child: PageView.builder(
               controller: _pageController,
               physics: const BouncingScrollPhysics(),
