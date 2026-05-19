@@ -22,7 +22,21 @@ class ShapedIcon extends StatelessWidget {
         width: size,
         height: size,
         child: iconBytes != null
-            ? Image.memory(iconBytes!, width: size, height: size, fit: BoxFit.cover)
+            ? Image.memory(
+                iconBytes!,
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+                // Decode to display size in device pixels. Adaptive icons
+                // arrive ~432px; without this Flutter rasterizes the full
+                // bitmap and pays GPU upload cost on every cache miss.
+                cacheWidth: (size * MediaQuery.devicePixelRatioOf(context))
+                    .ceil(),
+                cacheHeight: (size * MediaQuery.devicePixelRatioOf(context))
+                    .ceil(),
+                filterQuality: FilterQuality.medium,
+                gaplessPlayback: true,
+              )
             : _FallbackIcon(size: size),
       ),
     );

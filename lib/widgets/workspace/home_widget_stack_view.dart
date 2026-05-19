@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/launcher_widget_info.dart';
 import '../../services/launcher_service.dart';
+import '../edit_mode/edit_mode_scope.dart';
 
 /// Shows a swipeable stack of widgets. Long-press dragging is handled by the
 /// parent CellLayoutView (same as single widgets). Resize handles work on the
@@ -228,10 +229,12 @@ class _SpanSyncedStackWidgetViewState
 
   @override
   Widget build(BuildContext context) {
-    // The AndroidView stays mounted across edit-mode transitions. See
-    // HomeWidgetSlot for the full rationale — dropping the hostview here
-    // and remounting it from the edit overlay is what was producing the
-    // "Unable to acquire a buffer item" ImageReader warnings.
+    // Yield ownership to the edit overlay while edit mode is active — two
+    // AppWidgetHostViews bound to the same appWidgetId overflow the hybrid-
+    // composition ImageReader. See HomeWidgetSlot for the full rationale.
+    if (EditModeScope.isActive(context)) {
+      return const SizedBox.shrink();
+    }
     // RepaintBoundary isolates the platform view's compositor layer so
     // PageView translation during scroll doesn't invalidate its raster.
     return RepaintBoundary(

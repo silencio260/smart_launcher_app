@@ -97,6 +97,16 @@ class _CellLayoutViewState extends State<CellLayoutView>
   OverlayEntry? _openFolderEntry;
   String? _openFolderId;
 
+  // Memo for _occupiedWidgetSlots(ignoreAnchorSlot: null). Keyed by page
+  // identity + grid dims. Build() and several drag paths call this on every
+  // frame during pointer activity, but the page slots only change on
+  // WorkspaceCubit emits — so we cache the result and invalidate when any
+  // of the inputs differ.
+  WorkspacePage? _occupiedMemoPage;
+  int _occupiedMemoCols = -1;
+  int _occupiedMemoRows = -1;
+  Set<int>? _occupiedMemoResult;
+
   @override
   void initState() {
     super.initState();
@@ -1052,8 +1062,18 @@ class _CellLayoutViewState extends State<CellLayoutView>
     int rows, {
     int? ignoreAnchorSlot,
   }) {
-    final occupied = <int>{};
+    // Fast path: build() and the drag hit-tests hit this with no
+    // ignoreAnchorSlot every frame. Return the cached set when nothing
+    // has changed since last compute.
+    if (ignoreAnchorSlot == null &&
+        identical(_occupiedMemoPage, page) &&
+        _occupiedMemoCols == columns &&
+        _occupiedMemoRows == rows &&
+        _occupiedMemoResult != null) {
+      return _occupiedMemoResult!;
+    }
 
+    final occupied = <int>{};
     for (final entry in page.slots.entries) {
       if (entry.key == ignoreAnchorSlot) continue;
       final (spanX, spanY) = _effectiveSpanForContent(entry.value);
@@ -1062,6 +1082,12 @@ class _CellLayoutViewState extends State<CellLayoutView>
       if (covered != null) occupied.addAll(covered);
     }
 
+    if (ignoreAnchorSlot == null) {
+      _occupiedMemoPage = page;
+      _occupiedMemoCols = columns;
+      _occupiedMemoRows = rows;
+      _occupiedMemoResult = occupied;
+    }
     return occupied;
   }
 

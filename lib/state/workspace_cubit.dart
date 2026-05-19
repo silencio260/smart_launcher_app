@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -89,6 +91,23 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
 
   WorkspaceCubit() : super(const WorkspaceState());
 
+  // saveLayout coalescing: a single drag-with-displacement drop can fire 3+
+  // emits per frame; without this each one triggers a synchronous jsonEncode
+  // + SharedPreferences.setString platform-channel hop on the UI isolate.
+  Timer? _saveDebounce;
+  bool _savePending = false;
+  static const _saveDelay = Duration(milliseconds: 300);
+
+  @override
+  Future<void> close() async {
+    _saveDebounce?.cancel();
+    if (_savePending) {
+      await _writeLayout(state);
+      _savePending = false;
+    }
+    return super.close();
+  }
+
   Future<void> loadLayout() async {
     final prefs = await SharedPreferences.getInstance();
     final json = prefs.getString(_key);
@@ -104,9 +123,29 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     }
   }
 
+  // Public entry point used by ~30 emit sites. Coalesces back-to-back writes
+  // during drag bursts into a single disk write 300 ms after the last call.
   Future<void> saveLayout() async {
+    _savePending = true;
+    _saveDebounce?.cancel();
+    _saveDebounce = Timer(_saveDelay, () async {
+      _saveDebounce = null;
+      if (!_savePending) return;
+      _savePending = false;
+      await _writeLayout(state);
+    });
+  }
+
+  Future<void> _writeLayout(WorkspaceState s) async {
+    final map = _serialize(s);
+    // jsonEncode of a fully-populated workspace (multiple pages, folders,
+    // dozens of widgets) is single-digit ms but adds up across emit storms.
+    // compute() ships it to a background isolate; SharedPreferences.setString
+    // still has to run on the main isolate but only sees a finished string.
+    final encoded =
+        await compute<Map<String, dynamic>, String>(jsonEncode, map);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_key, jsonEncode(_serialize(state)));
+    await prefs.setString(_key, encoded);
   }
 
   void setCurrentPage(int page) => emit(state.copyWith(currentPage: page));

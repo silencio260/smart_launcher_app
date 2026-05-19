@@ -77,11 +77,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  DateTime _lastResumeReload = DateTime.fromMillisecondsSinceEpoch(0);
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      context.read<AppsCubit>().loadApps();
-    }
+    if (state != AppLifecycleState.resumed) return;
+    // Always refresh badges — cheap, and notification counts go stale fast.
+    context.read<AppsCubit>().refreshBadges();
+    // Full app list reload is expensive (icon decode for every package). The
+    // Android side fires PACKAGE_ADDED/REMOVED intents into the launcher
+    // service, so a periodic resume-reload is only a fallback. Cap it to
+    // once every 30s so quick app-switches don't hammer the list.
+    final now = DateTime.now();
+    if (now.difference(_lastResumeReload).inSeconds < 30) return;
+    _lastResumeReload = now;
+    context.read<AppsCubit>().loadApps();
   }
 
   void _openDrawer() => setState(() => _drawerOpen = true);
@@ -418,29 +428,42 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                       MediaQuery.of(context).padding.bottom +
                                           12,
                                 ),
-                                child: BlocBuilder<AppsCubit, AppsState>(
-                                  builder: (context, appsState) => BlocBuilder<
-                                      WorkspaceCubit, WorkspaceState>(
-                                    buildWhen: (prev, next) =>
-                                        prev.folders != next.folders,
-                                    builder: (context, workspaceState) =>
-                                        HotseatView(
-                                      apps: _resolveDockItems(
-                                        appsState,
-                                        workspaceState,
-                                        settings,
-                                      ),
-                                      settings: settings,
-                                      dragController: _dragController,
-                                      onSwipeUp: () => _handleGesture(
-                                          settings.swipeUpAction),
-                                      onAppTap: (app) =>
-                                          LauncherService.launchApp(
-                                              app.packageName),
-                                      onAppLongPress: (app) =>
-                                          _showAppInfoTooltip(app, Offset.zero),
-                                    ),
-                                  ),
+                                // Outer selector watches only the apps list
+                                // (not loading / badge fields) so badge pushes
+                                // and loading toggles don't rebuild the dock.
+                                child: BlocSelector<AppsCubit, AppsState,
+                                    List<AppInfo>>(
+                                  selector: (s) => s.apps,
+                                  builder: (context, _) {
+                                    final appsState =
+                                        context.read<AppsCubit>().state;
+                                    return BlocSelector<WorkspaceCubit,
+                                        WorkspaceState,
+                                        Map<String, FolderInfo>>(
+                                      selector: (s) => s.folders,
+                                      builder: (context, _) {
+                                        final workspaceState =
+                                            context.read<WorkspaceCubit>().state;
+                                        return HotseatView(
+                                          apps: _resolveDockItems(
+                                            appsState,
+                                            workspaceState,
+                                            settings,
+                                          ),
+                                          settings: settings,
+                                          dragController: _dragController,
+                                          onSwipeUp: () => _handleGesture(
+                                              settings.swipeUpAction),
+                                          onAppTap: (app) =>
+                                              LauncherService.launchApp(
+                                                  app.packageName),
+                                          onAppLongPress: (app) =>
+                                              _showAppInfoTooltip(
+                                                  app, Offset.zero),
+                                        );
+                                      },
+                                    );
+                                  },
                                 ),
                               ),
                             ),
@@ -502,6 +525,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   ) {
     final slotCount = _effectiveDockSlots(settings);
     final refs = _resolveDockRefs(appsState, settings).take(slotCount);
+    final byPackage = appsState.appsByPackage;
     final items = refs.map<DockItem?>((ref) {
       if (ref.isEmpty) return null;
       if (_isDockFolderRef(ref)) {
@@ -513,7 +537,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           folder: _resolveFolderIcons(folder, appsState),
         );
       }
-      final app = appsState.apps.where((a) => a.packageName == ref).firstOrNull;
+      final app = byPackage[ref];
       return app == null ? null : DockAppItem(app);
     }).toList();
     return items;
@@ -554,7 +578,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     String ref,
     AppsState appsState,
   ) {
-    final app = appsState.apps.where((a) => a.packageName == ref).firstOrNull;
+    final app = appsState.appsByPackage[ref];
     return WorkspaceItemInfo(
       id: app?.id ?? ref.hashCode,
       itemType: ItemType.application,
@@ -632,11 +656,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   FolderInfo _resolveFolderIcons(FolderInfo folder, AppsState appsState) {
+    final byPackage = appsState.appsByPackage;
     final resolved = folder.contents.map((item) {
       if (item.icon != null) return item;
-      final live = appsState.apps
-          .where((a) => a.packageName == item.packageName)
-          .firstOrNull;
+      final live = byPackage[item.packageName];
       if (live == null) return item;
       return WorkspaceItemInfo(
         id: item.id,

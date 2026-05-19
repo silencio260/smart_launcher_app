@@ -9,24 +9,42 @@ import '../services/launcher_service.dart';
 class AppsState extends Equatable {
   final List<AppInfo> apps;
   final bool loading;
-  // O(1) package -> AppInfo lookup. Built once per state instance so the
-  // workspace's per-tile BlocSelector doesn't do an O(N) scan of `apps`
-  // on every selector invocation.
+  // O(1) package -> AppInfo lookup. Carried across copyWith when the apps
+  // reference is unchanged so toggling `loading` doesn't rebuild a map of
+  // potentially thousands of entries.
   final Map<String, AppInfo> appsByPackage;
 
-  AppsState({
-    this.apps = const [],
-    this.loading = false,
-  }) : appsByPackage = {for (final a in apps) a.packageName: a};
+  const AppsState._({
+    required this.apps,
+    required this.loading,
+    required this.appsByPackage,
+  });
+
+  factory AppsState({
+    List<AppInfo> apps = const [],
+    bool loading = false,
+  }) {
+    return AppsState._(
+      apps: apps,
+      loading: loading,
+      appsByPackage: {for (final a in apps) a.packageName: a},
+    );
+  }
 
   AppsState copyWith({
     List<AppInfo>? apps,
     bool? loading,
-  }) =>
-      AppsState(
-        apps: apps ?? this.apps,
-        loading: loading ?? this.loading,
-      );
+  }) {
+    final nextApps = apps ?? this.apps;
+    final nextMap = identical(nextApps, this.apps)
+        ? appsByPackage
+        : {for (final a in nextApps) a.packageName: a};
+    return AppsState._(
+      apps: nextApps,
+      loading: loading ?? this.loading,
+      appsByPackage: nextMap,
+    );
+  }
 
   @override
   List<Object?> get props => [apps, loading];
