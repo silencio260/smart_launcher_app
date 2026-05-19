@@ -16,6 +16,7 @@ import '../../state/apps_cubit.dart';
 import '../../state/settings_cubit.dart';
 import '../../state/workspace_cubit.dart';
 import '../../utils/debug_flags.dart';
+import '../drag/pickup_feedback.dart';
 import '../folder/folder_icon.dart';
 import '../folder/folder_view.dart';
 import '../icons/badge_listener.dart';
@@ -1862,18 +1863,32 @@ class _CellLayoutViewState extends State<CellLayoutView>
         slot: slot,
         width: _spanDragWidth(effectiveSpanX, resizeStepX),
         height: _spanDragHeight(effectiveSpanY, resizeStepY),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(18),
-          ),
+        child: HomeWidgetSlot(
+          widget: w,
+          page: widget.pageIndex,
+          slot: slot,
+          minSpanX: minSpanX,
+          minSpanY: minSpanY,
+          maxSpanX: maxSpanX,
+          maxSpanY: maxSpanY,
+          gridColumns: widget.settings.gridColumns,
+          gridRows: widget.settings.gridRows,
+          resizeStepX: resizeStepX,
+          resizeStepY: resizeStepY,
+          gridGap: _gridGap,
+          isSelected: false,
+          onDismissResize: _clearWidgetResizeSelection,
+          onResize: (nextSlot, nextSpanX, nextSpanY) =>
+              _resizeWidget(slot, w, nextSlot, nextSpanX, nextSpanY),
         ),
       ),
       childWhenDragging: ValueListenableBuilder<int?>(
         valueListenable: _activeWidgetDragFeedbackSlot,
         builder: (context, activeSlot, _) {
-          return Opacity(
+          return AnimatedOpacity(
             opacity: activeSlot == slot ? 0.12 : 1,
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
             child: HomeWidgetSlot(
               widget: w,
               page: widget.pageIndex,
@@ -2018,8 +2033,10 @@ class _CellLayoutViewState extends State<CellLayoutView>
       childWhenDragging: ValueListenableBuilder<int?>(
         valueListenable: _activeWidgetDragFeedbackSlot,
         builder: (context, activeSlot, _) {
-          return Opacity(
+          return AnimatedOpacity(
             opacity: activeSlot == slot ? 0.12 : 1,
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
             child: HomeWidgetStackView(
               widgets: content.widgets,
               spanX: content.spanX,
@@ -2093,14 +2110,16 @@ class _CellLayoutViewState extends State<CellLayoutView>
     required double height,
     required Widget child,
   }) {
-    return Material(
-      color: Colors.transparent,
+    return PickupFeedback(
+      peakScale: 1.1,
+      targetScale: 1.0,
+      opacity: 0.92,
       child: SizedBox(
         width: width,
         height: height,
         child: IgnorePointer(
           child: Opacity(
-            opacity: 0.86,
+            opacity: 1.0,
             child: DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(18),
@@ -2184,19 +2203,12 @@ class _CellLayoutViewState extends State<CellLayoutView>
               setState(() => _draggingSlot = null);
               widget.dragController.cancelDrag();
             },
-            feedback: Material(
-              color: Colors.transparent,
-              child: Opacity(
-                opacity: 0.85,
-                child: Transform.scale(
-                  scale: 1.15,
-                  child: BubbleTextView(
-                    app: app,
-                    iconSize: widget.settings.iconSize,
-                    showLabel: false,
-                    iconShape: widget.settings.iconShape,
-                  ),
-                ),
+            feedback: PickupFeedback(
+              child: BubbleTextView(
+                app: app,
+                iconSize: widget.settings.iconSize,
+                showLabel: false,
+                iconShape: widget.settings.iconShape,
               ),
             ),
             childWhenDragging: Opacity(
@@ -2293,19 +2305,12 @@ class _CellLayoutViewState extends State<CellLayoutView>
             setState(() => _draggingSlot = null);
             widget.dragController.cancelDrag();
           },
-          feedback: Material(
-            color: Colors.transparent,
-            child: Opacity(
-              opacity: 0.85,
-              child: Transform.scale(
-                scale: 1.15,
-                child: FolderIconView(
-                  folder: resolvedFolder,
-                  settings: widget.settings,
-                  onTap: () {},
-                  onLongPress: () {},
-                ),
-              ),
+          feedback: PickupFeedback(
+            child: FolderIconView(
+              folder: resolvedFolder,
+              settings: widget.settings,
+              onTap: () {},
+              onLongPress: () {},
             ),
           ),
           childWhenDragging: Opacity(

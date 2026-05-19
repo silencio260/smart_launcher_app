@@ -4,6 +4,7 @@ import '../../models/item_info.dart';
 import '../../models/launcher_settings.dart';
 import '../../models/workspace_item_info.dart';
 import '../../services/drag/drag_controller.dart';
+import '../drag/pickup_feedback.dart';
 import '../icons/badge_listener.dart';
 import '../icons/bubble_text_view.dart';
 import '../workspace/cell_layout.dart' show kDrawerSourcePage;
@@ -208,19 +209,12 @@ class _DrawerAppIconState extends State<_DrawerAppIcon> {
         // without moving, the context menu is still visible and we leave it alone.
         if (hadMoved) widget.onDragEnded(false);
       },
-      feedback: Material(
-        color: Colors.transparent,
-        child: Opacity(
-          opacity: 0.85,
-          child: Transform.scale(
-            scale: 1.15,
-            child: BubbleTextView(
-              app: widget.app,
-              iconSize: widget.settings.drawerIconSize,
-              showLabel: false,
-              iconShape: widget.settings.iconShape,
-            ),
-          ),
+      feedback: PickupFeedback(
+        child: BubbleTextView(
+          app: widget.app,
+          iconSize: widget.settings.drawerIconSize,
+          showLabel: false,
+          iconShape: widget.settings.iconShape,
         ),
       ),
       childWhenDragging: Opacity(opacity: 0.3, child: iconView),

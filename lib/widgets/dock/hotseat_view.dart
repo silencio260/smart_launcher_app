@@ -11,6 +11,7 @@ import '../../services/gestures/widget_resize_gesture_guard.dart';
 import '../../state/apps_cubit.dart';
 import '../../state/settings_cubit.dart';
 import '../../state/workspace_cubit.dart';
+import '../drag/pickup_feedback.dart';
 import '../folder/folder_icon.dart';
 import '../folder/folder_view.dart';
 import '../icons/badge_listener.dart';
@@ -338,19 +339,12 @@ class _DockSlot extends StatelessWidget {
             onDragEnd: (details) {
               dragController.cancelDrag();
             },
-            feedback: Material(
-              color: Colors.transparent,
-              child: Opacity(
-                opacity: 0.85,
-                child: Transform.scale(
-                  scale: 1.15,
-                  child: BubbleTextView(
-                    app: currentApp,
-                    iconSize: dockIconSize,
-                    showLabel: false,
-                    iconShape: settings.iconShape,
-                  ),
-                ),
+            feedback: PickupFeedback(
+              child: BubbleTextView(
+                app: currentApp,
+                iconSize: dockIconSize,
+                showLabel: false,
+                iconShape: settings.iconShape,
               ),
             ),
             childWhenDragging: Opacity(

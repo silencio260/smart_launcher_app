@@ -7,6 +7,7 @@ import '../../models/workspace_item_info.dart';
 import '../../services/drag/drag_controller.dart';
 import '../../state/apps_cubit.dart';
 import '../../state/workspace_cubit.dart';
+import '../drag/pickup_feedback.dart';
 import '../icons/badge_listener.dart';
 import '../icons/bubble_text_view.dart';
 
@@ -392,19 +393,12 @@ class _FolderViewState extends State<FolderView>
                   onDraggableCanceled: (_, __) {
                     // onDragEnd always fires too; state reset is handled there.
                   },
-                  feedback: Material(
-                    color: Colors.transparent,
-                    child: Opacity(
-                      opacity: 0.85,
-                      child: Transform.scale(
-                        scale: 1.15,
-                        child: BubbleTextView(
-                          app: app,
-                          iconSize: widget.settings.iconSize,
-                          showLabel: false,
-                          iconShape: widget.settings.iconShape,
-                        ),
-                      ),
+                  feedback: PickupFeedback(
+                    child: BubbleTextView(
+                      app: app,
+                      iconSize: widget.settings.iconSize,
+                      showLabel: false,
+                      iconShape: widget.settings.iconShape,
                     ),
                   ),
                   childWhenDragging: AnimatedContainer(
