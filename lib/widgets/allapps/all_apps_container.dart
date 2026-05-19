@@ -120,18 +120,47 @@ class _AllAppsContainerState extends State<AllAppsContainer>
     final dismissProgress = (_dragDy / screenH).clamp(0.0, 1.0);
 
     // When the user is dragging to home, keep the widget tree alive so that
-    // LongPressDraggable can continue receiving pointer events. We hide it
-    // visually with Opacity and block new input with IgnorePointer.
-    return IgnorePointer(
-      ignoring: _drawerDragging,
-      child: Opacity(
-        opacity: _drawerDragging ? 0.0 : 1.0,
-        child: _buildContent(screenH, screenW, dismissProgress),
-      ),
+    // LongPressDraggable can continue receiving pointer events. Visibility
+    // with maintainState avoids the saveLayer cost an Opacity(0) wrapper
+    // would impose while still hiding the drawer visually.
+    return Visibility(
+      visible: !_drawerDragging,
+      maintainState: true,
+      maintainAnimation: true,
+      maintainSize: true,
+      maintainInteractivity: false,
+      child: _buildContent(screenH, screenW, dismissProgress),
     );
   }
 
   Widget _buildContent(double screenH, double screenW, double dismissProgress) {
+    // Skip BackdropFilter entirely when the drawer paints a near-opaque
+    // background on top — the blur is invisible there and was the single
+    // biggest paint cost in the drawer. When the background is transparent
+    // or low-opacity we keep a milder blur (sigma 12 vs 25) which is still
+    // well within the Material spec range.
+    final showBg = widget.settings.drawerShowBackground;
+    final bgOpacity = widget.settings.drawerBackgroundOpacity;
+    final needsBlur = !showBg || bgOpacity < 0.92;
+    // Opacity-based fade only matters while the user is dragging to dismiss.
+    // Skipping the Opacity wrapper otherwise removes a saveLayer from the
+    // steady-state scroll path.
+    final fade = (1.0 - dismissProgress * 0.5).clamp(0.0, 1.0);
+    final isDragging = dismissProgress > 0;
+
+    Widget content = Material(
+      color: Colors.transparent,
+      child: needsBlur
+          ? BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: _buildStack(screenH, screenW),
+            )
+          : _buildStack(screenH, screenW),
+    );
+    if (isDragging) {
+      content = Opacity(opacity: fade, child: content);
+    }
+
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -145,52 +174,45 @@ class _AllAppsContainerState extends State<AllAppsContainer>
           position: _slideAnim,
           child: Transform.translate(
             offset: Offset(0, _dragDy),
-            child: Opacity(
-              opacity: (1.0 - dismissProgress * 0.5).clamp(0.0, 1.0),
-              child: Material(
-                color: Colors.transparent,
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
-                  child: Stack(
-                    children: [
-                      Container(
-                        height: screenH,
-                        color: widget.settings.drawerShowBackground
-                            ? widget.settings.drawerBackgroundColor
-                                .withValues(alpha: widget.settings.drawerBackgroundOpacity)
-                            : Colors.transparent,
-                        child: Column(
-                          children: [
-                            SizedBox(height: MediaQuery.of(context).padding.top + 16),
-                            _SearchRow(onDismiss: _dismiss),
-                            const SizedBox(height: 4),
-                            Expanded(child: _buildBody()),
-                            SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
-                          ],
-                        ),
-                      ),
-                      if (_menuApp != null) ...[
-                        // Tap-outside or swipe dismisses the menu
-                        Positioned.fill(
-                          child: GestureDetector(
-                            onTap: _dismissMenu,
-                            onVerticalDragStart: (_) => _dismissMenu(),
-                            onHorizontalDragStart: (_) => _dismissMenu(),
-                            behavior: HitTestBehavior.translucent,
-                            child: const SizedBox.expand(),
-                          ),
-                        ),
-                        // Context menu card positioned near the icon
-                        _buildMenuCard(screenW, screenH),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            ),
+            child: content,
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildStack(double screenH, double screenW) {
+    return Stack(
+      children: [
+        Container(
+          height: screenH,
+          color: widget.settings.drawerShowBackground
+              ? widget.settings.drawerBackgroundColor
+                  .withValues(alpha: widget.settings.drawerBackgroundOpacity)
+              : Colors.transparent,
+          child: Column(
+            children: [
+              SizedBox(height: MediaQuery.of(context).padding.top + 16),
+              _SearchRow(onDismiss: _dismiss),
+              const SizedBox(height: 4),
+              Expanded(child: _buildBody()),
+              SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
+            ],
+          ),
+        ),
+        if (_menuApp != null) ...[
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: _dismissMenu,
+              onVerticalDragStart: (_) => _dismissMenu(),
+              onHorizontalDragStart: (_) => _dismissMenu(),
+              behavior: HitTestBehavior.translucent,
+              child: const SizedBox.expand(),
+            ),
+          ),
+          _buildMenuCard(screenW, screenH),
+        ],
+      ],
     );
   }
 
@@ -230,38 +252,57 @@ class _AllAppsContainerState extends State<AllAppsContainer>
 
   Widget _buildBody() {
     return BlocBuilder<SearchCubit, SearchState>(
+      buildWhen: (prev, next) => prev.query != next.query,
       builder: (context, searchState) {
-        final appsState = context.watch<AppsCubit>().state;
-        final displayApps = searchState.query.isEmpty
-            ? appsState.apps.where((a) => !a.isHidden).toList()
-            : context.read<AppsCubit>().searchApps(searchState.query);
-
-        return AllAppsRecycler(
-          apps: displayApps,
-          settings: widget.settings,
-          dragController: widget.dragController,
-          onAppTap: widget.onAppTap,
-          onAppLongPress: _showMenu,
-          scrollController: _scrollController,
-          onDragStarted: () {
-            // Fires on first finger movement — safe to dismiss menu and reveal home.
-            _dismissMenu();
-            setState(() => _drawerDragging = true);
-            widget.onDragToHome?.call();
-          },
-          onDragEnded: (wasAccepted) {
-            _dismissMenu();
-            setState(() => _drawerDragging = false);
-            if (wasAccepted) {
-              // Drawer was already invisible during the drag (opacity 0).
-              // Skip the slide-out animation — just close instantly so the
-              // user never sees the drawer animate back in after the drop.
-              widget.onDismiss();
-            } else {
-              widget.onDragCancelled?.call();
-            }
+        return BlocBuilder<AppsCubit, AppsState>(
+          // Avoid rebuilding the grid for every BadgeStore tick or loading
+          // flag change — only the visible app list matters here.
+          buildWhen: (prev, next) => !identical(prev.apps, next.apps),
+          builder: (context, appsState) {
+            final displayApps = searchState.query.isEmpty
+                ? _visibleApps(appsState.apps)
+                : context.read<AppsCubit>().searchApps(searchState.query);
+            return _buildRecycler(displayApps);
           },
         );
+      },
+    );
+  }
+
+  List<AppInfo>? _visibleCache;
+  List<AppInfo>? _visibleCacheSource;
+
+  List<AppInfo> _visibleApps(List<AppInfo> source) {
+    if (identical(source, _visibleCacheSource) && _visibleCache != null) {
+      return _visibleCache!;
+    }
+    final result = source.where((a) => !a.isHidden).toList(growable: false);
+    _visibleCacheSource = source;
+    _visibleCache = result;
+    return result;
+  }
+
+  Widget _buildRecycler(List<AppInfo> displayApps) {
+    return AllAppsRecycler(
+      apps: displayApps,
+      settings: widget.settings,
+      dragController: widget.dragController,
+      onAppTap: widget.onAppTap,
+      onAppLongPress: _showMenu,
+      scrollController: _scrollController,
+      onDragStarted: () {
+        _dismissMenu();
+        setState(() => _drawerDragging = true);
+        widget.onDragToHome?.call();
+      },
+      onDragEnded: (wasAccepted) {
+        _dismissMenu();
+        setState(() => _drawerDragging = false);
+        if (wasAccepted) {
+          widget.onDismiss();
+        } else {
+          widget.onDragCancelled?.call();
+        }
       },
     );
   }

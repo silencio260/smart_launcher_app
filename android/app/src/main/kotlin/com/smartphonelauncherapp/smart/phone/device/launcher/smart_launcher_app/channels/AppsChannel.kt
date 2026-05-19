@@ -16,19 +16,33 @@ import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import org.xmlpull.v1.XmlPullParser
 import java.io.ByteArrayOutputStream
+import java.util.concurrent.Executors
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.AppQueryHelper
 
 class AppsChannel(private val activity: Activity) {
+
+    // Dedicated background executor for the heavy getApps pass (querying the
+    // package manager + rasterizing every icon). Keeps the platform thread free
+    // so other channel calls and the UI thread aren't blocked while ~150 apps
+    // are enumerated on cold start.
+    private val ioExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "AppsChannel-io").apply { isDaemon = true }
+    }
 
     fun register(messenger: BinaryMessenger) {
         MethodChannel(messenger, "com.genrevibes.smartlauncher/apps")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "getApps" -> {
-                        try {
-                            result.success(AppQueryHelper.getLauncherActivities(activity))
-                        } catch (e: Exception) {
-                            result.error("GET_APPS_ERROR", e.message, null)
+                        ioExecutor.execute {
+                            try {
+                                val apps = AppQueryHelper.getLauncherActivities(activity)
+                                activity.runOnUiThread { result.success(apps) }
+                            } catch (e: Exception) {
+                                activity.runOnUiThread {
+                                    result.error("GET_APPS_ERROR", e.message, null)
+                                }
+                            }
                         }
                     }
                     "launchApp" -> {

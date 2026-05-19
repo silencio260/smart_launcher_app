@@ -10,7 +10,7 @@ import '../icons/bubble_text_view.dart';
 import '../workspace/cell_layout.dart' show kDrawerSourcePage;
 import 'all_apps_grid_adapter.dart';
 
-class AllAppsRecycler extends StatelessWidget {
+class AllAppsRecycler extends StatefulWidget {
   final List<AppInfo> apps;
   final LauncherSettings settings;
   final DragController dragController;
@@ -33,14 +33,39 @@ class AllAppsRecycler extends StatelessWidget {
   });
 
   @override
+  State<AllAppsRecycler> createState() => _AllAppsRecyclerState();
+}
+
+class _AllAppsRecyclerState extends State<AllAppsRecycler> {
+  List<DrawerItem>? _itemsCache;
+  List<AppInfo>? _itemsCacheApps;
+  int? _itemsCacheColumns;
+
+  List<DrawerItem> _items() {
+    final apps = widget.apps;
+    final columns = widget.settings.drawerColumns;
+    if (identical(apps, _itemsCacheApps) &&
+        columns == _itemsCacheColumns &&
+        _itemsCache != null) {
+      return _itemsCache!;
+    }
+    final next = buildSections(apps, columns);
+    _itemsCache = next;
+    _itemsCacheApps = apps;
+    _itemsCacheColumns = columns;
+    return next;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final items = buildSections(apps, settings.drawerColumns);
+    final items = _items();
+    final columns = widget.settings.drawerColumns;
 
     return Scrollbar(
-      controller: scrollController,
-      thumbVisibility: settings.drawerShowScrollbar,
+      controller: widget.scrollController,
+      thumbVisibility: widget.settings.drawerShowScrollbar,
       child: CustomScrollView(
-        controller: scrollController,
+        controller: widget.scrollController,
         slivers: [
           SliverList(
             delegate: SliverChildBuilderDelegate(
@@ -60,28 +85,30 @@ class AllAppsRecycler extends StatelessWidget {
                   );
                 }
                 if (item is AppRow) {
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                    child: Row(
-                      children: [
-                        ...item.apps.map((app) => Expanded(
+                  return RepaintBoundary(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      child: Row(
+                        children: [
+                          for (final app in item.apps)
+                            Expanded(
                               child: Center(
                                 child: _DrawerAppIcon(
+                                  key: ValueKey(app.packageName),
                                   app: app,
-                                  settings: settings,
-                                  dragController: dragController,
-                                  onTap: () => onAppTap(app),
-                                  onLongPress: (pos) => onAppLongPress(app, pos),
-                                  onDragStarted: onDragStarted,
-                                  onDragEnded: onDragEnded,
+                                  settings: widget.settings,
+                                  dragController: widget.dragController,
+                                  onTap: () => widget.onAppTap(app),
+                                  onLongPress: (pos) => widget.onAppLongPress(app, pos),
+                                  onDragStarted: widget.onDragStarted,
+                                  onDragEnded: widget.onDragEnded,
                                 ),
                               ),
-                            )),
-                        ...List.generate(
-                          settings.drawerColumns - item.apps.length,
-                          (_) => const Expanded(child: SizedBox.shrink()),
-                        ),
-                      ],
+                            ),
+                          for (int i = 0; i < columns - item.apps.length; i++)
+                            const Expanded(child: SizedBox.shrink()),
+                        ],
+                      ),
                     ),
                   );
                 }
@@ -107,6 +134,7 @@ class _DrawerAppIcon extends StatefulWidget {
   final void Function(bool wasAccepted) onDragEnded;
 
   const _DrawerAppIcon({
+    super.key,
     required this.app,
     required this.settings,
     required this.dragController,
