@@ -66,6 +66,7 @@ class _AllAppsRecyclerState extends State<AllAppsRecycler> {
       thumbVisibility: widget.settings.drawerShowScrollbar,
       child: CustomScrollView(
         controller: widget.scrollController,
+        cacheExtent: 1400,
         slivers: [
           SliverList(
             delegate: SliverChildBuilderDelegate(
@@ -117,6 +118,7 @@ class _AllAppsRecyclerState extends State<AllAppsRecycler> {
                 return const SizedBox.shrink();
               },
               childCount: items.length,
+              addRepaintBoundaries: false,
             ),
           ),
           const SliverPadding(padding: EdgeInsets.only(bottom: 24)),

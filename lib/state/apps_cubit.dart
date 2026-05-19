@@ -103,6 +103,9 @@ class AppsCubit extends Cubit<AppsState> {
   StreamSubscription<dynamic>? _appInstallSub;
   String? _snapshotKey;
   bool _loadedSnapshot = false;
+  bool _drawerActive = false;
+  List<AppInfo>? _pendingApps;
+  String? _pendingSnapshotKey;
 
   // Per-tile badge subscribers attach to this store instead of going
   // through AppsCubit's Bloc state, so badge emits don't re-run every
@@ -169,6 +172,12 @@ class AppsCubit extends Cubit<AppsState> {
     await loadApps();
   }
 
+  void setDrawerActive(bool active) {
+    if (_drawerActive == active) return;
+    _drawerActive = active;
+    if (!active) _flushPendingApps();
+  }
+
   Future<void> loadApps({bool forceFull = false}) async {
     if (state.apps.isEmpty) {
       emit(state.copyWith(loading: true));
@@ -186,7 +195,13 @@ class AppsCubit extends Cubit<AppsState> {
 
       final apps = refresh.apps ?? await LauncherService.getInstalledApps();
       _snapshotKey = snapshotKey;
-      emit(state.copyWith(apps: apps, loading: false));
+      if (_drawerActive && state.apps.isNotEmpty) {
+        _pendingApps = apps;
+        _pendingSnapshotKey = snapshotKey;
+        if (state.loading) emit(state.copyWith(loading: false));
+      } else {
+        emit(state.copyWith(apps: apps, loading: false));
+      }
       if (snapshotKey != null) {
         unawaited(
           AppSnapshotCache.instance.save(
@@ -198,6 +213,15 @@ class AppsCubit extends Cubit<AppsState> {
     } catch (_) {
       emit(state.copyWith(loading: false));
     }
+  }
+
+  void _flushPendingApps() {
+    final apps = _pendingApps;
+    if (apps == null) return;
+    _pendingApps = null;
+    _snapshotKey = _pendingSnapshotKey;
+    _pendingSnapshotKey = null;
+    emit(state.copyWith(apps: apps, loading: false));
   }
 
   void updateBadges(Map<String, int> counts) {

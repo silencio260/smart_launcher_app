@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../models/app_info.dart';
@@ -50,6 +51,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   PageController? _pageController;
   Timer? _drawerPrewarmTimer;
   bool _drawerPrewarmRunning = false;
+  int _drawerPrewarmGeneration = 0;
 
   @override
   void initState() {
@@ -104,15 +106,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _openDrawer() {
+    context.read<AppsCubit>().setDrawerActive(true);
     setState(() => _drawerOpen = true);
   }
 
   void _closeDrawer() {
+    context.read<AppsCubit>().setDrawerActive(false);
     setState(() {
       _drawerOpen = false;
       _drawerDraggingToHome = false;
     });
     context.read<LauncherCubit>().goToState(ls.LauncherState.normal);
+    _scheduleDrawerIconPrewarm(context.read<AppsCubit>().state.apps);
   }
 
   void _enterEditMode() {
@@ -719,23 +724,38 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         apps.where((app) => !app.isHidden).toList(growable: false);
     if (visibleApps.isEmpty) return;
 
+    final generation = ++_drawerPrewarmGeneration;
     _drawerPrewarmTimer?.cancel();
-    _drawerPrewarmTimer = Timer(const Duration(milliseconds: 700), () {
+    _drawerPrewarmTimer = Timer(const Duration(milliseconds: 120), () {
       if (!mounted || _drawerPrewarmRunning || _drawerOpen) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _drawerPrewarmRunning || _drawerOpen) return;
+        if (!mounted ||
+            _drawerPrewarmRunning ||
+            _drawerOpen ||
+            generation != _drawerPrewarmGeneration) {
+          return;
+        }
         _drawerPrewarmRunning = true;
-        _precacheDrawerIcons(visibleApps, targetPx).whenComplete(() {
+        _precacheDrawerIcons(
+          visibleApps,
+          targetPx,
+          generation: generation,
+        ).whenComplete(() {
           _drawerPrewarmRunning = false;
         });
       });
     });
   }
 
-  Future<void> _precacheDrawerIcons(List<AppInfo> apps, int targetPx) async {
+  Future<void> _precacheDrawerIcons(
+    List<AppInfo> apps,
+    int targetPx, {
+    required int generation,
+  }) async {
     var fileCount = 0;
     for (final app in apps) {
-      if (!mounted || _drawerOpen || _drawerDraggingToHome) return;
+      if (!mounted) return;
+      if (!_shouldContinueDrawerPrewarm(generation)) return;
       final iconPath = app.iconPath;
       if (iconPath == null || iconPath.isEmpty) continue;
       try {
@@ -749,20 +769,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         // A missing cache file just falls through to ShapedIcon's fallback.
       }
       fileCount += 1;
-      if (fileCount >= 48) break;
-      await Future<void>.delayed(const Duration(milliseconds: 8));
+      if (fileCount % 8 == 0) {
+        await SchedulerBinding.instance.endOfFrame;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 3));
     }
 
-    if (!mounted || _drawerOpen || _drawerDraggingToHome) return;
+    if (!_shouldContinueDrawerPrewarm(generation)) return;
     await DecodedIconCache.instance.prewarm(
       apps,
       targetPx: targetPx,
-      limit: 32,
+      limit: apps.length,
       concurrency: 1,
-      pauseBetweenDecodes: const Duration(milliseconds: 16),
-      shouldContinue: () => mounted && !_drawerOpen && !_drawerDraggingToHome,
+      pauseBetweenDecodes: const Duration(milliseconds: 6),
+      shouldContinue: () => _shouldContinueDrawerPrewarm(generation),
     );
   }
+
+  bool _shouldContinueDrawerPrewarm(int generation) =>
+      mounted &&
+      !_drawerOpen &&
+      !_drawerDraggingToHome &&
+      generation == _drawerPrewarmGeneration;
 
   FolderInfo _resolveFolderIcons(FolderInfo folder, AppsState appsState) {
     final byPackage = appsState.appsByPackage;
