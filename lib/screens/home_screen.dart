@@ -22,6 +22,7 @@ import '../widgets/drag/drag_layer.dart';
 import '../widgets/workspace/workspace_touch_listener.dart';
 import '../widgets/workspace/workspace_view.dart';
 import '../services/drag/drag_controller.dart';
+import '../services/gestures/widget_resize_gesture_guard.dart';
 import 'search_overlay_screen.dart';
 import 'settings/general_settings_screen.dart';
 import 'settings/settings_root_screen.dart';
@@ -107,9 +108,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void _enterEditMode() {
     _dismissAppInfoTooltip();
     setState(() => _editMode = true);
+    // Push the same global lock per-widget resize uses, so EVERY swipe path
+    // (workspace touch listener, dock GestureDetector, etc.) sees one source
+    // of truth for "is the home screen in an edit-like mode?".
+    WidgetResizeGestureGuard.setOverlayActive(true);
+    WidgetResizeGestureGuard.onRequestDismiss = _exitEditMode;
   }
 
-  void _exitEditMode() => setState(() => _editMode = false);
+  void _exitEditMode() {
+    setState(() => _editMode = false);
+    WidgetResizeGestureGuard.setOverlayActive(false);
+    // Only clear the dismiss hook if we own it (cell_layout may also wire
+    // it for per-widget selection). Safe to null here because the overlay
+    // is the only thing left holding it once we set it above.
+    if (WidgetResizeGestureGuard.onRequestDismiss == _exitEditMode) {
+      WidgetResizeGestureGuard.onRequestDismiss = null;
+    }
+  }
 
   void _navigateToBestDragPage() {
     final workspace = context.read<WorkspaceCubit>();
@@ -189,6 +204,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _handleGesture(GestureAction action) {
+    // Single choke point. WidgetResizeGestureGuard.isResizing is true if ANY
+    // edit-like mode is active: per-widget resize selection, an active touch
+    // on a resize handle, OR the global home-screen EditModeOverlay. In all
+    // three cases the only allowed effect of a swipe/double-tap is to
+    // dismiss the active mode — never to fire its assigned action.
+    if (WidgetResizeGestureGuard.isResizing) {
+      WidgetResizeGestureGuard.requestDismiss();
+      return;
+    }
     switch (action) {
       case GestureAction.openDrawer:
         _openDrawer();
@@ -437,13 +461,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   builder: (context, _) {
                                     final appsState =
                                         context.read<AppsCubit>().state;
-                                    return BlocSelector<WorkspaceCubit,
+                                    return BlocSelector<
+                                        WorkspaceCubit,
                                         WorkspaceState,
                                         Map<String, FolderInfo>>(
                                       selector: (s) => s.folders,
                                       builder: (context, _) {
-                                        final workspaceState =
-                                            context.read<WorkspaceCubit>().state;
+                                        final workspaceState = context
+                                            .read<WorkspaceCubit>()
+                                            .state;
                                         return HotseatView(
                                           apps: _resolveDockItems(
                                             appsState,

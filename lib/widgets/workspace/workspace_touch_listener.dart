@@ -98,26 +98,53 @@ class _WorkspaceTouchListenerState extends State<WorkspaceTouchListener>
   }
 
   void _onDoubleTap() {
-    if (_blocked) return;
+    if (_blocked) {
+      if (WidgetResizeGestureGuard.isResizing &&
+          !WidgetResizeGestureGuard.isHandlePointerActive) {
+        WidgetResizeGestureGuard.requestDismiss();
+      }
+      return;
+    }
     widget.onDoubleTap();
   }
 
   void _onPointerDown(PointerDownEvent e) {
-    _tracks[e.pointer] = _PointerTrack(e.position);
+    _tracks[e.pointer] = _PointerTrack(
+      e.position,
+      startedBlocked: _blocked,
+    );
   }
 
   void _onPointerMove(PointerMoveEvent e) {
     final t = _tracks[e.pointer];
     if (t == null || t.fired) return;
-    if (_blocked || _longPressFired) return;
+    if (_longPressFired) return;
     final dy = e.position.dy - t.start.dy;
     // Net displacement from touch-down — robust to curved paths because we
     // ignore the intermediate trajectory entirely.
+    final crossed = dy <= -_fireThreshold || dy >= _fireThreshold;
+    if (!crossed) return;
+    // While a widget is in edit mode any swipe must dismiss the
+    // selection rather than fire onSwipeUp/onSwipeDown. We still mark
+    // the track as fired so we don't keep re-broadcasting on every
+    // subsequent move event for the same gesture.
+    if (t.startedBlocked || _blocked) {
+      t.fired = true;
+      // If a resize handle is actively being dragged, this PointerMove IS the
+      // resize gesture — the raw Listener sees the same pointer stream that
+      // the handle's drag recognizer is consuming. Dismissing here would kill
+      // edit mode the instant the user crosses 56px while sizing the widget.
+      // Only treat the swipe as a dismiss request when no handle is engaged.
+      if (WidgetResizeGestureGuard.isResizing &&
+          !WidgetResizeGestureGuard.isHandlePointerActive) {
+        WidgetResizeGestureGuard.requestDismiss();
+      }
+      return;
+    }
+    t.fired = true;
     if (dy <= -_fireThreshold) {
-      t.fired = true;
       widget.onSwipeUp();
-    } else if (dy >= _fireThreshold) {
-      t.fired = true;
+    } else {
       widget.onSwipeDown();
     }
   }
@@ -139,41 +166,41 @@ class _WorkspaceTouchListenerState extends State<WorkspaceTouchListener>
       onPointerUp: _onPointerUp,
       onPointerCancel: _onPointerCancel,
       child: RawGestureDetector(
-      behavior: HitTestBehavior.translucent,
-      gestures: <Type, GestureRecognizerFactory>{
-        _TolerantLongPressGestureRecognizer:
-            GestureRecognizerFactoryWithHandlers<
-                _TolerantLongPressGestureRecognizer>(
-          () => _TolerantLongPressGestureRecognizer(),
-          (r) => r..onLongPressStart = _onLongPressStart,
-        ),
-        _ResponsiveVerticalDragGestureRecognizer:
-            GestureRecognizerFactoryWithHandlers<
-                _ResponsiveVerticalDragGestureRecognizer>(
-          () => _ResponsiveVerticalDragGestureRecognizer(),
-          (r) => r
-            ..onUpdate = _onVerticalDragUpdate
-            ..onEnd = _onVerticalDragEnd
-            ..onCancel = _onVerticalDragCancel,
-        ),
-        DoubleTapGestureRecognizer:
-            GestureRecognizerFactoryWithHandlers<DoubleTapGestureRecognizer>(
-          () => DoubleTapGestureRecognizer(),
-          (r) => r..onDoubleTap = _onDoubleTap,
-        ),
-      },
-      child: ValueListenableBuilder<double>(
-        valueListenable: _verticalOffset,
-        child: widget.child,
-        builder: (context, dy, child) {
-          if (dy == 0) return child!;
-          return Transform.translate(
-            offset: Offset(0, dy),
-            transformHitTests: false,
-            child: child,
-          );
+        behavior: HitTestBehavior.translucent,
+        gestures: <Type, GestureRecognizerFactory>{
+          _TolerantLongPressGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<
+                  _TolerantLongPressGestureRecognizer>(
+            () => _TolerantLongPressGestureRecognizer(),
+            (r) => r..onLongPressStart = _onLongPressStart,
+          ),
+          _ResponsiveVerticalDragGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<
+                  _ResponsiveVerticalDragGestureRecognizer>(
+            () => _ResponsiveVerticalDragGestureRecognizer(),
+            (r) => r
+              ..onUpdate = _onVerticalDragUpdate
+              ..onEnd = _onVerticalDragEnd
+              ..onCancel = _onVerticalDragCancel,
+          ),
+          DoubleTapGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<DoubleTapGestureRecognizer>(
+            () => DoubleTapGestureRecognizer(),
+            (r) => r..onDoubleTap = _onDoubleTap,
+          ),
         },
-      ),
+        child: ValueListenableBuilder<double>(
+          valueListenable: _verticalOffset,
+          child: widget.child,
+          builder: (context, dy, child) {
+            if (dy == 0) return child!;
+            return Transform.translate(
+              offset: Offset(0, dy),
+              transformHitTests: false,
+              child: child,
+            );
+          },
+        ),
       ),
     );
   }
@@ -181,8 +208,9 @@ class _WorkspaceTouchListenerState extends State<WorkspaceTouchListener>
 
 class _PointerTrack {
   final Offset start;
+  final bool startedBlocked;
   bool fired = false;
-  _PointerTrack(this.start);
+  _PointerTrack(this.start, {required this.startedBlocked});
 }
 
 // Long-press recognizer that tolerates finger wobble both before and after

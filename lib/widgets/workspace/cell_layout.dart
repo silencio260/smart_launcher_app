@@ -65,6 +65,13 @@ class _CellLayoutViewState extends State<CellLayoutView>
   static const double _widgetDragActivationDistance = 8;
   int? _draggingSlot;
   int? _selectedWidgetSlot;
+  // Tracks whether we've incremented WidgetResizeGestureGuard for the current
+  // selection. While a widget is selected the workspace PageView switches to
+  // NeverScrollableScrollPhysics (see workspace_view.dart), which removes
+  // its drag recognizer from the gesture arena entirely — that's the only
+  // reliable way to keep a body-swipe from paging through, since arena
+  // competition with the PageView's drag recognizer can race.
+  bool _selectionGuardActive = false;
   int? _armedWidgetDragSlot;
   double _armedWidgetDragDistance = 0;
   final ValueNotifier<int?> _activeWidgetDragFeedbackSlot =
@@ -146,7 +153,32 @@ class _CellLayoutViewState extends State<CellLayoutView>
     }
     _displacementPreviewControllers.clear();
     _activeWidgetDragFeedbackSlot.dispose();
+    if (_selectionGuardActive) {
+      WidgetResizeGestureGuard.setSelectionActive(false);
+      WidgetResizeGestureGuard.onRequestDismiss = null;
+      _selectionGuardActive = false;
+    }
     super.dispose();
+  }
+
+  /// Keeps the global gesture guard in lock-step with `_selectedWidgetSlot`.
+  /// Called both from `build()` (catch-all) and imperatively from every
+  /// setState site that mutates `_selectedWidgetSlot`, so the lock can never
+  /// drift from the visible selection state.
+  void _syncSelectionGuard() {
+    final shouldBeActive = _selectedWidgetSlot != null;
+    if (shouldBeActive == _selectionGuardActive) return;
+    _selectionGuardActive = shouldBeActive;
+    WidgetResizeGestureGuard.setSelectionActive(shouldBeActive);
+    if (shouldBeActive) {
+      // Register a dismiss hook so external gesture paths (the dock's
+      // own GestureDetector, the workspace_touch_listener's raw
+      // Listener, etc.) can ask edit mode to exit when they would
+      // otherwise fire an action that should instead dismiss.
+      WidgetResizeGestureGuard.onRequestDismiss = _clearWidgetResizeSelection;
+    } else {
+      WidgetResizeGestureGuard.onRequestDismiss = null;
+    }
   }
 
   void _closeOpenFolder([String? folderId]) {
@@ -203,6 +235,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
   void _clearWidgetResizeSelection() {
     if (_selectedWidgetSlot == null) return;
     setState(() => _selectedWidgetSlot = null);
+    _syncSelectionGuard();
   }
 
   bool _isWidgetDragActive(int slot) {
@@ -216,6 +249,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
       _armedWidgetDragSlot = slot;
       _armedWidgetDragDistance = 0;
     });
+    _syncSelectionGuard();
     _activeWidgetDragFeedbackSlot.value = null;
   }
 
@@ -230,6 +264,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
     if (_armedWidgetDragDistance < _widgetDragActivationDistance) return;
 
     setState(() => _selectedWidgetSlot = null);
+    _syncSelectionGuard();
     _activeWidgetDragFeedbackSlot.value = slot;
     widget.dragController
         .startDrag(payload.item, widget.pageIndex, slot, Offset.zero);
@@ -244,6 +279,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
       _selectedWidgetSlot =
           wasAccepted && wasActive ? _selectedWidgetSlot : slot;
     });
+    _syncSelectionGuard();
     _activeWidgetDragFeedbackSlot.value = null;
     _cancelAllDisplacementTimers();
     if (wasActive) {
@@ -652,6 +688,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
       _clearWidgetDropPreview();
       if (mounted) {
         setState(() => _selectedWidgetSlot = resolvedSlot);
+        _syncSelectionGuard();
       }
       return;
     }
@@ -1248,6 +1285,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
 
   @override
   Widget build(BuildContext context) {
+    _syncSelectionGuard();
     final totalSlots = widget.settings.gridColumns * widget.settings.gridRows;
     final coveredSlots = _occupiedWidgetSlots(
       widget.page,
@@ -1292,12 +1330,44 @@ class _CellLayoutViewState extends State<CellLayoutView>
           return Stack(
             key: _stackKey,
             children: [
+              // Page-wide dismiss catcher behind the widgets. When nothing is
+              // selected we only register a tap recognizer so it can't compete
+              // with the PageView's horizontal drag recognizer in the arena
+              // (a pan recognizer here at the default ~18px slop would tie
+              // with PageView and sometimes win, breaking paging).
+              //
+              // When a widget IS selected we swap in an eager pan recognizer
+              // with an 8px slop. That beats PageView's ~18px slop in the
+              // gesture arena, so any swipe — left/right/up/down, over the
+              // widget or over empty space on the page — dismisses the
+              // selection before PageView can claim the gesture. This is the
+              // structural guarantee behind "edit mode blocks all swipe
+              // actions until dismissed"; the WidgetResizeGestureGuard +
+              // NeverScrollableScrollPhysics path is defense-in-depth on top.
               Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTap: _clearWidgetResizeSelection,
-                  onPanStart: (_) => _clearWidgetResizeSelection(),
-                ),
+                child: _selectedWidgetSlot == null
+                    ? GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onTap: _clearWidgetResizeSelection,
+                      )
+                    : RawGestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        gestures: <Type, GestureRecognizerFactory>{
+                          TapGestureRecognizer:
+                              GestureRecognizerFactoryWithHandlers<
+                                  TapGestureRecognizer>(
+                            () => TapGestureRecognizer(),
+                            (r) => r.onTap = _clearWidgetResizeSelection,
+                          ),
+                          _EagerDismissPanGestureRecognizer:
+                              GestureRecognizerFactoryWithHandlers<
+                                  _EagerDismissPanGestureRecognizer>(
+                            () => _EagerDismissPanGestureRecognizer(),
+                            (r) => r.onStart =
+                                (_) => _clearWidgetResizeSelection(),
+                          ),
+                        },
+                      ),
               ),
               if (widget.settings.showGridDebugOverlay)
                 ...List.generate(totalSlots, (slot) {
@@ -2099,6 +2169,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
                 _draggingSlot = slot;
                 _selectedWidgetSlot = null;
               });
+              _syncSelectionGuard();
               widget.dragController
                   .startDrag(item, widget.pageIndex, slot, Offset.zero);
             },
@@ -2183,79 +2254,80 @@ class _CellLayoutViewState extends State<CellLayoutView>
       child: BlocSelector<AppsCubit, AppsState, FolderInfo>(
         selector: (state) => _resolveFolderIcons(folder, state),
         builder: (context, resolvedFolder) => LongPressDraggable<DragPayload>(
-        data: DragPayload(
-          item: WorkspaceItemInfo(
-            id: folder.id,
-            itemType: ItemType.folder,
-            packageName: '',
-            title: folder.folderTitle,
+          data: DragPayload(
+            item: WorkspaceItemInfo(
+              id: folder.id,
+              itemType: ItemType.folder,
+              packageName: '',
+              title: folder.folderTitle,
+            ),
+            sourcePage: widget.pageIndex,
+            sourceSlot: slot,
           ),
-          sourcePage: widget.pageIndex,
-          sourceSlot: slot,
-        ),
-        delay: const Duration(milliseconds: 350),
-        onDragStarted: () {
-          setState(() {
-            _draggingSlot = slot;
-            _selectedWidgetSlot = null;
-          });
-          widget.dragController.startDrag(
-              WorkspaceItemInfo(
-                id: folder.id,
-                itemType: ItemType.folder,
-                packageName: '',
-                title: folder.folderTitle,
-              ),
-              widget.pageIndex,
-              slot,
-              Offset.zero);
-        },
-        onDragCompleted: () {
-          setState(() => _draggingSlot = null);
-        },
-        onDragEnd: (_) {
-          setState(() => _draggingSlot = null);
-          widget.dragController.cancelDrag();
-        },
-        onDraggableCanceled: (_, __) {
-          setState(() => _draggingSlot = null);
-          widget.dragController.cancelDrag();
-        },
-        feedback: Material(
-          color: Colors.transparent,
-          child: Opacity(
-            opacity: 0.85,
-            child: Transform.scale(
-              scale: 1.15,
-              child: FolderIconView(
-                folder: resolvedFolder,
-                settings: widget.settings,
-                onTap: () {},
-                onLongPress: () {},
+          delay: const Duration(milliseconds: 350),
+          onDragStarted: () {
+            setState(() {
+              _draggingSlot = slot;
+              _selectedWidgetSlot = null;
+            });
+            _syncSelectionGuard();
+            widget.dragController.startDrag(
+                WorkspaceItemInfo(
+                  id: folder.id,
+                  itemType: ItemType.folder,
+                  packageName: '',
+                  title: folder.folderTitle,
+                ),
+                widget.pageIndex,
+                slot,
+                Offset.zero);
+          },
+          onDragCompleted: () {
+            setState(() => _draggingSlot = null);
+          },
+          onDragEnd: (_) {
+            setState(() => _draggingSlot = null);
+            widget.dragController.cancelDrag();
+          },
+          onDraggableCanceled: (_, __) {
+            setState(() => _draggingSlot = null);
+            widget.dragController.cancelDrag();
+          },
+          feedback: Material(
+            color: Colors.transparent,
+            child: Opacity(
+              opacity: 0.85,
+              child: Transform.scale(
+                scale: 1.15,
+                child: FolderIconView(
+                  folder: resolvedFolder,
+                  settings: widget.settings,
+                  onTap: () {},
+                  onLongPress: () {},
+                ),
               ),
             ),
           ),
-        ),
-        childWhenDragging: Opacity(
-          opacity: 0.3,
+          childWhenDragging: Opacity(
+            opacity: 0.3,
+            child: FolderIconView(
+              folder: resolvedFolder,
+              settings: widget.settings,
+              onTap: () {},
+              onLongPress: () {},
+            ),
+          ),
           child: FolderIconView(
             folder: resolvedFolder,
             settings: widget.settings,
-            onTap: () {},
-            onLongPress: () {},
+            badgeCount: 0,
+            onTap: () {
+              _clearWidgetResizeSelection();
+              _openFolder(context, content.folderId, slot);
+            },
+            onLongPress: _draggingSlot == slot ? () {} : () {},
           ),
         ),
-        child: FolderIconView(
-          folder: resolvedFolder,
-          settings: widget.settings,
-          badgeCount: 0,
-          onTap: () {
-            _clearWidgetResizeSelection();
-            _openFolder(context, content.folderId, slot);
-          },
-          onLongPress: _draggingSlot == slot ? () {} : () {},
-        ),
-      ),
       ),
     );
   }
@@ -2790,7 +2862,10 @@ class _CellLayoutViewState extends State<CellLayoutView>
     workspace.moveItem(
         widget.pageIndex, currentSlot, widget.pageIndex, resolvedSlot);
     workspace.updateWidgetSpan(widget.pageIndex, resolvedSlot, updated);
-    if (mounted) setState(() => _selectedWidgetSlot = resolvedSlot);
+    if (mounted) {
+      setState(() => _selectedWidgetSlot = resolvedSlot);
+      _syncSelectionGuard();
+    }
   }
 
   void _resizeWidgetStack(
@@ -2860,7 +2935,10 @@ class _CellLayoutViewState extends State<CellLayoutView>
       resolvedSpanX,
       resolvedSpanY,
     );
-    if (mounted) setState(() => _selectedWidgetSlot = resolvedSlot);
+    if (mounted) {
+      setState(() => _selectedWidgetSlot = resolvedSlot);
+      _syncSelectionGuard();
+    }
   }
 
   (int slot, int spanX, int spanY)? _resolveResizeCandidate({
@@ -2977,19 +3055,33 @@ class _WorkspaceWidgetResizeFrameState
           children: [
             Positioned.fromRect(
               rect: contentRect,
-              // While a widget is selected, the body should swallow swipes so
+              // While a widget is selected, the body must swallow swipes so
               // the workspace PageView can't page through them — any swipe
-              // dismisses the selection instead. Long-press is deliberately
-              // left uncaught so it falls through to the sibling
-              // LongPressDraggable wrapping the widget below, re-arming a
-              // move drag. Translucent (not opaque) is required for that
-              // fall-through path; opaque would block the LongPressDraggable
-              // from receiving any pointer events.
-              child: GestureDetector(
+              // dismisses the selection instead. A plain GestureDetector with
+              // onHorizontalDragStart loses the arena to PageView because
+              // both have the same ~18px slop and PageView claims first on
+              // the parent edge of the arena. The eager pan recognizer below
+              // accepts at 8px, beating PageView to victory.
+              //
+              // Long-press is deliberately not registered here so it falls
+              // through to the sibling LongPressDraggable wrapping the
+              // widget below (re-arming a move drag). Translucent (not
+              // opaque) preserves that fall-through path.
+              child: RawGestureDetector(
                 behavior: HitTestBehavior.translucent,
-                onTap: widget.onDismiss,
-                onHorizontalDragStart: (_) => widget.onDismiss(),
-                onVerticalDragStart: (_) => widget.onDismiss(),
+                gestures: <Type, GestureRecognizerFactory>{
+                  TapGestureRecognizer: GestureRecognizerFactoryWithHandlers<
+                      TapGestureRecognizer>(
+                    () => TapGestureRecognizer(),
+                    (r) => r.onTap = widget.onDismiss,
+                  ),
+                  _EagerDismissPanGestureRecognizer:
+                      GestureRecognizerFactoryWithHandlers<
+                          _EagerDismissPanGestureRecognizer>(
+                    () => _EagerDismissPanGestureRecognizer(),
+                    (r) => r.onStart = (_) => widget.onDismiss(),
+                  ),
+                },
                 child: const SizedBox.expand(),
               ),
             ),
@@ -3316,3 +3408,14 @@ class _WorkspaceResizeDragTargetState
   }
 }
 
+// Pan recognizer with reduced slop so it accepts the gesture arena before
+// the workspace PageView's horizontal drag recognizer (which uses the
+// default ~18px slop). Used by the selected-widget resize frame to ensure
+// a swipe on the widget body dismisses the selection instead of paging.
+class _EagerDismissPanGestureRecognizer extends PanGestureRecognizer {
+  @override
+  bool hasSufficientGlobalDistanceToAccept(
+      PointerDeviceKind pointerDeviceKind, double? deviceTouchSlop) {
+    return globalDistanceMoved.abs() > 8.0;
+  }
+}

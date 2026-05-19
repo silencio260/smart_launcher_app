@@ -107,9 +107,8 @@ class _WorkspaceViewState extends State<WorkspaceView> {
                   : const BouncingScrollPhysics(),
               onPageChanged: (i) =>
                   context.read<WorkspaceCubit>().setCurrentPage(i),
-              itemCount: widget.settings.infiniteScrolling
-                  ? null
-                  : state.pages.length,
+              itemCount:
+                  widget.settings.infiniteScrolling ? null : state.pages.length,
               itemBuilder: (context, rawIndex) {
                 final i = rawIndex % state.pages.length;
                 return CellLayoutView(

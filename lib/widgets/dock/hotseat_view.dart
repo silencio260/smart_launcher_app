@@ -7,6 +7,7 @@ import '../../models/item_info.dart';
 import '../../models/launcher_settings.dart';
 import '../../models/workspace_item_info.dart';
 import '../../services/drag/drag_controller.dart';
+import '../../services/gestures/widget_resize_gesture_guard.dart';
 import '../../state/apps_cubit.dart';
 import '../../state/settings_cubit.dart';
 import '../../state/workspace_cubit.dart';
@@ -37,7 +38,7 @@ class DockFolderItem extends DockItem {
   });
 }
 
-class HotseatView extends StatelessWidget {
+class HotseatView extends StatefulWidget {
   final List<DockItem?> apps;
   final LauncherSettings settings;
   final DragController dragController;
@@ -56,33 +57,67 @@ class HotseatView extends StatelessWidget {
   });
 
   @override
+  State<HotseatView> createState() => _HotseatViewState();
+}
+
+class _HotseatViewState extends State<HotseatView> {
+  bool _consumeCurrentVerticalSwipe = false;
+
+  bool _consumeEditModeSwipe() {
+    if (!WidgetResizeGestureGuard.isResizing) return false;
+    _consumeCurrentVerticalSwipe = true;
+    if (!WidgetResizeGestureGuard.isHandlePointerActive) {
+      WidgetResizeGestureGuard.requestDismiss();
+    }
+    return true;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (!settings.showDock) return const SizedBox.shrink();
-    final slotCount = settings.dockSize.clamp(0, settings.gridColumns).toInt();
+    if (!widget.settings.showDock) return const SizedBox.shrink();
+    final slotCount =
+        widget.settings.dockSize.clamp(0, widget.settings.gridColumns).toInt();
 
     final row = Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: List.generate(slotCount, (slot) {
-        final item = slot < apps.length ? apps[slot] : null;
+        final item = slot < widget.apps.length ? widget.apps[slot] : null;
         return Flexible(
           child: _DockSlot(
             item: item,
             slot: slot,
-            apps: apps,
-            settings: settings,
-            dragController: dragController,
-            onAppTap: onAppTap,
-            onAppLongPress: onAppLongPress,
+            apps: widget.apps,
+            settings: widget.settings,
+            dragController: widget.dragController,
+            onAppTap: widget.onAppTap,
+            onAppLongPress: widget.onAppLongPress,
           ),
         );
       }),
     );
 
     return GestureDetector(
-      onVerticalDragEnd: (d) {
-        if ((d.primaryVelocity ?? 0) < -200) onSwipeUp();
+      onVerticalDragStart: (_) {
+        _consumeCurrentVerticalSwipe = false;
+        _consumeEditModeSwipe();
       },
-      child: settings.dockShowBackground
+      onVerticalDragUpdate: (_) => _consumeEditModeSwipe(),
+      onVerticalDragEnd: (d) {
+        // While a widget is selected (edit mode) any swipe must
+        // dismiss the selection rather than fire the drawer. The dock
+        // has its own GestureDetector that bypasses the workspace's
+        // Listener path and the cell-layout dismiss catcher, so we
+        // route the dismiss through the guard's broadcast hook. Track the
+        // whole pointer sequence so a swipe cannot dismiss edit mode on update
+        // and then open the drawer on end.
+        if (_consumeCurrentVerticalSwipe || _consumeEditModeSwipe()) {
+          _consumeCurrentVerticalSwipe = false;
+          return;
+        }
+        if ((d.primaryVelocity ?? 0) < -200) widget.onSwipeUp();
+      },
+      onVerticalDragCancel: () => _consumeCurrentVerticalSwipe = false,
+      child: widget.settings.dockShowBackground
           ? ClipRRect(
               borderRadius: BorderRadius.circular(28),
               child: BackdropFilter(
@@ -91,8 +126,8 @@ class HotseatView extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                   decoration: BoxDecoration(
-                    color: settings.dockBackgroundColor
-                        .withValues(alpha: settings.dockBackgroundOpacity),
+                    color: widget.settings.dockBackgroundColor.withValues(
+                        alpha: widget.settings.dockBackgroundOpacity),
                     borderRadius: BorderRadius.circular(28),
                   ),
                   child: row,
