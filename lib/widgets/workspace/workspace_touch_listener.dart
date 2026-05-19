@@ -120,9 +120,12 @@ class _WorkspaceTouchListenerState extends State<WorkspaceTouchListener>
     if (t == null || t.fired) return;
     if (_longPressFired) return;
     final dy = e.position.dy - t.start.dy;
+    final dx = e.position.dx - t.start.dx;
     // Net displacement from touch-down — robust to curved paths because we
-    // ignore the intermediate trajectory entirely.
-    final crossed = dy <= -_fireThreshold || dy >= _fireThreshold;
+    // ignore the intermediate trajectory entirely. Require vertical dominance
+    // so a horizontal page-swipe with a bit of vertical drift doesn't open
+    // the drawer.
+    final crossed = dy.abs() >= _fireThreshold && dy.abs() > dx.abs();
     if (!crossed) return;
     // While a widget is in edit mode any swipe must dismiss the
     // selection rather than fire onSwipeUp/onSwipeDown. We still mark
@@ -226,15 +229,36 @@ class _TolerantLongPressGestureRecognizer extends LongPressGestureRecognizer {
   double? get preAcceptSlopTolerance => 48;
 }
 
-// Vertical drag recognizer that claims the arena sooner than the default
-// kTouchSlop (~18px). A slow, deliberate upward swipe to open the drawer
-// otherwise loses the arena to the PageView's horizontal recognizer on the
-// slightest horizontal wobble.
+// Vertical drag recognizer that only claims the arena once the gesture is
+// clearly more vertical than horizontal. Previously it accepted at 8px of
+// any motion, which beat PageView's ~18px slop and stole short horizontal
+// page-swipes — and let any diagonal swipe register as "swipe up to drawer".
 class _ResponsiveVerticalDragGestureRecognizer
     extends VerticalDragGestureRecognizer {
+  Offset _delta = Offset.zero;
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    _delta = Offset.zero;
+    super.addAllowedPointer(event);
+  }
+
+  @override
+  void handleEvent(PointerEvent event) {
+    if (event is PointerMoveEvent) {
+      _delta += event.delta;
+    }
+    super.handleEvent(event);
+  }
+
   @override
   bool hasSufficientGlobalDistanceToAccept(
       PointerDeviceKind pointerDeviceKind, double? deviceTouchSlop) {
-    return globalDistanceMoved.abs() > 8.0;
+    final dy = _delta.dy.abs();
+    final dx = _delta.dx.abs();
+    // Require ~12px of vertical travel AND vertical to dominate horizontal
+    // by at least 1.5x. Straight up/down gestures still feel snappy, but
+    // any horizontal-leaning swipe lets PageView win the arena.
+    return dy > 12.0 && dy > dx * 1.5;
   }
 }
