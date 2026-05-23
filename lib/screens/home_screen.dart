@@ -14,6 +14,7 @@ import '../models/launcher_state.dart' as ls;
 import '../models/workspace_item_info.dart';
 import '../services/launcher_service.dart';
 import '../services/icons/decoded_icon_cache.dart';
+import '../utils/drawer_perf.dart';
 import '../state/apps_cubit.dart';
 import '../state/launcher_cubit.dart';
 import '../state/search_cubit.dart';
@@ -106,11 +107,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _openDrawer() {
+    DrawerPerf.beginSession();
+    DrawerPerf.event('home.openDrawer');
     context.read<AppsCubit>().setDrawerActive(true);
     setState(() => _drawerOpen = true);
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      DrawerPerf.event('home.openDrawer.firstPostFrame');
+    });
   }
 
   void _closeDrawer() {
+    DrawerPerf.event('home.closeDrawer');
     context.read<AppsCubit>().setDrawerActive(false);
     setState(() {
       _drawerOpen = false;
@@ -118,6 +125,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
     context.read<LauncherCubit>().goToState(ls.LauncherState.normal);
     _scheduleDrawerIconPrewarm(context.read<AppsCubit>().state.apps);
+    DrawerPerf.endSession();
   }
 
   void _enterEditMode() {

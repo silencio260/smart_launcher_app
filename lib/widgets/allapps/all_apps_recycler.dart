@@ -4,6 +4,7 @@ import '../../models/item_info.dart';
 import '../../models/launcher_settings.dart';
 import '../../models/workspace_item_info.dart';
 import '../../services/drag/drag_controller.dart';
+import '../../utils/drawer_perf.dart';
 import '../drag/pickup_feedback.dart';
 import '../icons/badge_listener.dart';
 import '../icons/bubble_text_view.dart';
@@ -64,7 +65,11 @@ class _AllAppsRecyclerState extends State<AllAppsRecycler> {
     return Scrollbar(
       controller: widget.scrollController,
       thumbVisibility: widget.settings.drawerShowScrollbar,
-      child: CustomScrollView(
+      child: PerfProbe(
+        label: 'recycler.scrollView',
+        measureLayout: true,
+        measurePaint: true,
+        child: CustomScrollView(
         controller: widget.scrollController,
         cacheExtent: 1400,
         slivers: [
@@ -87,7 +92,9 @@ class _AllAppsRecyclerState extends State<AllAppsRecycler> {
                 }
                 if (item is AppRow) {
                   return RepaintBoundary(
-                    child: Padding(
+                    child: PerfProbe(
+                      label: 'recycler.row',
+                      child: Padding(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 6),
                       child: Row(
@@ -113,6 +120,7 @@ class _AllAppsRecyclerState extends State<AllAppsRecycler> {
                         ],
                       ),
                     ),
+                    ),
                   );
                 }
                 return const SizedBox.shrink();
@@ -123,6 +131,7 @@ class _AllAppsRecyclerState extends State<AllAppsRecycler> {
           ),
           const SliverPadding(padding: EdgeInsets.only(bottom: 24)),
         ],
+      ),
       ),
     );
   }

@@ -32,6 +32,7 @@ class SettingsCubit extends Cubit<LauncherSettings> {
   void _applyDebugFlags(LauncherSettings s) {
     DebugFlags.widgetLogs = s.showWidgetDebugLogs;
     DebugFlags.widgetPickerInfo = s.showWidgetPickerDebugInfo;
+    DebugFlags.drawerPerfLogs = s.showDrawerPerfLogs;
     LauncherService.setWidgetDebugLogsEnabled(s.showWidgetDebugLogs);
   }
 
@@ -52,6 +53,7 @@ class SettingsCubit extends Cubit<LauncherSettings> {
         'showGridDebugOverlay': s.showGridDebugOverlay,
         'showWidgetDebugLogs': s.showWidgetDebugLogs,
         'showWidgetPickerDebugInfo': s.showWidgetPickerDebugInfo,
+        'showDrawerPerfLogs': s.showDrawerPerfLogs,
         'iconSize': s.iconSize,
         'showLabels': s.showLabels,
         'labelSize': s.labelSize,
@@ -119,6 +121,7 @@ class SettingsCubit extends Cubit<LauncherSettings> {
       showWidgetDebugLogs: j['showWidgetDebugLogs'] as bool? ?? false,
       showWidgetPickerDebugInfo:
           j['showWidgetPickerDebugInfo'] as bool? ?? false,
+      showDrawerPerfLogs: j['showDrawerPerfLogs'] as bool? ?? false,
       iconSize: (j['iconSize'] as num?)?.toDouble() ?? 56,
       showLabels: j['showLabels'] as bool? ?? true,
       labelSize: (j['labelSize'] as num?)?.toDouble() ?? 12,

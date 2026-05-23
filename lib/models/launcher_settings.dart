@@ -40,6 +40,7 @@ class LauncherSettings extends Equatable {
   final bool showGridDebugOverlay;
   final bool showWidgetDebugLogs;
   final bool showWidgetPickerDebugInfo;
+  final bool showDrawerPerfLogs;
   final double iconSize;
   final bool showLabels;
   final double labelSize;
@@ -108,6 +109,7 @@ class LauncherSettings extends Equatable {
     this.showGridDebugOverlay = false,
     this.showWidgetDebugLogs = false,
     this.showWidgetPickerDebugInfo = false,
+    this.showDrawerPerfLogs = false,
     this.iconSize = 56,
     this.showLabels = true,
     this.labelSize = 12,
@@ -167,6 +169,7 @@ class LauncherSettings extends Equatable {
     bool? showGridDebugOverlay,
     bool? showWidgetDebugLogs,
     bool? showWidgetPickerDebugInfo,
+    bool? showDrawerPerfLogs,
     double? iconSize,
     bool? showLabels,
     double? labelSize,
@@ -227,6 +230,7 @@ class LauncherSettings extends Equatable {
       showWidgetDebugLogs: showWidgetDebugLogs ?? this.showWidgetDebugLogs,
       showWidgetPickerDebugInfo:
           showWidgetPickerDebugInfo ?? this.showWidgetPickerDebugInfo,
+      showDrawerPerfLogs: showDrawerPerfLogs ?? this.showDrawerPerfLogs,
       iconSize: iconSize ?? this.iconSize,
       showLabels: showLabels ?? this.showLabels,
       labelSize: labelSize ?? this.labelSize,
@@ -294,6 +298,7 @@ class LauncherSettings extends Equatable {
         showGridDebugOverlay,
         showWidgetDebugLogs,
         showWidgetPickerDebugInfo,
+        showDrawerPerfLogs,
         iconSize,
         showLabels,
         labelSize,

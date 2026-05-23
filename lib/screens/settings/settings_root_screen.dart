@@ -165,6 +165,17 @@ class SettingsRootScreen extends StatelessWidget {
                           state.copyWith(showWidgetPickerDebugInfo: value),
                         ),
                       ),
+                      SwitchListTile(
+                        secondary: const Icon(Icons.speed_outlined),
+                        title: const Text('Drawer Perf Logs'),
+                        subtitle: const Text(
+                          'Log drawer open timing, per-frame build/raster, and recycler layout/paint events to logcat (tag DrawerPerf)',
+                        ),
+                        value: state.showDrawerPerfLogs,
+                        onChanged: (value) => cubit.update(
+                          state.copyWith(showDrawerPerfLogs: value),
+                        ),
+                      ),
                     ],
                   );
                 },

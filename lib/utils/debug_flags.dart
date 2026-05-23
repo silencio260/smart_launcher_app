@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 class DebugFlags {
   static bool widgetLogs = false;
   static bool widgetPickerInfo = false;
+  static bool drawerPerfLogs = false;
 }
 
 void widgetLog(String message) {
