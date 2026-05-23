@@ -2,13 +2,17 @@ import '../../models/app_info.dart';
 import '../../models/search_result.dart';
 
 class AppSearchService {
-  List<SearchResult> search(List<AppInfo> apps, String query) {
+  List<SearchResult> search(
+    List<AppInfo> apps,
+    String query, {
+    Set<String> hiddenPackages = const {},
+  }) {
     if (query.isEmpty) return [];
     final q = query.toLowerCase();
     final results = <SearchResult>[];
 
     for (final app in apps) {
-      if (app.isHidden) continue;
+      if (hiddenPackages.contains(app.packageName)) continue;
       final name = app.name.toLowerCase();
       double score = 0;
       if (name.startsWith(q)) {

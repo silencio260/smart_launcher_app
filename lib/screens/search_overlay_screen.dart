@@ -7,6 +7,7 @@ import '../services/search/app_search_service.dart';
 import '../services/search/calculator_service.dart';
 import '../state/apps_cubit.dart';
 import '../state/search_cubit.dart';
+import '../state/settings_cubit.dart';
 import '../widgets/icons/shaped_icon.dart';
 
 class SearchOverlayScreen extends StatefulWidget {
@@ -45,8 +46,9 @@ class _SearchOverlayScreenState extends State<SearchOverlayScreen> {
     }
 
     final apps = context.read<AppsCubit>().state.apps;
+    final hidden = context.read<SettingsCubit>().state.hiddenApps.toSet();
     final results = <SearchResult>[
-      ..._appSearch.search(apps, query),
+      ..._appSearch.search(apps, query, hiddenPackages: hidden),
     ];
 
     final calc = _calcSearch.evaluate(query);

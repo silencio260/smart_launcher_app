@@ -249,9 +249,14 @@ class _AllAppsContainerState extends State<AllAppsContainer>
           // flag change — only the visible app list matters here.
           buildWhen: (prev, next) => !identical(prev.apps, next.apps),
           builder: (context, appsState) {
+            final hidden = widget.settings.hiddenApps.toSet();
             final displayApps = searchState.query.isEmpty
-                ? _visibleApps(appsState.apps)
-                : context.read<AppsCubit>().searchApps(searchState.query);
+                ? _visibleApps(appsState.apps, hidden)
+                : context
+                    .read<AppsCubit>()
+                    .searchApps(searchState.query)
+                    .where((a) => !hidden.contains(a.packageName))
+                    .toList(growable: false);
             return _buildRecycler(displayApps);
           },
         );
@@ -261,15 +266,32 @@ class _AllAppsContainerState extends State<AllAppsContainer>
 
   List<AppInfo>? _visibleCache;
   List<AppInfo>? _visibleCacheSource;
+  Set<String>? _visibleCacheHidden;
 
-  List<AppInfo> _visibleApps(List<AppInfo> source) {
-    if (identical(source, _visibleCacheSource) && _visibleCache != null) {
+  List<AppInfo> _visibleApps(List<AppInfo> source, Set<String> hidden) {
+    if (identical(source, _visibleCacheSource) &&
+        _visibleCache != null &&
+        _visibleCacheHidden != null &&
+        _setsEqual(_visibleCacheHidden!, hidden)) {
       return _visibleCache!;
     }
-    final result = source.where((a) => !a.isHidden).toList(growable: false);
+    final result = hidden.isEmpty
+        ? source
+        : source
+            .where((a) => !hidden.contains(a.packageName))
+            .toList(growable: false);
     _visibleCacheSource = source;
     _visibleCache = result;
+    _visibleCacheHidden = hidden;
     return result;
+  }
+
+  static bool _setsEqual(Set<String> a, Set<String> b) {
+    if (a.length != b.length) return false;
+    for (final v in a) {
+      if (!b.contains(v)) return false;
+    }
+    return true;
   }
 
   Widget _buildRecycler(List<AppInfo> displayApps) {

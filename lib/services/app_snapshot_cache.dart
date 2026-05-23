@@ -49,7 +49,6 @@ class AppSnapshotCache {
             appComponentName: item['componentName'] as String? ?? packageName,
             title: name ?? packageName,
             iconPath: iconPath,
-            isHidden: item['isHidden'] as bool? ?? false,
           ),
         );
       }
@@ -76,7 +75,6 @@ class AppSnapshotCache {
               'packageName': app.packageName,
               'componentName': app.appComponentName,
               'name': app.name,
-              'isHidden': app.isHidden,
               'iconPath': app.iconPath,
             },
         ],

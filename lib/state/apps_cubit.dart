@@ -229,53 +229,11 @@ class AppsCubit extends Cubit<AppsState> {
     badges.update(counts);
   }
 
-  void hideApp(String packageName) {
-    final updated = state.apps.map((a) {
-      if (a.packageName == packageName) {
-        return AppInfo(
-          id: a.id,
-          packageName: a.packageName,
-          appComponentName: a.appComponentName,
-          userId: a.userId,
-          isDisabled: a.isDisabled,
-          isHidden: true,
-          icon: a.icon,
-          iconPath: a.iconPath,
-          title: a.title,
-          rank: a.rank,
-        );
-      }
-      return a;
-    }).toList();
-    emit(state.copyWith(apps: updated));
-  }
-
-  void unhideApp(String packageName) {
-    final updated = state.apps.map((a) {
-      if (a.packageName == packageName) {
-        return AppInfo(
-          id: a.id,
-          packageName: a.packageName,
-          appComponentName: a.appComponentName,
-          userId: a.userId,
-          isDisabled: a.isDisabled,
-          isHidden: false,
-          icon: a.icon,
-          iconPath: a.iconPath,
-          title: a.title,
-          rank: a.rank,
-        );
-      }
-      return a;
-    }).toList();
-    emit(state.copyWith(apps: updated));
-  }
-
   List<AppInfo> searchApps(String query) {
-    if (query.isEmpty) return state.apps.where((a) => !a.isHidden).toList();
+    if (query.isEmpty) return state.apps;
     final q = query.toLowerCase();
     return state.apps
-        .where((a) => !a.isHidden && (a.name.toLowerCase().contains(q)))
+        .where((a) => a.name.toLowerCase().contains(q))
         .toList();
   }
 }

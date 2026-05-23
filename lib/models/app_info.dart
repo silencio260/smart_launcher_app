@@ -6,7 +6,6 @@ class AppInfo extends ItemInfo {
   String appComponentName;
   String userId;
   bool isDisabled;
-  bool isHidden;
   Uint8List? icon;
   String? iconPath;
 
@@ -16,7 +15,6 @@ class AppInfo extends ItemInfo {
     required this.appComponentName,
     this.userId = '',
     this.isDisabled = false,
-    this.isHidden = false,
     this.icon,
     this.iconPath,
     super.title,

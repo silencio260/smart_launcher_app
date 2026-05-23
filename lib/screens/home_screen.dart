@@ -728,8 +728,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
     final targetPx =
         (effectiveSettings.drawerIconSize * dpr).ceil().clamp(1, 512).toInt();
-    final visibleApps =
-        apps.where((app) => !app.isHidden).toList(growable: false);
+    final hidden = effectiveSettings.hiddenApps.toSet();
+    final visibleApps = hidden.isEmpty
+        ? apps
+        : apps
+            .where((app) => !hidden.contains(app.packageName))
+            .toList(growable: false);
     if (visibleApps.isEmpty) return;
 
     final generation = ++_drawerPrewarmGeneration;
