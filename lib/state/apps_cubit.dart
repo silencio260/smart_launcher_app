@@ -104,6 +104,7 @@ class AppsCubit extends Cubit<AppsState> {
   String? _snapshotKey;
   bool _loadedSnapshot = false;
   bool _drawerActive = false;
+  bool get drawerActive => _drawerActive;
   List<AppInfo>? _pendingApps;
   String? _pendingSnapshotKey;
 

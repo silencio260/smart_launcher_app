@@ -107,6 +107,11 @@ class _CellLayoutViewState extends State<CellLayoutView>
   // (and its string/key work) on every PageView scroll frame.
   double _lastRefreshedCellWidth = -1;
   double _lastRefreshedCellHeight = -1;
+  // Debounce trailing widget-metadata refreshes — pushing/popping the drawer
+  // route shifts cell dimensions by sub-pixel amounts and triggers a slow
+  // AppWidgetManager IPC binder call that blocks the platform thread for
+  // 100-200ms. Collapse rapid sequential triggers into one trailing call.
+  Timer? _widgetMetadataRefreshDebounce;
   OverlayEntry? _openFolderEntry;
   String? _openFolderId;
 
@@ -140,6 +145,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
 
   @override
   void dispose() {
+    _widgetMetadataRefreshDebounce?.cancel();
     _closeOpenFolder();
     for (final t in _previewTimers.values) {
       t.cancel();
@@ -1319,13 +1325,28 @@ class _CellLayoutViewState extends State<CellLayoutView>
           _cellHeight = cellHeight;
           // Only schedule a metadata refresh when cell dimensions actually
           // change — not on every PageView scroll frame.
-          if (_lastRefreshedCellWidth != cellWidth ||
-              _lastRefreshedCellHeight != cellHeight) {
-            _lastRefreshedCellWidth = cellWidth;
-            _lastRefreshedCellHeight = cellHeight;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) _refreshWorkspaceWidgetMetadata();
-            });
+          // PERF: skip the widget-metadata refresh entirely while the drawer
+          // is active. The refresh fires a slow AppWidgetManager IPC binder
+          // call (100-200ms platform-thread stall), and every drawer route
+          // push/pop shifts layout constraints enough to trip the dimension
+          // check. The workspace isn't visible during drawer interaction, so
+          // there's nothing to refresh for. Pending refreshes are deferred
+          // until the next LayoutBuilder pass after the drawer closes.
+          final cwRounded = cellWidth.roundToDouble();
+          final chRounded = cellHeight.roundToDouble();
+          final drawerActive = context.read<AppsCubit>().drawerActive;
+          if (!drawerActive &&
+              (_lastRefreshedCellWidth != cwRounded ||
+                  _lastRefreshedCellHeight != chRounded)) {
+            _lastRefreshedCellWidth = cwRounded;
+            _lastRefreshedCellHeight = chRounded;
+            _widgetMetadataRefreshDebounce?.cancel();
+            _widgetMetadataRefreshDebounce = Timer(
+              const Duration(milliseconds: 300),
+              () {
+                if (mounted) _refreshWorkspaceWidgetMetadata();
+              },
+            );
           }
 
           return Stack(
