@@ -1698,7 +1698,12 @@ class _CellLayoutViewState extends State<CellLayoutView>
               if (!widget.dragController.isDragging)
                 ..._buildSelectedWidgetResizeFrame(cellWidth, cellHeight),
               if (!widget.dragController.isDragging)
-                ..._buildSelectedWidgetActionMenu(cellWidth, cellHeight),
+                ..._buildSelectedWidgetActionMenu(
+                  cellWidth,
+                  cellHeight,
+                  constraints.maxWidth,
+                  constraints.maxHeight,
+                ),
             ],
           );
         },
@@ -1744,6 +1749,8 @@ class _CellLayoutViewState extends State<CellLayoutView>
   List<Widget> _buildSelectedWidgetActionMenu(
     double cellWidth,
     double cellHeight,
+    double viewportWidth,
+    double viewportHeight,
   ) {
     if (_menuHiddenForGesture) return const [];
     final slot = _selectedWidgetSlot;
@@ -1762,17 +1769,37 @@ class _CellLayoutViewState extends State<CellLayoutView>
     final widgetWidth = cellWidth * safeSpanX + _gridGap * (safeSpanX - 1);
     final widgetHeight = cellHeight * safeSpanY + _gridGap * (safeSpanY - 1);
 
-    final label = _resolveWidgetLabel(content);
+    const menuVerticalGap = 8.0;
+    const estimatedMenuHeight = 58.0;
+    const minMenuWidth = 180.0;
+    const maxMenuWidth = 280.0;
+    final menuWidth = widgetWidth
+        .clamp(minMenuWidth, math.min(maxMenuWidth, viewportWidth))
+        .toDouble();
 
-    const menuVerticalGap = 14.0;
-    const estimatedMenuHeight = 132.0;
-    final placeAbove = rect.top >= estimatedMenuHeight + menuVerticalGap;
-    final menuTop = placeAbove
-        ? rect.top - estimatedMenuHeight - menuVerticalGap
-        : rect.top + widgetHeight + menuVerticalGap;
-    final menuWidth =
-        widgetWidth.clamp(220.0, 360.0).toDouble();
-    final menuLeft = rect.left + (widgetWidth - menuWidth) / 2;
+    // Prefer above the widget; if there's no room above, try below; if neither
+    // fits (widget fills the viewport) overlay just inside the top edge so the
+    // menu always stays on-screen.
+    final fitsAbove = rect.top >= estimatedMenuHeight + menuVerticalGap;
+    final fitsBelow = rect.top + widgetHeight + estimatedMenuHeight +
+            menuVerticalGap <=
+        viewportHeight;
+    double menuTop;
+    if (fitsAbove) {
+      menuTop = rect.top - estimatedMenuHeight - menuVerticalGap;
+    } else if (fitsBelow) {
+      menuTop = rect.top + widgetHeight + menuVerticalGap;
+    } else {
+      menuTop = rect.top + menuVerticalGap;
+    }
+    menuTop = menuTop
+        .clamp(0.0, math.max(0.0, viewportHeight - estimatedMenuHeight))
+        .toDouble();
+
+    final rawMenuLeft = rect.left + (widgetWidth - menuWidth) / 2;
+    final menuLeft = rawMenuLeft
+        .clamp(0.0, math.max(0.0, viewportWidth - menuWidth))
+        .toDouble();
 
     final isStack = content is WidgetStackSlot;
 
@@ -1782,7 +1809,6 @@ class _CellLayoutViewState extends State<CellLayoutView>
         top: menuTop,
         width: menuWidth,
         child: _WidgetActionMenu(
-          title: label,
           isStack: isStack,
           onInfo: () => _openSelectedWidgetInfo(content),
           onCreateOrEditStack: isStack
@@ -1792,19 +1818,6 @@ class _CellLayoutViewState extends State<CellLayoutView>
         ),
       ),
     ];
-  }
-
-  String _resolveWidgetLabel(SlotContent content) {
-    if (content is WidgetSlot) {
-      final pkg = content.widget.providerPackage;
-      final app = context.read<AppsCubit>().state.appsByPackage[pkg];
-      final raw = app?.title ?? content.widget.providerClass.split('.').last;
-      return raw.isEmpty ? 'Widget' : raw;
-    }
-    if (content is WidgetStackSlot) {
-      return 'Widget stack (${content.widgets.length})';
-    }
-    return 'Widget';
   }
 
   void _openSelectedWidgetInfo(SlotContent content) {
@@ -3614,14 +3627,12 @@ class _WorkspaceResizeDragTargetState
 }
 
 class _WidgetActionMenu extends StatelessWidget {
-  final String title;
   final bool isStack;
   final VoidCallback onInfo;
   final VoidCallback onCreateOrEditStack;
   final VoidCallback onRemove;
 
   const _WidgetActionMenu({
-    required this.title,
     required this.isStack,
     required this.onInfo,
     required this.onCreateOrEditStack,
@@ -3634,77 +3645,42 @@ class _WidgetActionMenu extends StatelessWidget {
       color: Colors.transparent,
       child: Container(
         decoration: BoxDecoration(
-          color: const Color(0xCC1F1F22),
-          borderRadius: BorderRadius.circular(20),
+          color: const Color(0xE61F1F22),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.45),
-              blurRadius: 18,
-              offset: const Offset(0, 6),
+              color: Colors.black.withValues(alpha: 0.4),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
-        child: Column(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '#$title',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: onInfo,
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(
-                      Icons.info_outline,
-                      color: Colors.white70,
-                      size: 20,
-                    ),
-                  ),
-                ],
+            Expanded(
+              child: _WidgetActionTile(
+                icon: Icons.info_outline,
+                label: 'Info',
+                onTap: onInfo,
               ),
             ),
-            Divider(
-              height: 1,
-              thickness: 1,
-              color: Colors.white.withValues(alpha: 0.08),
+            Expanded(
+              child: _WidgetActionTile(
+                icon: isStack
+                    ? Icons.dashboard_customize_outlined
+                    : Icons.add_box_outlined,
+                label: isStack ? 'Edit stack' : 'Create stack',
+                onTap: onCreateOrEditStack,
+              ),
             ),
-            Row(
-              children: [
-                Expanded(
-                  child: _WidgetActionTile(
-                    icon: isStack
-                        ? Icons.dashboard_customize_outlined
-                        : Icons.add_box_outlined,
-                    label: isStack ? 'Edit stack' : 'Create stack',
-                    onTap: onCreateOrEditStack,
-                  ),
-                ),
-                Container(
-                  width: 1,
-                  height: 56,
-                  color: Colors.white.withValues(alpha: 0.08),
-                ),
-                Expanded(
-                  child: _WidgetActionTile(
-                    icon: Icons.delete_outline,
-                    label: 'Remove',
-                    onTap: onRemove,
-                  ),
-                ),
-              ],
+            Expanded(
+              child: _WidgetActionTile(
+                icon: Icons.delete_outline,
+                label: 'Remove',
+                onTap: onRemove,
+              ),
             ),
           ],
         ),
@@ -3728,18 +3704,21 @@ class _WidgetActionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: Colors.white, size: 22),
-            const SizedBox(height: 6),
+            Icon(icon, color: Colors.white, size: 18),
+            const SizedBox(height: 3),
             Text(
               label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 13,
+                fontSize: 11,
                 fontWeight: FontWeight.w500,
               ),
             ),
