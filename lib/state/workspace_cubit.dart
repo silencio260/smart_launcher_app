@@ -148,7 +148,10 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     await prefs.setString(_key, encoded);
   }
 
-  void setCurrentPage(int page) => emit(state.copyWith(currentPage: page));
+  void setCurrentPage(int page) {
+    final maxPage = state.pages.isEmpty ? 0 : state.pages.length - 1;
+    emit(state.copyWith(currentPage: page.clamp(0, maxPage)));
+  }
 
   void setClockPage(int page) {
     emit(state.copyWith(clockPage: page.clamp(0, state.pages.length - 1)));
@@ -1111,7 +1114,8 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     }).toList();
 
     if (!changed) return;
-    widgetLog('[WorkspaceWidgetSizing] refreshMetadata changed=true saving layout');
+    widgetLog(
+        '[WorkspaceWidgetSizing] refreshMetadata changed=true saving layout');
     emit(state.copyWith(pages: pages));
     saveLayout();
   }
@@ -1320,9 +1324,11 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     });
 
     final loadedPages = pagesList.isEmpty ? [WorkspacePage({})] : pagesList;
+    final currentPage =
+        (data['currentPage'] as int? ?? 0).clamp(0, loadedPages.length - 1);
     return WorkspaceState(
       pages: loadedPages,
-      currentPage: data['currentPage'] as int? ?? 0,
+      currentPage: currentPage,
       clockPage:
           (data['clockPage'] as int? ?? 0).clamp(0, loadedPages.length - 1),
       isLocked: data['isLocked'] as bool? ?? false,
