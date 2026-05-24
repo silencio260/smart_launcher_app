@@ -16,6 +16,7 @@ class EditModeOverlay extends StatefulWidget {
   final VoidCallback onThemes;
   final VoidCallback onWidgets;
   final VoidCallback onSettings;
+  final ValueChanged<int> onPageSelected;
 
   const EditModeOverlay({
     super.key,
@@ -25,6 +26,7 @@ class EditModeOverlay extends StatefulWidget {
     required this.onThemes,
     required this.onWidgets,
     required this.onSettings,
+    required this.onPageSelected,
   });
 
   @override
@@ -37,6 +39,7 @@ class _EditModeOverlayState extends State<EditModeOverlay>
   late Animation<double> _fadeAnim;
   late ScrollController _scrollController;
   int _displayedPage = 0;
+  bool _didAlignInitialPage = false;
 
   @override
   void initState() {
@@ -179,6 +182,7 @@ class _EditModeOverlayState extends State<EditModeOverlay>
         final thumbW = thumbH * 9 / 16;
         final horizontalInset =
             ((constraints.maxWidth - thumbW) / 2).clamp(12.0, 80.0);
+        _alignInitialPage(itemExtent: thumbW + 12);
 
         return ThresholdReorderableList(
           controller: _scrollController,
@@ -231,7 +235,7 @@ class _EditModeOverlayState extends State<EditModeOverlay>
                     folders: state.folders,
                     settings: widget.settings,
                     onJump: () {
-                      context.read<WorkspaceCubit>().setCurrentPage(i);
+                      widget.onPageSelected(i);
                       _dismiss();
                     },
                   ),
@@ -242,6 +246,17 @@ class _EditModeOverlayState extends State<EditModeOverlay>
         );
       },
     );
+  }
+
+  void _alignInitialPage({required double itemExtent}) {
+    if (_didAlignInitialPage) return;
+    _didAlignInitialPage = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final target = (_displayedPage * itemExtent)
+          .clamp(0.0, _scrollController.position.maxScrollExtent);
+      _scrollController.jumpTo(target);
+    });
   }
 
   Widget _buildBottomBar() {
@@ -425,35 +440,38 @@ class _PageCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // NOTE: deliberately no GestureDetector on the body. A tap detector here
-    // would compete with the ReorderableDragStartListener wrapping this card
-    // and swallow pointer-down events before the reorder can begin. Jump-to-
-    // page is exposed via a dedicated chevron button instead.
-    return Stack(
-      children: [
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.06),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.55),
-              width: 1.4,
+    return GestureDetector(
+      key: const ValueKey('edit-mode-page-card'),
+      onTap: onJump,
+      behavior: HitTestBehavior.opaque,
+      child: Stack(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.55),
+                width: 1.4,
+              ),
+            ),
+            clipBehavior: Clip.antiAlias,
+            padding: const EdgeInsets.all(6),
+            child: IgnorePointer(
+              child: _PagePreview(
+                page: page,
+                folders: folders,
+                settings: settings,
+              ),
             ),
           ),
-          clipBehavior: Clip.antiAlias,
-          padding: const EdgeInsets.all(6),
-          child: _PagePreview(
-            page: page,
-            folders: folders,
-            settings: settings,
+          Positioned(
+            right: 6,
+            bottom: 6,
+            child: _JumpToPageButton(onTap: onJump),
           ),
-        ),
-        Positioned(
-          right: 6,
-          bottom: 6,
-          child: _JumpToPageButton(onTap: onJump),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

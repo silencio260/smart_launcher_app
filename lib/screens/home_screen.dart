@@ -610,6 +610,10 @@ class _HomeScreenState extends State<HomeScreen>
                       _exitEditMode();
                       _openSettings();
                     },
+                    onPageSelected: (page) {
+                      context.read<WorkspaceCubit>().setCurrentPage(page);
+                      _pageController?.jumpToPage(page);
+                    },
                   ),
               ],
             ),
