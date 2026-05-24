@@ -35,6 +35,7 @@ class CellLayoutView extends StatefulWidget {
   final DragController dragController;
   final void Function(AppInfo app) onAppTap;
   final void Function(AppInfo app, int slot, Offset iconCenter) onAppLongPress;
+  final VoidCallback onBackgroundLongPress;
 
   const CellLayoutView({
     super.key,
@@ -44,6 +45,7 @@ class CellLayoutView extends StatefulWidget {
     required this.dragController,
     required this.onAppTap,
     required this.onAppLongPress,
+    required this.onBackgroundLongPress,
   });
 
   @override
@@ -243,6 +245,11 @@ class _CellLayoutViewState extends State<CellLayoutView>
     if (_selectedWidgetSlot == null) return;
     setState(() => _selectedWidgetSlot = null);
     _syncSelectionGuard();
+  }
+
+  void _openBackgroundEditMenu() {
+    _clearWidgetResizeSelection();
+    widget.onBackgroundLongPress();
   }
 
   bool _isWidgetDragActive(int slot) {
@@ -1380,6 +1387,12 @@ class _CellLayoutViewState extends State<CellLayoutView>
                                   TapGestureRecognizer>(
                             () => TapGestureRecognizer(),
                             (r) => r.onTap = _clearWidgetResizeSelection,
+                          ),
+                          LongPressGestureRecognizer:
+                              GestureRecognizerFactoryWithHandlers<
+                                  LongPressGestureRecognizer>(
+                            () => LongPressGestureRecognizer(),
+                            (r) => r.onLongPress = _openBackgroundEditMenu,
                           ),
                           _EagerDismissPanGestureRecognizer:
                               GestureRecognizerFactoryWithHandlers<

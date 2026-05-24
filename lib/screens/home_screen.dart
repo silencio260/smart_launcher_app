@@ -502,6 +502,7 @@ class _HomeScreenState extends State<HomeScreen>
                                     LauncherService.launchApp(app.packageName),
                                 onAppLongPress: (app, page, slot, center) =>
                                     _showAppInfoTooltip(app, center),
+                                onBackgroundLongPress: _enterEditMode,
                                 onPageChanged: (offset) {
                                   const MethodChannel(
                                           'com.genrevibes.smartlauncher/wallpaper')

@@ -15,6 +15,7 @@ class WorkspaceView extends StatefulWidget {
   final void Function(AppInfo app) onAppTap;
   final void Function(AppInfo app, int page, int slot, Offset iconCenter)
       onAppLongPress;
+  final VoidCallback onBackgroundLongPress;
   final void Function(double offset) onPageChanged;
   final void Function(PageController)? onControllerReady;
 
@@ -24,6 +25,7 @@ class WorkspaceView extends StatefulWidget {
     required this.dragController,
     required this.onAppTap,
     required this.onAppLongPress,
+    required this.onBackgroundLongPress,
     required this.onPageChanged,
     this.onControllerReady,
   });
@@ -119,6 +121,7 @@ class _WorkspaceViewState extends State<WorkspaceView> {
                   onAppTap: widget.onAppTap,
                   onAppLongPress: (app, slot, center) =>
                       widget.onAppLongPress(app, i, slot, center),
+                  onBackgroundLongPress: widget.onBackgroundLongPress,
                 );
               },
             );
