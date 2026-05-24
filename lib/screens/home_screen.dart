@@ -57,6 +57,10 @@ class _HomeScreenState extends State<HomeScreen>
   Timer? _drawerPrewarmTimer;
   bool _drawerPrewarmRunning = false;
   int _drawerPrewarmGeneration = 0;
+  // Target slot for a pending "Create stack" / "Edit stack add" picker flow.
+  // Set when the user triggers the picker from a widget action menu; consumed
+  // (and cleared) once the picker delivers the picked LauncherWidgetInfo.
+  ({int page, int slot})? _pendingStackTarget;
 
   @override
   void initState() {
@@ -381,6 +385,36 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  void _openWidgetPickerForStack(int page, int slot) {
+    _pendingStackTarget = (page: page, slot: slot);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MultiBlocProvider(
+          providers: [
+            BlocProvider.value(value: context.read<SettingsCubit>()),
+            BlocProvider.value(value: context.read<AppsCubit>()),
+            BlocProvider.value(value: context.read<WorkspaceCubit>()),
+          ],
+          child: WidgetPickerScreen(
+            onWidgetPicked: _mergePickedWidgetIntoStack,
+          ),
+        ),
+      ),
+    ).whenComplete(() {
+      // Clear if the user dismissed without picking.
+      _pendingStackTarget = null;
+    });
+  }
+
+  void _mergePickedWidgetIntoStack(LauncherWidgetInfo picked) {
+    final target = _pendingStackTarget;
+    _pendingStackTarget = null;
+    if (target == null) return;
+    final workspace = context.read<WorkspaceCubit>();
+    workspace.addWidgetToStackSlot(target.page, target.slot, picked);
+  }
+
   void _showAppInfoTooltip(AppInfo app, Offset iconCenter) {
     _dismissAppInfoTooltip();
     final overlay = Overlay.of(context);
@@ -518,6 +552,7 @@ class _HomeScreenState extends State<HomeScreen>
                                   onAppLongPress: (app, page, slot, center) =>
                                       _showAppInfoTooltip(app, center),
                                   onBackgroundLongPress: _enterEditMode,
+                                  onPickWidgetForStack: _openWidgetPickerForStack,
                                   onPageChanged: (offset) {
                                     const MethodChannel(
                                             'com.genrevibes.smartlauncher/wallpaper')

@@ -31,6 +31,14 @@ class WidgetResizeGestureGuard {
   static final ValueNotifier<bool> isResizingNotifier =
       ValueNotifier<bool>(false);
 
+  /// Fires specifically when handle-pointer activity flips on/off. We can't
+  /// piggy-back on [isResizingNotifier] for this because [_selectionActive]
+  /// is usually already true when the user presses a handle, so [isResizing]
+  /// doesn't change value and the ValueNotifier short-circuits without
+  /// notifying listeners — and the action menu would never hide.
+  static final ValueNotifier<bool> isHandlePointerActiveNotifier =
+      ValueNotifier<bool>(false);
+
   static bool get isResizing =>
       _selectionActive || _activePointers > 0 || _overlayActive;
 
@@ -56,6 +64,7 @@ class WidgetResizeGestureGuard {
 
   static void _publish() {
     isResizingNotifier.value = isResizing;
+    isHandlePointerActiveNotifier.value = _activePointers > 0;
   }
 
   // ── (1) Selection ──────────────────────────────────────────────────────────

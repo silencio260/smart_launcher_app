@@ -429,6 +429,63 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     saveLayout();
   }
 
+  /// Removes the widget at [index] from a [WidgetStackSlot] at (page, slot).
+  /// If only one widget remains, the stack is downgraded to a [WidgetSlot].
+  /// If the stack becomes empty, the slot is cleared entirely.
+  void removeWidgetFromStack(int page, int slot, int index) {
+    final pages = List<WorkspacePage>.from(state.pages);
+    if (page < 0 || page >= pages.length) return;
+    final slots = Map<int, SlotContent>.from(pages[page].slots);
+    final current = slots[slot];
+    if (current is! WidgetStackSlot) return;
+    if (index < 0 || index >= current.widgets.length) return;
+
+    final remaining = List<LauncherWidgetInfo>.from(current.widgets)
+      ..removeAt(index);
+    if (remaining.isEmpty) {
+      slots.remove(slot);
+    } else if (remaining.length == 1) {
+      slots[slot] = WidgetSlot(remaining.single);
+    } else {
+      slots[slot] = WidgetStackSlot(
+        remaining,
+        spanX: current.spanX,
+        spanY: current.spanY,
+      );
+    }
+    pages[page] = WorkspacePage(slots);
+    emit(state.copyWith(pages: pages));
+    saveLayout();
+  }
+
+  /// Adds [newWidget] to the slot at (page, slot). If the slot is already a
+  /// [WidgetStackSlot], appends to it. If it's a [WidgetSlot], converts it
+  /// into a stack containing both widgets. The stack's spanX/spanY is the
+  /// max of any contained widget so all members fit.
+  void addWidgetToStackSlot(
+    int page,
+    int slot,
+    LauncherWidgetInfo newWidget,
+  ) {
+    final pages = List<WorkspacePage>.from(state.pages);
+    if (page < 0 || page >= pages.length) return;
+    final slots = Map<int, SlotContent>.from(pages[page].slots);
+    final current = slots[slot];
+
+    final List<LauncherWidgetInfo> merged = [];
+    if (current is WidgetSlot) merged.add(current.widget);
+    if (current is WidgetStackSlot) merged.addAll(current.widgets);
+    merged.add(newWidget);
+    if (merged.isEmpty) return;
+
+    final spanX = merged.map((w) => w.spanX).reduce((a, b) => a > b ? a : b);
+    final spanY = merged.map((w) => w.spanY).reduce((a, b) => a > b ? a : b);
+    slots[slot] = WidgetStackSlot(merged, spanX: spanX, spanY: spanY);
+    pages[page] = WorkspacePage(slots);
+    emit(state.copyWith(pages: pages));
+    saveLayout();
+  }
+
   void moveItem(int fromPage, int fromSlot, int toPage, int toSlot) {
     final pages = List<WorkspacePage>.from(state.pages);
     if (fromPage < 0 || toPage < 0) return;

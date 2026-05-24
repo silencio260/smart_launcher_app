@@ -15,7 +15,16 @@ class WidgetPickerScreen extends StatefulWidget {
   /// Called after a widget is activated and placed on the home screen.
   final void Function(LauncherWidgetInfo widget, int page)? onWidgetAdded;
 
-  const WidgetPickerScreen({super.key, this.onWidgetAdded});
+  /// When set, the picker forwards the activated widget here INSTEAD of placing
+  /// it on the first available slot. Used by "Create stack" / "Edit stack" to
+  /// merge the picked widget into an existing slot.
+  final void Function(LauncherWidgetInfo widget)? onWidgetPicked;
+
+  const WidgetPickerScreen({
+    super.key,
+    this.onWidgetAdded,
+    this.onWidgetPicked,
+  });
 
   @override
   State<WidgetPickerScreen> createState() => _WidgetPickerScreenState();
@@ -166,6 +175,15 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
       spanX: initialSpan.$1,
       spanY: initialSpan.$2,
     );
+
+    // Stack-target flow: skip first-available placement and hand the widget
+    // back to the caller so it can merge into an existing widget slot.
+    if (widget.onWidgetPicked != null) {
+      widget.onWidgetPicked!.call(info);
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      return;
+    }
 
     final placement = workspace.addWidgetToFirstAvailableSlot(
       info,

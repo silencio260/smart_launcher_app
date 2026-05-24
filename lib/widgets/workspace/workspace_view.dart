@@ -18,6 +18,7 @@ class WorkspaceView extends StatefulWidget {
   final VoidCallback onBackgroundLongPress;
   final void Function(double offset) onPageChanged;
   final void Function(PageController)? onControllerReady;
+  final void Function(int page, int slot)? onPickWidgetForStack;
 
   const WorkspaceView({
     super.key,
@@ -28,6 +29,7 @@ class WorkspaceView extends StatefulWidget {
     required this.onBackgroundLongPress,
     required this.onPageChanged,
     this.onControllerReady,
+    this.onPickWidgetForStack,
   });
 
   @override
@@ -124,6 +126,7 @@ class _WorkspaceViewState extends State<WorkspaceView> {
                   onAppLongPress: (app, slot, center) =>
                       widget.onAppLongPress(app, i, slot, center),
                   onBackgroundLongPress: widget.onBackgroundLongPress,
+                  onPickWidgetForStack: widget.onPickWidgetForStack,
                 );
               },
             );

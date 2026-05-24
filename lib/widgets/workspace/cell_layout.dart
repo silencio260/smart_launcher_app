@@ -36,6 +36,10 @@ class CellLayoutView extends StatefulWidget {
   final void Function(AppInfo app) onAppTap;
   final void Function(AppInfo app, int slot, Offset iconCenter) onAppLongPress;
   final VoidCallback onBackgroundLongPress;
+  /// Invoked when the user taps "Create stack" / "Add widget" on the action
+  /// menu. The host opens the widget picker and, when a widget is chosen,
+  /// merges it into the slot at (page, slot).
+  final void Function(int page, int slot)? onPickWidgetForStack;
 
   const CellLayoutView({
     super.key,
@@ -46,6 +50,7 @@ class CellLayoutView extends StatefulWidget {
     required this.onAppTap,
     required this.onAppLongPress,
     required this.onBackgroundLongPress,
+    this.onPickWidgetForStack,
   });
 
   @override
@@ -75,6 +80,10 @@ class _CellLayoutViewState extends State<CellLayoutView>
   // reliable way to keep a body-swipe from paging through, since arena
   // competition with the PageView's drag recognizer can race.
   bool _selectionGuardActive = false;
+  // Hides the floating action menu (info / Create stack / Remove) for the
+  // remainder of the current selection once the user starts dragging or
+  // resizing. A fresh long-press re-selection resets this back to false.
+  bool _menuHiddenForGesture = false;
   int? _armedWidgetDragSlot;
   double _armedWidgetDragDistance = 0;
   final ValueNotifier<int?> _activeWidgetDragFeedbackSlot =
@@ -130,9 +139,23 @@ class _CellLayoutViewState extends State<CellLayoutView>
   @override
   void initState() {
     super.initState();
+    WidgetResizeGestureGuard.isHandlePointerActiveNotifier
+        .addListener(_onResizeGuardChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _normalizePersistedWidgetSpans();
     });
+  }
+
+  // Hide the action menu the moment a resize handle is pressed. Bound to the
+  // dedicated handle-pointer notifier (not isResizingNotifier) because the
+  // selection is usually already active when the handle is grabbed, so
+  // isResizing wouldn't change value.
+  void _onResizeGuardChanged() {
+    if (!mounted) return;
+    if (_selectedWidgetSlot == null) return;
+    if (!WidgetResizeGestureGuard.isHandlePointerActive) return;
+    if (_menuHiddenForGesture) return;
+    setState(() => _menuHiddenForGesture = true);
   }
 
   @override
@@ -147,6 +170,8 @@ class _CellLayoutViewState extends State<CellLayoutView>
 
   @override
   void dispose() {
+    WidgetResizeGestureGuard.isHandlePointerActiveNotifier
+        .removeListener(_onResizeGuardChanged);
     _widgetMetadataRefreshDebounce?.cancel();
     _closeOpenFolder();
     for (final t in _previewTimers.values) {
@@ -243,7 +268,10 @@ class _CellLayoutViewState extends State<CellLayoutView>
 
   void _clearWidgetResizeSelection() {
     if (_selectedWidgetSlot == null) return;
-    setState(() => _selectedWidgetSlot = null);
+    setState(() {
+      _selectedWidgetSlot = null;
+      _menuHiddenForGesture = false;
+    });
     _syncSelectionGuard();
   }
 
@@ -265,11 +293,20 @@ class _CellLayoutViewState extends State<CellLayoutView>
   }
 
   void _armWidgetDrag(int slot) {
+    // If this same slot is already selected with the menu deliberately
+    // hidden (e.g. user just finished a resize), keep it hidden — a
+    // long-press to move shouldn't bring the info menu back. Only surface
+    // the menu on a fresh selection (different slot or none selected).
+    final isReselectionOfHiddenMenu =
+        _selectedWidgetSlot == slot && _menuHiddenForGesture;
     setState(() {
       _draggingSlot = slot;
       _selectedWidgetSlot = slot;
       _armedWidgetDragSlot = slot;
       _armedWidgetDragDistance = 0;
+      if (!isReselectionOfHiddenMenu) {
+        _menuHiddenForGesture = false;
+      }
     });
     _syncSelectionGuard();
     _activeWidgetDragFeedbackSlot.value = null;
@@ -285,7 +322,13 @@ class _CellLayoutViewState extends State<CellLayoutView>
     _armedWidgetDragDistance += details.delta.distance;
     if (_armedWidgetDragDistance < _widgetDragActivationDistance) return;
 
-    setState(() => _selectedWidgetSlot = null);
+    setState(() {
+      _selectedWidgetSlot = null;
+      // If onDragEnd later re-selects this slot (cancelled drag), keep the
+      // menu hidden so it only reappears on a fresh long-press. Matches
+      // user spec: "stay hidden until re-selected".
+      _menuHiddenForGesture = true;
+    });
     _syncSelectionGuard();
     _activeWidgetDragFeedbackSlot.value = slot;
     widget.dragController
@@ -1654,6 +1697,8 @@ class _CellLayoutViewState extends State<CellLayoutView>
               ),
               if (!widget.dragController.isDragging)
                 ..._buildSelectedWidgetResizeFrame(cellWidth, cellHeight),
+              if (!widget.dragController.isDragging)
+                ..._buildSelectedWidgetActionMenu(cellWidth, cellHeight),
             ],
           );
         },
@@ -1694,6 +1739,146 @@ class _CellLayoutViewState extends State<CellLayoutView>
         ),
       ),
     ];
+  }
+
+  List<Widget> _buildSelectedWidgetActionMenu(
+    double cellWidth,
+    double cellHeight,
+  ) {
+    if (_menuHiddenForGesture) return const [];
+    final slot = _selectedWidgetSlot;
+    if (slot == null) return const [];
+    final content = widget.page.slots[slot];
+    if (content == null) return const [];
+    if (content is! WidgetSlot && content is! WidgetStackSlot) {
+      return const [];
+    }
+    final (spanX, spanY) = _effectiveSpanForContent(content);
+    if (spanX <= 0 || spanY <= 0) return const [];
+
+    final safeSpanX = spanX.clamp(1, widget.settings.gridColumns).toInt();
+    final safeSpanY = spanY.clamp(1, widget.settings.gridRows).toInt();
+    final rect = _slotRect(slot, cellWidth, cellHeight);
+    final widgetWidth = cellWidth * safeSpanX + _gridGap * (safeSpanX - 1);
+    final widgetHeight = cellHeight * safeSpanY + _gridGap * (safeSpanY - 1);
+
+    final label = _resolveWidgetLabel(content);
+
+    const menuVerticalGap = 14.0;
+    const estimatedMenuHeight = 132.0;
+    final placeAbove = rect.top >= estimatedMenuHeight + menuVerticalGap;
+    final menuTop = placeAbove
+        ? rect.top - estimatedMenuHeight - menuVerticalGap
+        : rect.top + widgetHeight + menuVerticalGap;
+    final menuWidth =
+        widgetWidth.clamp(220.0, 360.0).toDouble();
+    final menuLeft = rect.left + (widgetWidth - menuWidth) / 2;
+
+    final isStack = content is WidgetStackSlot;
+
+    return [
+      Positioned(
+        left: menuLeft,
+        top: menuTop,
+        width: menuWidth,
+        child: _WidgetActionMenu(
+          title: label,
+          isStack: isStack,
+          onInfo: () => _openSelectedWidgetInfo(content),
+          onCreateOrEditStack: isStack
+              ? () => _openEditStackSheet(slot, content)
+              : _pickWidgetForNewStack,
+          onRemove: _removeSelectedWidget,
+        ),
+      ),
+    ];
+  }
+
+  String _resolveWidgetLabel(SlotContent content) {
+    if (content is WidgetSlot) {
+      final pkg = content.widget.providerPackage;
+      final app = context.read<AppsCubit>().state.appsByPackage[pkg];
+      final raw = app?.title ?? content.widget.providerClass.split('.').last;
+      return raw.isEmpty ? 'Widget' : raw;
+    }
+    if (content is WidgetStackSlot) {
+      return 'Widget stack (${content.widgets.length})';
+    }
+    return 'Widget';
+  }
+
+  void _openSelectedWidgetInfo(SlotContent content) {
+    // Placeholder — the app info / widget settings sheet isn't wired yet.
+    // Surfacing a SnackBar keeps the affordance discoverable until we ship
+    // the real sheet.
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    messenger?.showSnackBar(
+      const SnackBar(
+        content: Text('Widget info coming soon'),
+        duration: Duration(milliseconds: 1200),
+      ),
+    );
+  }
+
+  void _pickWidgetForNewStack() {
+    final slot = _selectedWidgetSlot;
+    if (slot == null) return;
+    final pick = widget.onPickWidgetForStack;
+    if (pick == null) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(
+          content: Text('Widget picker not available'),
+          duration: Duration(milliseconds: 1200),
+        ),
+      );
+      return;
+    }
+    // Dismiss the selection so the workspace returns to its normal state
+    // before the picker route is pushed.
+    final page = widget.pageIndex;
+    _clearWidgetResizeSelection();
+    pick(page, slot);
+  }
+
+  Future<void> _openEditStackSheet(int slot, WidgetStackSlot stack) async {
+    final workspace = context.read<WorkspaceCubit>();
+    final appsState = context.read<AppsCubit>().state;
+    final pageIndex = widget.pageIndex;
+    final pick = widget.onPickWidgetForStack;
+    // Dismiss selection so the resize frame doesn't sit behind the sheet.
+    _clearWidgetResizeSelection();
+    final action = await showModalBottomSheet<_EditStackAction>(
+      context: context,
+      backgroundColor: const Color(0xFF1F1F22),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) {
+        return _EditStackSheet(
+          widgets: stack.widgets,
+          appsState: appsState,
+          canAddWidget: pick != null,
+          onRemoveAt: (index) {
+            workspace.removeWidgetFromStack(pageIndex, slot, index);
+            Navigator.of(sheetCtx).pop(_EditStackAction.removed);
+          },
+          onAddWidget: () {
+            Navigator.of(sheetCtx).pop(_EditStackAction.addWidget);
+          },
+        );
+      },
+    );
+    if (!mounted) return;
+    if (action == _EditStackAction.addWidget && pick != null) {
+      pick(pageIndex, slot);
+    }
+  }
+
+  void _removeSelectedWidget() {
+    final slot = _selectedWidgetSlot;
+    if (slot == null) return;
+    context.read<WorkspaceCubit>().removeItem(widget.pageIndex, slot);
+    _clearWidgetResizeSelection();
   }
 
   List<Widget> _buildPositionedContent(
@@ -3051,7 +3236,6 @@ enum _WorkspaceResizeDirection {
 class _WorkspaceWidgetResizeFrame extends StatefulWidget {
   static const double _edgeHitSize = 34;
   static const double _cornerHitSize = 54;
-  static const double _cornerDotSize = 18;
   static const double touchOutset = _cornerHitSize / 2;
 
   final double contentOutset;
@@ -3149,18 +3333,12 @@ class _WorkspaceWidgetResizeFrameState
                       : Duration.zero,
                   curve: Curves.easeOutCubic,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(18),
+                    color: Colors.white.withValues(alpha: 0.04),
+                    borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.95),
-                      width: 2.4,
+                      color: Colors.white.withValues(alpha: 0.55),
+                      width: 1.2,
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.35),
-                        blurRadius: 14,
-                      ),
-                    ],
                   ),
                 ),
               ),
@@ -3240,23 +3418,9 @@ class _WorkspaceWidgetResizeFrameState
         onPreviewChanged: _setPreview,
         onPreviewEnded: _clearPreview,
         onResizeSteps: widget.onResizeSteps,
-        child: Center(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(999),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  blurRadius: 6,
-                ),
-              ],
-            ),
-            child: const SizedBox(
-              width: _WorkspaceWidgetResizeFrame._cornerDotSize,
-              height: _WorkspaceWidgetResizeFrame._cornerDotSize,
-            ),
-          ),
+        child: CustomPaint(
+          painter: _CornerBracketPainter(direction: direction),
+          size: Size.square(_WorkspaceWidgetResizeFrame._cornerHitSize),
         ),
       ),
     );
@@ -3446,6 +3610,315 @@ class _WorkspaceResizeDragTargetState
     if (step <= 0) return 0;
     if (delta.abs() < step * 0.16) return 0;
     return (delta / step).round();
+  }
+}
+
+class _WidgetActionMenu extends StatelessWidget {
+  final String title;
+  final bool isStack;
+  final VoidCallback onInfo;
+  final VoidCallback onCreateOrEditStack;
+  final VoidCallback onRemove;
+
+  const _WidgetActionMenu({
+    required this.title,
+    required this.isStack,
+    required this.onInfo,
+    required this.onCreateOrEditStack,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xCC1F1F22),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.45),
+              blurRadius: 18,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '#$title',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: onInfo,
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(
+                      Icons.info_outline,
+                      color: Colors.white70,
+                      size: 20,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Divider(
+              height: 1,
+              thickness: 1,
+              color: Colors.white.withValues(alpha: 0.08),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: _WidgetActionTile(
+                    icon: isStack
+                        ? Icons.dashboard_customize_outlined
+                        : Icons.add_box_outlined,
+                    label: isStack ? 'Edit stack' : 'Create stack',
+                    onTap: onCreateOrEditStack,
+                  ),
+                ),
+                Container(
+                  width: 1,
+                  height: 56,
+                  color: Colors.white.withValues(alpha: 0.08),
+                ),
+                Expanded(
+                  child: _WidgetActionTile(
+                    icon: Icons.delete_outline,
+                    label: 'Remove',
+                    onTap: onRemove,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WidgetActionTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _WidgetActionTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: Colors.white, size: 22),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CornerBracketPainter extends CustomPainter {
+  final _WorkspaceResizeDirection direction;
+
+  const _CornerBracketPainter({required this.direction});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Bracket arms curve into each other through a rounded corner so the
+    // dragged corner follows the widget's own border radius instead of
+    // pointing inward with a sharp 90° elbow.
+    const armLength = 22.0;
+    const outset = 6.0;
+    const stroke = 3.0;
+    const cornerRadius = 12.0;
+
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    final hx = direction.affectsLeft ? cx - outset : cx + outset;
+    final hy = direction.affectsTop ? cy - outset : cy + outset;
+    // Arm tip is past the curve.
+    final horizSignX = direction.affectsLeft ? 1.0 : -1.0;
+    final vertSignY = direction.affectsTop ? 1.0 : -1.0;
+    final horizTipX = hx + horizSignX * armLength;
+    final vertTipY = hy + vertSignY * armLength;
+    // Points where the straight arms meet the rounded corner.
+    final horizArmStartX = hx + horizSignX * cornerRadius;
+    final vertArmStartY = hy + vertSignY * cornerRadius;
+
+    final path = Path()
+      ..moveTo(horizTipX, hy)
+      ..lineTo(horizArmStartX, hy)
+      ..quadraticBezierTo(hx, hy, hx, vertArmStartY)
+      ..lineTo(hx, vertTipY);
+
+    final shadow = Paint()
+      ..style = PaintingStyle.stroke
+      ..color = Colors.black.withValues(alpha: 0.45)
+      ..strokeWidth = stroke + 1.5
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
+    canvas.drawPath(path, shadow);
+
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..color = Colors.white
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(_CornerBracketPainter old) => old.direction != direction;
+}
+
+enum _EditStackAction { removed, addWidget }
+
+class _EditStackSheet extends StatelessWidget {
+  final List<LauncherWidgetInfo> widgets;
+  final AppsState appsState;
+  final bool canAddWidget;
+  final void Function(int index) onRemoveAt;
+  final VoidCallback onAddWidget;
+
+  const _EditStackSheet({
+    required this.widgets,
+    required this.appsState,
+    required this.canAddWidget,
+    required this.onRemoveAt,
+    required this.onAddWidget,
+  });
+
+  String _labelFor(LauncherWidgetInfo w) {
+    final app = appsState.appsByPackage[w.providerPackage];
+    final raw = app?.title ?? w.providerClass.split('.').last;
+    return raw.isEmpty ? 'Widget' : raw;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Edit stack',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                itemCount: widgets.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 4),
+                itemBuilder: (context, index) {
+                  final w = widgets[index];
+                  return ListTile(
+                    leading: const Icon(
+                      Icons.widgets_outlined,
+                      color: Colors.white70,
+                    ),
+                    title: Text(
+                      _labelFor(w),
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    trailing: IconButton(
+                      icon: const Icon(
+                        Icons.remove_circle,
+                        color: Color(0xFFE5484D),
+                      ),
+                      onPressed: () => onRemoveAt(index),
+                    ),
+                  );
+                },
+              ),
+            ),
+            if (canAddWidget)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    onPressed: onAddWidget,
+                    icon: const Icon(Icons.add, color: Colors.white),
+                    label: const Text(
+                      'Add widget to stack',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                    style: TextButton.styleFrom(
+                      backgroundColor: Colors.white.withValues(alpha: 0.08),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
