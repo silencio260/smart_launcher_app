@@ -12,6 +12,7 @@ import 'package:smart_launcher_app/state/settings_cubit.dart';
 import 'package:smart_launcher_app/state/workspace_cubit.dart';
 import 'package:smart_launcher_app/widgets/workspace/cell_layout.dart';
 import 'package:smart_launcher_app/widgets/workspace/home_widget_slot.dart';
+import 'package:smart_launcher_app/widgets/workspace/home_widget_stack_view.dart';
 
 class TestWorkspaceCubit extends WorkspaceCubit {
   TestWorkspaceCubit(WorkspaceState initialState) {
@@ -25,6 +26,9 @@ void main() {
   testWidgets(
     'long pressing empty space opens edit menu while widget is selected',
     (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
       final widgetInfo = LauncherWidgetInfo(
         id: 1,
         appWidgetId: 1,
@@ -52,7 +56,7 @@ void main() {
               BlocProvider<SettingsCubit>(create: (_) => SettingsCubit()),
             ],
             child: SizedBox(
-              width: 400,
+              width: 600,
               height: 600,
               child: CellLayoutView(
                 page: workspace.state.pages.first,
@@ -86,6 +90,9 @@ void main() {
   testWidgets(
     'tapping a home app dismisses widget selection without launching',
     (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
       final widgetInfo = LauncherWidgetInfo(
         id: 1,
         appWidgetId: 1,
@@ -123,7 +130,7 @@ void main() {
               BlocProvider<SettingsCubit>(create: (_) => SettingsCubit()),
             ],
             child: SizedBox(
-              width: 400,
+              width: 600,
               height: 600,
               child: CellLayoutView(
                 page: workspace.state.pages.first,
@@ -157,6 +164,87 @@ void main() {
       expect(launchCount, 1);
 
       await tester.pump(const Duration(milliseconds: 400));
+    },
+  );
+
+  testWidgets(
+    'stack edit menu scales widget previews inside each carousel page',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(400, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      LauncherWidgetInfo widgetInfo(int id) {
+        return LauncherWidgetInfo(
+          id: id,
+          appWidgetId: id,
+          providerPackage: WorkspaceCubit.defaultClockProviderPackage,
+          providerClass: WorkspaceCubit.defaultClockProviderClass,
+          isCustomWidget: true,
+          spanX: 4,
+          spanY: 2,
+        );
+      }
+
+      final workspace = TestWorkspaceCubit(
+        WorkspaceState(
+          pages: [
+            WorkspacePage({
+              0: WidgetStackSlot(
+                [widgetInfo(1), widgetInfo(2)],
+                spanX: 4,
+                spanY: 2,
+              ),
+            }),
+          ],
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MultiBlocProvider(
+            providers: [
+              BlocProvider<WorkspaceCubit>.value(value: workspace),
+              BlocProvider<AppsCubit>(create: (_) => AppsCubit()),
+              BlocProvider<SettingsCubit>(create: (_) => SettingsCubit()),
+            ],
+            child: SizedBox(
+              width: 400,
+              height: 720,
+              child: CellLayoutView(
+                page: workspace.state.pages.first,
+                pageIndex: 0,
+                settings: const LauncherSettings(
+                  gridColumns: 4,
+                  gridRows: 4,
+                ),
+                dragController: DragController(),
+                onAppTap: (_) {},
+                onAppLongPress: (_, __, ___) {},
+                onBackgroundLongPress: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.longPress(find.byType(HomeWidgetStackView));
+      await tester.pump();
+      await tester.tap(find.text('Edit stack'));
+      await tester.pumpAndSettle();
+
+      final pageViewSize = tester.getSize(find.byType(PageView).last);
+      final panelSize = tester.getSize(
+        find.byKey(const ValueKey('stack-edit-panel')),
+      );
+      final tileSize = tester.getSize(
+        find.byKey(const ValueKey('stack-edit-tile-frame')).first,
+      );
+
+      expect(panelSize.height, 720 * 0.75);
+      expect(
+        tileSize.width,
+        lessThanOrEqualTo(pageViewSize.width * 0.86),
+      );
     },
   );
 }

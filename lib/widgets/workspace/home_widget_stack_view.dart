@@ -50,6 +50,12 @@ class HomeWidgetStackView extends StatefulWidget {
     required this.onResize,
   });
 
+  /// (page, slot) of a stack whose AndroidView should be suppressed while the
+  /// stack-edit overlay is mounted. The overlay renders its own AndroidViews
+  /// for the same appWidgetIds, so the home rendering must release them first.
+  static final ValueNotifier<(int, int)?> suppressedAt =
+      ValueNotifier<(int, int)?>(null);
+
   @override
   State<HomeWidgetStackView> createState() => _HomeWidgetStackViewState();
 }
@@ -72,48 +78,58 @@ class _HomeWidgetStackViewState extends State<HomeWidgetStackView> {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Positioned.fill(
-          // AbsorbPointer (not IgnorePointer): same reason as HomeWidgetSlot —
-          // keeps the subtree hit-testable so the parent LongPressDraggable
-          // can re-arm a move drag on long-press, while blocking events from
-          // reaching the inner PageView/AndroidViews.
-          child: AbsorbPointer(
-            absorbing: widget.isSelected,
-            child: PageView.builder(
-              controller: _pageController,
-              physics: const BouncingScrollPhysics(),
-              onPageChanged: (i) => setState(() => _currentIndex = i),
-              itemCount: widget.widgets.length,
-              itemBuilder: (_, i) {
-                final w = widget.widgets[i];
-                return _WidgetStackItem(
-                  widgetInfo: w,
-                  stackSpanX: widget.spanX,
-                  stackSpanY: widget.spanY,
-                  gridColumns: widget.gridColumns,
-                  gridRows: widget.gridRows,
-                  cellWidth: widget.resizeStepX - widget.gridGap,
-                  cellHeight: widget.resizeStepY - widget.gridGap,
-                  gap: widget.gridGap,
-                );
-              },
+    return ValueListenableBuilder<(int, int)?>(
+      valueListenable: HomeWidgetStackView.suppressedAt,
+      builder: (context, suppressed, _) {
+        if (suppressed != null &&
+            suppressed.$1 == widget.page &&
+            suppressed.$2 == widget.slot) {
+          return const SizedBox.shrink();
+        }
+        return Stack(
+          children: [
+            Positioned.fill(
+              // AbsorbPointer (not IgnorePointer): same reason as
+              // HomeWidgetSlot — keeps the subtree hit-testable so the parent
+              // LongPressDraggable can re-arm a move drag on long-press,
+              // while blocking events from reaching the inner
+              // PageView/AndroidViews.
+              child: AbsorbPointer(
+                absorbing: widget.isSelected,
+                child: PageView.builder(
+                  controller: _pageController,
+                  physics: const BouncingScrollPhysics(),
+                  onPageChanged: (i) => setState(() => _currentIndex = i),
+                  itemCount: widget.widgets.length,
+                  itemBuilder: (_, i) {
+                    final w = widget.widgets[i];
+                    return _WidgetStackItem(
+                      widgetInfo: w,
+                      stackSpanX: widget.spanX,
+                      stackSpanY: widget.spanY,
+                      gridColumns: widget.gridColumns,
+                      gridRows: widget.gridRows,
+                      cellWidth: widget.resizeStepX - widget.gridGap,
+                      cellHeight: widget.resizeStepY - widget.gridGap,
+                      gap: widget.gridGap,
+                    );
+                  },
+                ),
+              ),
             ),
-          ),
-        ),
-        // Page dots
-        if (widget.widgets.length > 1)
-          Positioned(
-            top: 4,
-            left: 0,
-            right: 0,
-            child: _PageDots(
-              count: widget.widgets.length,
-              current: _currentIndex,
-            ),
-          ),
-      ],
+            if (widget.widgets.length > 1)
+              Positioned(
+                top: 4,
+                left: 0,
+                right: 0,
+                child: _PageDots(
+                  count: widget.widgets.length,
+                  current: _currentIndex,
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -150,6 +166,101 @@ class _WidgetStackItem extends StatelessWidget {
       cellWidth: cellWidth,
       cellHeight: cellHeight,
       gap: gap,
+    );
+  }
+}
+
+/// Renders a single widget host view at a fixed (spanX, spanY) — used by the
+/// stack-edit overlay to show every widget in a stack side-by-side. Unlike
+/// the in-stack view, it does NOT honor [EditModeScope] or [RouteCoverageScope]
+/// because the overlay route itself sits above those scopes.
+class StackWidgetTile extends StatefulWidget {
+  final LauncherWidgetInfo widgetInfo;
+  final int stackSpanX;
+  final int stackSpanY;
+  final int gridColumns;
+  final int gridRows;
+  final double cellWidth;
+  final double cellHeight;
+  final double gap;
+
+  const StackWidgetTile({
+    super.key,
+    required this.widgetInfo,
+    required this.stackSpanX,
+    required this.stackSpanY,
+    required this.gridColumns,
+    required this.gridRows,
+    required this.cellWidth,
+    required this.cellHeight,
+    required this.gap,
+  });
+
+  @override
+  State<StackWidgetTile> createState() => _StackWidgetTileState();
+}
+
+class _StackWidgetTileState extends State<StackWidgetTile> {
+  String? _lastSizeKey;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleSizeSync();
+  }
+
+  @override
+  void didUpdateWidget(covariant StackWidgetTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _scheduleSizeSync();
+  }
+
+  String? _computeSizeKey() {
+    if (widget.stackSpanX <= 0 || widget.stackSpanY <= 0) return null;
+    return [
+      widget.widgetInfo.appWidgetId,
+      widget.stackSpanX,
+      widget.stackSpanY,
+      widget.gridColumns,
+      widget.gridRows,
+      widget.cellWidth.round(),
+      widget.cellHeight.round(),
+      widget.gap.round(),
+    ].join(':');
+  }
+
+  void _scheduleSizeSync() {
+    final sizeKey = _computeSizeKey();
+    if (sizeKey == null || _lastSizeKey == sizeKey) return;
+    _lastSizeKey = sizeKey;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      LauncherService.updateWidgetSize(
+        widget.widgetInfo.appWidgetId,
+        widget.widgetInfo.providerPackage,
+        widget.widgetInfo.providerClass,
+        widget.stackSpanX,
+        widget.stackSpanY,
+        gridColumns: widget.gridColumns,
+        gridRows: widget.gridRows,
+        cellWidth: widget.cellWidth,
+        cellHeight: widget.cellHeight,
+        gap: widget.gap,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: AndroidView(
+        key: ValueKey('stack-edit-${widget.widgetInfo.appWidgetId}'),
+        viewType: 'com.genrevibes.smartlauncher/widget_host_view',
+        creationParams: {'appWidgetId': widget.widgetInfo.appWidgetId},
+        creationParamsCodec: const StandardMessageCodec(),
+        onPlatformViewCreated: (_) => _scheduleSizeSync(),
+        gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
+      ),
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -36,6 +37,7 @@ class CellLayoutView extends StatefulWidget {
   final void Function(AppInfo app) onAppTap;
   final void Function(AppInfo app, int slot, Offset iconCenter) onAppLongPress;
   final VoidCallback onBackgroundLongPress;
+
   /// Invoked when the user taps "Create stack" / "Add widget" on the action
   /// menu. The host opens the widget picker and, when a widget is chosen,
   /// merges it into the slot at (page, slot).
@@ -1781,9 +1783,9 @@ class _CellLayoutViewState extends State<CellLayoutView>
     // fits (widget fills the viewport) overlay just inside the top edge so the
     // menu always stays on-screen.
     final fitsAbove = rect.top >= estimatedMenuHeight + menuVerticalGap;
-    final fitsBelow = rect.top + widgetHeight + estimatedMenuHeight +
-            menuVerticalGap <=
-        viewportHeight;
+    final fitsBelow =
+        rect.top + widgetHeight + estimatedMenuHeight + menuVerticalGap <=
+            viewportHeight;
     double menuTop;
     if (fitsAbove) {
       menuTop = rect.top - estimatedMenuHeight - menuVerticalGap;
@@ -1812,7 +1814,12 @@ class _CellLayoutViewState extends State<CellLayoutView>
           isStack: isStack,
           onInfo: () => _openSelectedWidgetInfo(content),
           onCreateOrEditStack: isStack
-              ? () => _openEditStackSheet(slot, content)
+              ? () => _openStackEditOverlay(
+                    slot,
+                    content,
+                    cellWidth,
+                    cellHeight,
+                  )
               : _pickWidgetForNewStack,
           onRemove: _removeSelectedWidget,
         ),
@@ -1853,36 +1860,55 @@ class _CellLayoutViewState extends State<CellLayoutView>
     pick(page, slot);
   }
 
-  Future<void> _openEditStackSheet(int slot, WidgetStackSlot stack) async {
+  Future<void> _openStackEditOverlay(
+    int slot,
+    WidgetStackSlot stack,
+    double cellWidth,
+    double cellHeight,
+  ) async {
     final workspace = context.read<WorkspaceCubit>();
-    final appsState = context.read<AppsCubit>().state;
     final pageIndex = widget.pageIndex;
     final pick = widget.onPickWidgetForStack;
-    // Dismiss selection so the resize frame doesn't sit behind the sheet.
+    // Dismiss selection so the resize frame doesn't sit behind the overlay.
     _clearWidgetResizeSelection();
-    final action = await showModalBottomSheet<_EditStackAction>(
-      context: context,
-      backgroundColor: const Color(0xFF1F1F22),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    // Free the home rendering's appWidgetIds so the overlay can mount its
+    // own AndroidViews for the same widgets.
+    HomeWidgetStackView.suppressedAt.value = (pageIndex, slot);
+    final action = await Navigator.of(context).push<_StackEditAction>(
+      PageRouteBuilder<_StackEditAction>(
+        opaque: false,
+        // Light scrim only — the wallpaper must remain visible behind the
+        // overlay (the frosted-glass card supplies its own backdrop blur).
+        barrierColor: Colors.black.withValues(alpha: 0.28),
+        barrierDismissible: true,
+        transitionDuration: const Duration(milliseconds: 180),
+        reverseTransitionDuration: const Duration(milliseconds: 140),
+        pageBuilder: (routeCtx, animation, _) {
+          return _StackEditOverlay(
+            stack: stack,
+            cellWidth: cellWidth,
+            cellHeight: cellHeight,
+            gap: _gridGap,
+            gridColumns: widget.settings.gridColumns,
+            gridRows: widget.settings.gridRows,
+            canAddWidget: pick != null,
+            onRemoveAt: (index) {
+              workspace.removeWidgetFromStack(pageIndex, slot, index);
+              Navigator.of(routeCtx).pop(_StackEditAction.removed);
+            },
+            onAddWidget: () =>
+                Navigator.of(routeCtx).pop(_StackEditAction.addWidget),
+            onDismiss: () => Navigator.of(routeCtx).pop(),
+          );
+        },
+        transitionsBuilder: (_, animation, __, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
       ),
-      builder: (sheetCtx) {
-        return _EditStackSheet(
-          widgets: stack.widgets,
-          appsState: appsState,
-          canAddWidget: pick != null,
-          onRemoveAt: (index) {
-            workspace.removeWidgetFromStack(pageIndex, slot, index);
-            Navigator.of(sheetCtx).pop(_EditStackAction.removed);
-          },
-          onAddWidget: () {
-            Navigator.of(sheetCtx).pop(_EditStackAction.addWidget);
-          },
-        );
-      },
     );
+    HomeWidgetStackView.suppressedAt.value = null;
     if (!mounted) return;
-    if (action == _EditStackAction.addWidget && pick != null) {
+    if (action == _StackEditAction.addWidget && pick != null) {
       pick(pageIndex, slot);
     }
   }
@@ -3785,118 +3811,439 @@ class _CornerBracketPainter extends CustomPainter {
   bool shouldRepaint(_CornerBracketPainter old) => old.direction != direction;
 }
 
-enum _EditStackAction { removed, addWidget }
+enum _StackEditAction { removed, addWidget }
 
-class _EditStackSheet extends StatelessWidget {
-  final List<LauncherWidgetInfo> widgets;
-  final AppsState appsState;
+const double _stackEditViewportFraction = 0.86;
+const double _stackEditMaxPreviewScale = 0.88;
+const double _stackEditMinPreviewScale = 0.42;
+const double _stackEditBadgeOverhang = 14.0;
+const double _stackEditPanelHeightFraction = 0.75;
+const double _stackEditPanelVerticalAlignment = 0.25;
+const double _stackEditPanelHorizontalMargin = 20.0;
+const double _stackEditPanelHorizontalPadding = 16.0;
+const double _stackEditPanelVerticalPadding = 28.0;
+
+/// Full-screen dimmed overlay that shows every widget in a stack as a live
+/// tile in a horizontal scrollable row, each with an iOS-style red minus
+/// badge for removal, and a trailing "+" tile for adding another widget.
+class _StackEditOverlay extends StatefulWidget {
+  final WidgetStackSlot stack;
+  final double cellWidth;
+  final double cellHeight;
+  final double gap;
+  final int gridColumns;
+  final int gridRows;
   final bool canAddWidget;
   final void Function(int index) onRemoveAt;
   final VoidCallback onAddWidget;
+  final VoidCallback onDismiss;
 
-  const _EditStackSheet({
-    required this.widgets,
-    required this.appsState,
+  const _StackEditOverlay({
+    required this.stack,
+    required this.cellWidth,
+    required this.cellHeight,
+    required this.gap,
+    required this.gridColumns,
+    required this.gridRows,
     required this.canAddWidget,
     required this.onRemoveAt,
     required this.onAddWidget,
+    required this.onDismiss,
   });
 
-  String _labelFor(LauncherWidgetInfo w) {
-    final app = appsState.appsByPackage[w.providerPackage];
-    final raw = app?.title ?? w.providerClass.split('.').last;
-    return raw.isEmpty ? 'Widget' : raw;
+  @override
+  State<_StackEditOverlay> createState() => _StackEditOverlayState();
+}
+
+class _StackEditOverlayState extends State<_StackEditOverlay> {
+  late final PageController _controller;
+  int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // viewportFraction < 1 makes adjacent pages peek from the sides.
+    _controller = PageController(viewportFraction: _stackEditViewportFraction);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final mediaQuery = MediaQuery.of(context);
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              margin: const EdgeInsets.only(top: 8),
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 16, 20, 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Edit stack',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
+    final pageCount =
+        widget.stack.widgets.length + (widget.canAddWidget ? 1 : 0);
+    return Material(
+      type: MaterialType.transparency,
+      child: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final panelWidth = math.max(
+              0.0,
+              constraints.maxWidth - _stackEditPanelHorizontalMargin * 2,
+            );
+            final panelHeight =
+                constraints.maxHeight * _stackEditPanelHeightFraction;
+            final viewportWidth = math.max(
+              0.0,
+              panelWidth - _stackEditPanelHorizontalPadding * 2,
+            );
+            final itemWidth = viewportWidth * _stackEditViewportFraction;
+            final dotsHeight = pageCount > 1 ? 31.0 : 0.0;
+            final maxTileWidth =
+                math.max(0.0, itemWidth - _stackEditBadgeOverhang - 8);
+            final maxTileHeight = math.max(
+              0.0,
+              panelHeight -
+                  _stackEditPanelVerticalPadding * 2 -
+                  _stackEditBadgeOverhang * 2 -
+                  dotsHeight -
+                  32,
+            );
+            final fullTileWidth = widget.cellWidth * widget.stack.spanX +
+                widget.gap * (widget.stack.spanX - 1);
+            final fullTileHeight = widget.cellHeight * widget.stack.spanY +
+                widget.gap * (widget.stack.spanY - 1);
+            final previewScale = _stackEditPreviewScale(
+              fullTileWidth: fullTileWidth,
+              fullTileHeight: fullTileHeight,
+              maxTileWidth: maxTileWidth,
+              maxTileHeight: maxTileHeight,
+            );
+            final scaledCellWidth = widget.cellWidth * previewScale;
+            final scaledCellHeight = widget.cellHeight * previewScale;
+            final scaledGap = widget.gap * previewScale;
+            final tileWidth = scaledCellWidth * widget.stack.spanX +
+                scaledGap * (widget.stack.spanX - 1);
+            final tileHeight = scaledCellHeight * widget.stack.spanY +
+                scaledGap * (widget.stack.spanY - 1);
+
+            return Stack(
+              children: [
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: widget.onDismiss,
                   ),
                 ),
-              ),
-            ),
-            Flexible(
-              child: ListView.separated(
-                shrinkWrap: true,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                itemCount: widgets.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 4),
-                itemBuilder: (context, index) {
-                  final w = widgets[index];
-                  return ListTile(
-                    leading: const Icon(
-                      Icons.widgets_outlined,
-                      color: Colors.white70,
+                Align(
+                  alignment:
+                      const Alignment(0, _stackEditPanelVerticalAlignment),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: _stackEditPanelHorizontalMargin,
                     ),
-                    title: Text(
-                      _labelFor(w),
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(
-                        Icons.remove_circle,
-                        color: Color(0xFFE5484D),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: panelWidth,
+                        minHeight: panelHeight,
+                        maxHeight: panelHeight,
                       ),
-                      onPressed: () => onRemoveAt(index),
-                    ),
-                  );
-                },
-              ),
-            ),
-            if (canAddWidget)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: TextButton.icon(
-                    onPressed: onAddWidget,
-                    icon: const Icon(Icons.add, color: Colors.white),
-                    label: const Text(
-                      'Add widget to stack',
-                      style: TextStyle(color: Colors.white),
-                    ),
-                    style: TextButton.styleFrom(
-                      backgroundColor: Colors.white.withValues(alpha: 0.08),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(36),
+                        child: BackdropFilter(
+                          filter: ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+                          child: Container(
+                            key: const ValueKey('stack-edit-panel'),
+                            decoration: BoxDecoration(
+                              // Translucent white frosted panel — the blurred
+                              // wallpaper bleeds through.
+                              color: Colors.white.withValues(alpha: 0.16),
+                              borderRadius: BorderRadius.circular(36),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.22),
+                                width: 1,
+                              ),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: _stackEditPanelHorizontalPadding,
+                              vertical: _stackEditPanelVerticalPadding,
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.max,
+                              children: [
+                                SizedBox(
+                                  width: viewportWidth,
+                                  height:
+                                      tileHeight + _stackEditBadgeOverhang * 2,
+                                  child: PageView.builder(
+                                    controller: _controller,
+                                    itemCount: pageCount,
+                                    onPageChanged: (i) =>
+                                        setState(() => _index = i),
+                                    itemBuilder: (_, i) {
+                                      final isAdd =
+                                          i >= widget.stack.widgets.length;
+                                      return Center(
+                                        child: isAdd
+                                            ? _StackEditAddTile(
+                                                width: tileWidth,
+                                                height: tileHeight,
+                                                onTap: widget.onAddWidget,
+                                              )
+                                            : _StackEditTile(
+                                                widgetInfo:
+                                                    widget.stack.widgets[i],
+                                                stackSpanX: widget.stack.spanX,
+                                                stackSpanY: widget.stack.spanY,
+                                                gridColumns: widget.gridColumns,
+                                                gridRows: widget.gridRows,
+                                                cellWidth: scaledCellWidth,
+                                                cellHeight: scaledCellHeight,
+                                                gap: scaledGap,
+                                                tileWidth: tileWidth,
+                                                tileHeight: tileHeight,
+                                                onRemove: () =>
+                                                    widget.onRemoveAt(i),
+                                              ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                if (pageCount > 1) ...[
+                                  const SizedBox(height: 22),
+                                  _OverlayPageDots(
+                                    count: pageCount,
+                                    current: _index,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-          ],
+              ],
+            );
+          },
         ),
       ),
+    );
+  }
+}
+
+double _stackEditPreviewScale({
+  required double fullTileWidth,
+  required double fullTileHeight,
+  required double maxTileWidth,
+  required double maxTileHeight,
+}) {
+  if (fullTileWidth <= 0 || fullTileHeight <= 0) {
+    return _stackEditMaxPreviewScale;
+  }
+  final widthScale = maxTileWidth / fullTileWidth;
+  final heightScale = maxTileHeight / fullTileHeight;
+  final fitScale = math.min(
+    _stackEditMaxPreviewScale,
+    math.min(widthScale, heightScale),
+  );
+  if (!fitScale.isFinite || fitScale <= 0) {
+    return _stackEditMinPreviewScale;
+  }
+  return fitScale
+      .clamp(_stackEditMinPreviewScale, _stackEditMaxPreviewScale)
+      .toDouble();
+}
+
+class _StackEditTile extends StatelessWidget {
+  final LauncherWidgetInfo widgetInfo;
+  final int stackSpanX;
+  final int stackSpanY;
+  final int gridColumns;
+  final int gridRows;
+  final double cellWidth;
+  final double cellHeight;
+  final double gap;
+  final double tileWidth;
+  final double tileHeight;
+  final VoidCallback onRemove;
+
+  const _StackEditTile({
+    required this.widgetInfo,
+    required this.stackSpanX,
+    required this.stackSpanY,
+    required this.gridColumns,
+    required this.gridRows,
+    required this.cellWidth,
+    required this.cellHeight,
+    required this.gap,
+    required this.tileWidth,
+    required this.tileHeight,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      key: const ValueKey('stack-edit-tile-frame'),
+      width: tileWidth + _stackEditBadgeOverhang,
+      height: tileHeight + _stackEditBadgeOverhang,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: 7,
+            top: 7,
+            width: tileWidth,
+            height: tileHeight,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.06),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.18),
+                  ),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: StackWidgetTile(
+                  widgetInfo: widgetInfo,
+                  stackSpanX: stackSpanX,
+                  stackSpanY: stackSpanY,
+                  gridColumns: gridColumns,
+                  gridRows: gridRows,
+                  cellWidth: cellWidth,
+                  cellHeight: cellHeight,
+                  gap: gap,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            top: 0,
+            child: _RemoveBadge(onTap: onRemove),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StackEditAddTile extends StatelessWidget {
+  final double width;
+  final double height;
+  final VoidCallback onTap;
+
+  const _StackEditAddTile({
+    required this.width,
+    required this.height,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      height: height,
+      child: Material(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onTap,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.18),
+              ),
+            ),
+            alignment: Alignment.center,
+            child: const Icon(
+              Icons.add,
+              color: Colors.white,
+              size: 36,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RemoveBadge extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _RemoveBadge({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          alignment: Alignment.center,
+          child: Container(
+            width: 22,
+            height: 22,
+            decoration: const BoxDecoration(
+              color: Color(0xFFE5484D),
+              shape: BoxShape.circle,
+            ),
+            alignment: Alignment.center,
+            child: Container(
+              width: 12,
+              height: 2,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OverlayPageDots extends StatelessWidget {
+  final int count;
+  final int current;
+
+  const _OverlayPageDots({required this.count, required this.current});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(count, (i) {
+        final active = i == current;
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          width: active ? 9 : 7,
+          height: active ? 9 : 7,
+          decoration: BoxDecoration(
+            color: active
+                ? Colors.white.withValues(alpha: 0.95)
+                : Colors.white.withValues(alpha: 0.4),
+            shape: BoxShape.circle,
+          ),
+        );
+      }),
     );
   }
 }

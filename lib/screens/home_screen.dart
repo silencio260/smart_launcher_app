@@ -27,6 +27,7 @@ import '../widgets/edit_mode/edit_mode_overlay.dart';
 import '../widgets/edit_mode/edit_mode_scope.dart';
 import '../widgets/drag/drag_layer.dart';
 import '../widgets/workspace/route_coverage_scope.dart';
+import '../widgets/workspace/home_widget_stack_view.dart';
 import '../widgets/workspace/workspace_touch_listener.dart';
 import '../widgets/workspace/workspace_view.dart';
 import '../services/drag/drag_controller.dart';
@@ -552,7 +553,8 @@ class _HomeScreenState extends State<HomeScreen>
                                   onAppLongPress: (app, page, slot, center) =>
                                       _showAppInfoTooltip(app, center),
                                   onBackgroundLongPress: _enterEditMode,
-                                  onPickWidgetForStack: _openWidgetPickerForStack,
+                                  onPickWidgetForStack:
+                                      _openWidgetPickerForStack,
                                   onPageChanged: (offset) {
                                     const MethodChannel(
                                             'com.genrevibes.smartlauncher/wallpaper')
@@ -565,11 +567,19 @@ class _HomeScreenState extends State<HomeScreen>
                               ),
                             ),
                             if (settings.showDock)
-                              Visibility(
-                                visible:
-                                    (!_drawerOpen || _drawerDraggingToHome) &&
+                              ValueListenableBuilder<(int, int)?>(
+                                valueListenable:
+                                    HomeWidgetStackView.suppressedAt,
+                                builder: (context, suppressedStack, child) {
+                                  return Visibility(
+                                    visible: suppressedStack == null &&
+                                        (!_drawerOpen ||
+                                            _drawerDraggingToHome) &&
                                         !_editMode,
-                                maintainState: true,
+                                    maintainState: true,
+                                    child: child!,
+                                  );
+                                },
                                 child: Padding(
                                   padding: EdgeInsets.only(
                                     left: 12,
