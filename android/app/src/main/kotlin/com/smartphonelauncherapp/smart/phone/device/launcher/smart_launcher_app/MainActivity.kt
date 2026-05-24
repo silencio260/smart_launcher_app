@@ -18,6 +18,7 @@ import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.WallpaperChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.WidgetsChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.widget.WidgetHostViewFactory
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.widget.WidgetHostViewRegistry
 
 class MainActivity : FlutterActivity() {
 
@@ -37,6 +38,9 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         notificationChannel?.dispose()
         appWidgetHost.stopListening()
+        // Pooled host views hold a reference to this activity context; drop
+        // them so they don't leak across activity recreation.
+        WidgetHostViewRegistry.clearPool()
         super.onDestroy()
     }
 

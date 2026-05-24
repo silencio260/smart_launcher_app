@@ -41,6 +41,8 @@ class LauncherSettings extends Equatable {
   final bool showWidgetDebugLogs;
   final bool showWidgetPickerDebugInfo;
   final bool showDrawerPerfLogs;
+  final bool showRouteCoverageLogs;
+  final bool showSettingsLogs;
   final double iconSize;
   final bool showLabels;
   final double labelSize;
@@ -110,6 +112,8 @@ class LauncherSettings extends Equatable {
     this.showWidgetDebugLogs = false,
     this.showWidgetPickerDebugInfo = false,
     this.showDrawerPerfLogs = false,
+    this.showRouteCoverageLogs = false,
+    this.showSettingsLogs = false,
     this.iconSize = 56,
     this.showLabels = true,
     this.labelSize = 12,
@@ -170,6 +174,8 @@ class LauncherSettings extends Equatable {
     bool? showWidgetDebugLogs,
     bool? showWidgetPickerDebugInfo,
     bool? showDrawerPerfLogs,
+    bool? showRouteCoverageLogs,
+    bool? showSettingsLogs,
     double? iconSize,
     bool? showLabels,
     double? labelSize,
@@ -231,6 +237,9 @@ class LauncherSettings extends Equatable {
       showWidgetPickerDebugInfo:
           showWidgetPickerDebugInfo ?? this.showWidgetPickerDebugInfo,
       showDrawerPerfLogs: showDrawerPerfLogs ?? this.showDrawerPerfLogs,
+      showRouteCoverageLogs:
+          showRouteCoverageLogs ?? this.showRouteCoverageLogs,
+      showSettingsLogs: showSettingsLogs ?? this.showSettingsLogs,
       iconSize: iconSize ?? this.iconSize,
       showLabels: showLabels ?? this.showLabels,
       labelSize: labelSize ?? this.labelSize,
@@ -299,6 +308,8 @@ class LauncherSettings extends Equatable {
         showWidgetDebugLogs,
         showWidgetPickerDebugInfo,
         showDrawerPerfLogs,
+        showRouteCoverageLogs,
+        showSettingsLogs,
         iconSize,
         showLabels,
         labelSize,

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
@@ -73,6 +74,7 @@ class BadgeStore {
 
   void update(Map<String, int> next) {
     final prev = _snapshot;
+    if (_mapsEqual(prev, next)) return;
     _snapshot = next;
     final keys = <String>{...prev.keys, ...next.keys};
     for (final k in keys) {
@@ -81,6 +83,15 @@ class BadgeStore {
       final notifier = _byPackage[k];
       if (notifier != null && notifier.value != n) notifier.value = n;
     }
+  }
+
+  static bool _mapsEqual(Map<String, int> a, Map<String, int> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (final e in a.entries) {
+      if (b[e.key] != e.value) return false;
+    }
+    return true;
   }
 
   void dispose() {
@@ -101,6 +112,10 @@ class AppsCubit extends Cubit<AppsState> {
 
   StreamSubscription<dynamic>? _badgeSub;
   StreamSubscription<dynamic>? _appInstallSub;
+  Timer? _installReloadDebounce;
+  Map<String, int>? _pendingBadges;
+  bool _badgeFlushScheduled = false;
+  final Set<String> _pendingIconEvictions = <String>{};
   String? _snapshotKey;
   bool _loadedSnapshot = false;
   bool _drawerActive = false;
@@ -118,13 +133,29 @@ class AppsCubit extends Cubit<AppsState> {
   void startBadgeListening() {
     _badgeSub ??= _badgeEvents.receiveBroadcastStream().listen(
       (data) {
-        if (data is Map) {
-          badges.update(
-              data.map((k, v) => MapEntry(k.toString(), (v as int?) ?? 0)));
-        }
+        if (data is! Map) return;
+        // Native sends a full snapshot on every notification change. During
+        // a burst (e.g. a chat thread emitting many posts) we'd otherwise
+        // run BadgeStore.update once per delivery on the UI thread and
+        // starve the frame scheduler. Coalesce to one update per frame.
+        _pendingBadges =
+            data.map((k, v) => MapEntry(k.toString(), (v as int?) ?? 0));
+        _scheduleBadgeFlush();
       },
       onError: (_) {},
     );
+  }
+
+  void _scheduleBadgeFlush() {
+    if (_badgeFlushScheduled) return;
+    _badgeFlushScheduled = true;
+    SchedulerBinding.instance.scheduleFrameCallback((_) {
+      _badgeFlushScheduled = false;
+      final next = _pendingBadges;
+      if (next == null) return;
+      _pendingBadges = null;
+      badges.update(next);
+    });
   }
 
   void startAppInstallListening() {
@@ -133,10 +164,25 @@ class AppsCubit extends Cubit<AppsState> {
         if (data is Map) {
           final pkg = data['packageName']?.toString();
           if (pkg != null && pkg.isNotEmpty) {
-            DecodedIconCache.instance.evict(pkg);
+            _pendingIconEvictions.add(pkg);
           }
         }
-        loadApps(forceFull: true);
+        // Coalesce bursts (e.g. Play Store post-boot update flurry) into a
+        // single reload + a single eviction sweep. Each broadcast otherwise
+        // triggers icon eviction and a full PackageManager enumeration on
+        // the UI thread, which surfaces as scroll jank for the first few
+        // seconds after a fresh restart.
+        _installReloadDebounce?.cancel();
+        _installReloadDebounce = Timer(const Duration(milliseconds: 400), () {
+          _installReloadDebounce = null;
+          if (_pendingIconEvictions.isNotEmpty) {
+            for (final pkg in _pendingIconEvictions) {
+              DecodedIconCache.instance.evict(pkg);
+            }
+            _pendingIconEvictions.clear();
+          }
+          loadApps(forceFull: true);
+        });
       },
       onError: (_) {},
     );
@@ -157,6 +203,7 @@ class AppsCubit extends Cubit<AppsState> {
   Future<void> close() {
     _badgeSub?.cancel();
     _appInstallSub?.cancel();
+    _installReloadDebounce?.cancel();
     badges.dispose();
     return super.close();
   }

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../../models/launcher_widget_info.dart';
 import '../../services/launcher_service.dart';
 import '../edit_mode/edit_mode_scope.dart';
+import 'route_coverage_scope.dart';
 
 /// Shows a swipeable stack of widgets. Long-press dragging is handled by the
 /// parent CellLayoutView (same as single widgets). Resize handles work on the
@@ -233,10 +234,11 @@ class _SpanSyncedStackWidgetViewState
 
   @override
   Widget build(BuildContext context) {
-    // Yield ownership to the edit overlay while edit mode is active — two
-    // AppWidgetHostViews bound to the same appWidgetId overflow the hybrid-
-    // composition ImageReader. See HomeWidgetSlot for the full rationale.
+    // See HomeWidgetSlot for the full rationale on these two early returns.
     if (EditModeScope.isActive(context)) {
+      return const SizedBox.shrink();
+    }
+    if (RouteCoverageScope.isCovered(context)) {
       return const SizedBox.shrink();
     }
     // RepaintBoundary isolates the platform view's compositor layer so
@@ -248,10 +250,11 @@ class _SpanSyncedStackWidgetViewState
         creationParams: {'appWidgetId': widget.widgetInfo.appWidgetId},
         creationParamsCodec: const StandardMessageCodec(),
         onPlatformViewCreated: (_) => _scheduleSizeSync(),
-        // Empty set: the platform view only receives the pointer sequence when
-        // no Flutter recognizer in the arena claimed it (taps). Horizontal
-        // drags flow to the nearest PageView (the stack's own pager, or the
-        // workspace pager), and vertical drags flow to the workspace listener.
+        // Empty set: the platform view only receives the pointer sequence
+        // when no Flutter recognizer in the arena claimed it (taps).
+        // Horizontal drags flow to the nearest PageView (the stack's own
+        // pager, or the workspace pager), and vertical drags flow to the
+        // workspace listener.
         gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
       ),
     );

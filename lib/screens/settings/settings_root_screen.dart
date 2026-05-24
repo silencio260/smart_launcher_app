@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/launcher_settings.dart';
 import '../../models/launcher_widget_info.dart';
 import '../../state/settings_cubit.dart';
+import '../../utils/debug_flags.dart';
 import 'general_settings_screen.dart';
 import 'home_screen_settings_screen.dart';
 import 'smartspace_settings_screen.dart';
@@ -16,10 +17,31 @@ import 'backup_restore_screen.dart';
 import 'about_screen.dart';
 import 'widget_picker_screen.dart';
 
-class SettingsRootScreen extends StatelessWidget {
+class SettingsRootScreen extends StatefulWidget {
   final void Function(LauncherWidgetInfo widget, int page)? onWidgetAdded;
 
   const SettingsRootScreen({super.key, this.onWidgetAdded});
+
+  @override
+  State<SettingsRootScreen> createState() => _SettingsRootScreenState();
+}
+
+class _SettingsRootScreenState extends State<SettingsRootScreen> {
+  @override
+  void initState() {
+    super.initState();
+    if (DebugFlags.settingsLogs) {
+      debugPrint('SettingsLog SettingsRootScreen opened');
+    }
+  }
+
+  @override
+  void dispose() {
+    if (DebugFlags.settingsLogs) {
+      debugPrint('SettingsLog SettingsRootScreen closed');
+    }
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +75,7 @@ class SettingsRootScreen extends StatelessWidget {
                   context,
                   MaterialPageRoute(
                     builder: (_) =>
-                        WidgetPickerScreen(onWidgetAdded: onWidgetAdded),
+                        WidgetPickerScreen(onWidgetAdded: widget.onWidgetAdded),
                   ),
                 ),
               ),
@@ -174,6 +196,28 @@ class SettingsRootScreen extends StatelessWidget {
                         value: state.showDrawerPerfLogs,
                         onChanged: (value) => cubit.update(
                           state.copyWith(showDrawerPerfLogs: value),
+                        ),
+                      ),
+                      SwitchListTile(
+                        secondary: const Icon(Icons.layers_outlined),
+                        title: const Text('Route Coverage Logs'),
+                        subtitle: const Text(
+                          'Log when another route covers/uncovers the home screen (tag DrawerPerf RouteCoverage)',
+                        ),
+                        value: state.showRouteCoverageLogs,
+                        onChanged: (value) => cubit.update(
+                          state.copyWith(showRouteCoverageLogs: value),
+                        ),
+                      ),
+                      SwitchListTile(
+                        secondary: const Icon(Icons.settings_outlined),
+                        title: const Text('Settings Logs'),
+                        subtitle: const Text(
+                          'Log when the Settings screen opens and closes (tag SettingsLog)',
+                        ),
+                        value: state.showSettingsLogs,
+                        onChanged: (value) => cubit.update(
+                          state.copyWith(showSettingsLogs: value),
                         ),
                       ),
                     ],

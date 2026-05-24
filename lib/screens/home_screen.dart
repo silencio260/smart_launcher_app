@@ -14,6 +14,7 @@ import '../models/launcher_state.dart' as ls;
 import '../models/workspace_item_info.dart';
 import '../services/launcher_service.dart';
 import '../services/icons/decoded_icon_cache.dart';
+import '../utils/debug_flags.dart';
 import '../utils/drawer_perf.dart';
 import '../state/apps_cubit.dart';
 import '../state/launcher_cubit.dart';
@@ -25,6 +26,7 @@ import '../widgets/dock/hotseat_view.dart';
 import '../widgets/edit_mode/edit_mode_overlay.dart';
 import '../widgets/edit_mode/edit_mode_scope.dart';
 import '../widgets/drag/drag_layer.dart';
+import '../widgets/workspace/route_coverage_scope.dart';
 import '../widgets/workspace/workspace_touch_listener.dart';
 import '../widgets/workspace/workspace_view.dart';
 import '../services/drag/drag_controller.dart';
@@ -41,8 +43,10 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+class _HomeScreenState extends State<HomeScreen>
+    with WidgetsBindingObserver, RouteAware {
   final _dragController = DragController();
+  final _routeCovered = ValueNotifier<bool>(false);
   OverlayEntry? _appInfoTooltip;
   bool _drawerOpen = false;
   bool _drawerDraggingToHome = false;
@@ -81,7 +85,39 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      homeRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPushNext() {
+    // A route was pushed on top of the home screen (Settings, widget picker,
+    // etc.). Flip coverage so HomeWidgetSlot drops its AndroidViews — keeping
+    // them alive while covered keeps hybrid composition costing per-frame work
+    // and janks scroll on the page on top.
+    _routeCovered.value = true;
+    if (DebugFlags.routeCoverageLogs) {
+      debugPrint('DrawerPerf RouteCoverage covered=true');
+    }
+  }
+
+  @override
+  void didPopNext() {
+    // The route on top was popped; we're visible again. Re-mount widgets.
+    _routeCovered.value = false;
+    if (DebugFlags.routeCoverageLogs) {
+      debugPrint('DrawerPerf RouteCoverage covered=false');
+    }
+  }
+
+  @override
   void dispose() {
+    homeRouteObserver.unsubscribe(this);
+    _routeCovered.dispose();
     _drawerPrewarmTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _dragController.removeListener(_onDragChange);
@@ -404,7 +440,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           },
         ),
       ],
-      child: BlocBuilder<SettingsCubit, LauncherSettings>(
+      child: RouteCoverageScope(
+        notifier: _routeCovered,
+        child: BlocBuilder<SettingsCubit, LauncherSettings>(
         builder: (context, settings) {
           // BlocBuilder<AppsCubit> is intentionally NOT wrapping this Scaffold.
           // AppsCubit emits on every notification badge push, so wrapping the
@@ -577,6 +615,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ),
           );
         },
+      ),
       ),
     );
   }

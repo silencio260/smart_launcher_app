@@ -5,6 +5,8 @@ class DebugFlags {
   static bool widgetLogs = false;
   static bool widgetPickerInfo = false;
   static bool drawerPerfLogs = false;
+  static bool routeCoverageLogs = false;
+  static bool settingsLogs = false;
 }
 
 void widgetLog(String message) {

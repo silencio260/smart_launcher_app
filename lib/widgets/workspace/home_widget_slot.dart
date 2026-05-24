@@ -7,6 +7,7 @@ import '../../services/launcher_service.dart';
 import '../../state/workspace_cubit.dart';
 import '../clock_widget.dart';
 import '../edit_mode/edit_mode_scope.dart';
+import 'route_coverage_scope.dart';
 
 /// Renders a single Android app widget with resize handles. The
 /// LongPressDraggable for moving is owned by CellLayoutView, so this widget
@@ -111,13 +112,17 @@ class _WidgetView extends StatelessWidget {
     // Drop the AndroidView while edit mode is active. The edit overlay mounts
     // its own AndroidView for the same appWidgetId, and Android can't have
     // two live AppWidgetHostViews bound to the same id without one of them
-    // exceeding its ImageReader buffer budget — Visibility(maintainState:
-    // true) hides this slot but keeps its host view producing frames into a
-    // queue Flutter has stopped draining, which is exactly the "Unable to
-    // acquire a buffer item" warning. Yielding ownership to the overlay keeps
-    // one host view per id at any moment; the discrete enter/exit-edit
-    // transition only disposes/recreates once each, not continuously.
+    // exceeding its ImageReader buffer budget.
     if (EditModeScope.isActive(context)) {
+      return const SizedBox.shrink();
+    }
+    // Drop the AndroidView when covered by another route. Hybrid composition
+    // of a live AppWidgetHostView keeps costing per-frame work even when the
+    // home screen is fully obscured, which surfaces as scroll jank on the
+    // page on top. The native side pools AppWidgetHostView instances by
+    // appWidgetId (see WidgetHostViewRegistry), so re-creating on uncover
+    // reuses the cached host instead of re-binding to system_server.
+    if (RouteCoverageScope.isCovered(context)) {
       return const SizedBox.shrink();
     }
     return _SpanSyncedWidgetHostView(

@@ -14,9 +14,22 @@ class DrawerPerf {
   static TimingsCallback? _timingsCallback;
   static int _sessionCounter = 0;
   static int? _activeSession;
+  static bool _globalTimingsInstalled = false;
 
   static int get sessionId => _activeSession ?? 0;
   static bool get active => _activeSession != null;
+
+  /// Install a process-wide frame timings observer that logs every frame's
+  /// build/raster cost while [DebugFlags.drawerPerfLogs] is on. Call from
+  /// app startup after the flag is hydrated from settings; cheap no-op if
+  /// the flag is off. Lets us see per-frame numbers outside the drawer
+  /// (e.g. Settings scroll, home PageView scroll).
+  static void installGlobalTimings() {
+    if (_globalTimingsInstalled) return;
+    if (!DebugFlags.drawerPerfLogs) return;
+    _globalTimingsInstalled = true;
+    SchedulerBinding.instance.addTimingsCallback(_onGlobalFrameTimings);
+  }
 
   /// Begin a logging session (drawer opened). Installs the frame timings
   /// observer. Idempotent — calling twice without [endSession] is a no-op.
@@ -74,6 +87,37 @@ class DrawerPerf {
         'rasterMs': rasterMs.toStringAsFixed(2),
         'totalMs': totalMs.toStringAsFixed(2),
       });
+    }
+  }
+
+  /// Global per-frame logger. Always emits when the flag is on, regardless
+  /// of whether a drawer session is active. Only logs frames that miss the
+  /// 16.67ms budget to keep logcat readable while still surfacing jank.
+  ///
+  /// Breakdown:
+  ///   vsyncMs   = vsync target -> build start (UI thread starvation)
+  ///   buildMs   = build start  -> build end   (Dart UI thread work)
+  ///   gpuWaitMs = build end    -> raster start (handoff / GPU back-pressure)
+  ///   rasterMs  = raster start -> raster end  (GPU work + HC sync)
+  static void _onGlobalFrameTimings(List<FrameTiming> timings) {
+    if (!DebugFlags.drawerPerfLogs) return;
+    for (final t in timings) {
+      final totalMs = t.totalSpan.inMicroseconds / 1000.0;
+      if (totalMs < 17.0) continue;
+      final vsyncMs = t.vsyncOverhead.inMicroseconds / 1000.0;
+      final buildMs = t.buildDuration.inMicroseconds / 1000.0;
+      final rasterMs = t.rasterDuration.inMicroseconds / 1000.0;
+      final gpuWaitMs = (totalMs - vsyncMs - buildMs - rasterMs)
+          .clamp(0.0, double.infinity);
+      final tMs = _wall.elapsedMicroseconds / 1000.0;
+      debugPrint(
+        'DrawerPerf JANK t=${tMs.toStringAsFixed(2)} '
+        'vsyncMs=${vsyncMs.toStringAsFixed(2)} '
+        'buildMs=${buildMs.toStringAsFixed(2)} '
+        'gpuWaitMs=${gpuWaitMs.toStringAsFixed(2)} '
+        'rasterMs=${rasterMs.toStringAsFixed(2)} '
+        'totalMs=${totalMs.toStringAsFixed(2)}',
+      );
     }
   }
 }

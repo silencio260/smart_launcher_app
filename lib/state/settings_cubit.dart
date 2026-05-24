@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/launcher_settings.dart';
 import '../services/launcher_service.dart';
 import '../utils/debug_flags.dart';
+import '../utils/drawer_perf.dart';
 
 class SettingsCubit extends Cubit<LauncherSettings> {
   static const _key = 'launcher_settings_v1';
@@ -33,7 +34,10 @@ class SettingsCubit extends Cubit<LauncherSettings> {
     DebugFlags.widgetLogs = s.showWidgetDebugLogs;
     DebugFlags.widgetPickerInfo = s.showWidgetPickerDebugInfo;
     DebugFlags.drawerPerfLogs = s.showDrawerPerfLogs;
+    DebugFlags.routeCoverageLogs = s.showRouteCoverageLogs;
+    DebugFlags.settingsLogs = s.showSettingsLogs;
     LauncherService.setWidgetDebugLogsEnabled(s.showWidgetDebugLogs);
+    if (s.showDrawerPerfLogs) DrawerPerf.installGlobalTimings();
   }
 
   Future<void> reset() => update(const LauncherSettings());
@@ -54,6 +58,8 @@ class SettingsCubit extends Cubit<LauncherSettings> {
         'showWidgetDebugLogs': s.showWidgetDebugLogs,
         'showWidgetPickerDebugInfo': s.showWidgetPickerDebugInfo,
         'showDrawerPerfLogs': s.showDrawerPerfLogs,
+        'showRouteCoverageLogs': s.showRouteCoverageLogs,
+        'showSettingsLogs': s.showSettingsLogs,
         'iconSize': s.iconSize,
         'showLabels': s.showLabels,
         'labelSize': s.labelSize,
@@ -122,6 +128,8 @@ class SettingsCubit extends Cubit<LauncherSettings> {
       showWidgetPickerDebugInfo:
           j['showWidgetPickerDebugInfo'] as bool? ?? false,
       showDrawerPerfLogs: j['showDrawerPerfLogs'] as bool? ?? false,
+      showRouteCoverageLogs: j['showRouteCoverageLogs'] as bool? ?? false,
+      showSettingsLogs: j['showSettingsLogs'] as bool? ?? false,
       iconSize: (j['iconSize'] as num?)?.toDouble() ?? 56,
       showLabels: j['showLabels'] as bool? ?? true,
       labelSize: (j['labelSize'] as num?)?.toDouble() ?? 12,

@@ -8,6 +8,7 @@ import 'state/search_cubit.dart';
 import 'state/settings_cubit.dart';
 import 'state/workspace_cubit.dart';
 import 'screens/home_screen.dart';
+import 'widgets/workspace/route_coverage_scope.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -45,6 +46,7 @@ class SmartLauncherApp extends StatelessWidget {
             debugShowCheckedModeBanner: false,
             themeMode: themeMode,
             color: Colors.transparent,
+            navigatorObservers: [homeRouteObserver],
             theme: ThemeData(
               colorScheme: ColorScheme.fromSeed(
                 seedColor: Colors.indigo,
