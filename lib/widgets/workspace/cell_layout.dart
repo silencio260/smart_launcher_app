@@ -71,6 +71,8 @@ class _CellLayoutViewState extends State<CellLayoutView>
   static const double _gridGap = 8;
   static const int _resizeHorizontal = 1;
   static const int _resizeVertical = 2;
+  static const double _widgetLongPressHitOutset =
+      _WorkspaceWidgetResizeFrame.touchOutset;
 
   static const double _widgetDragActivationDistance = 8;
   int? _draggingSlot;
@@ -288,6 +290,30 @@ class _CellLayoutViewState extends State<CellLayoutView>
   void _openBackgroundEditMenu() {
     _clearWidgetResizeSelection();
     widget.onBackgroundLongPress();
+  }
+
+  void _handleBackgroundLongPressStart(
+    LongPressStartDetails details,
+    double cellWidth,
+    double cellHeight,
+  ) {
+    final edgeSlot = _widgetSlotNearPoint(
+      details.localPosition,
+      cellWidth,
+      cellHeight,
+    );
+    if (edgeSlot != null) {
+      setState(() {
+        _selectedWidgetSlot = edgeSlot;
+        _draggingSlot = null;
+        _armedWidgetDragSlot = null;
+        _armedWidgetDragDistance = 0;
+        _menuHiddenForGesture = false;
+      });
+      _syncSelectionGuard();
+      return;
+    }
+    _openBackgroundEditMenu();
   }
 
   bool _isWidgetDragActive(int slot) {
@@ -1400,9 +1426,27 @@ class _CellLayoutViewState extends State<CellLayoutView>
               // NeverScrollableScrollPhysics path is defense-in-depth on top.
               Positioned.fill(
                 child: _selectedWidgetSlot == null
-                    ? GestureDetector(
+                    ? RawGestureDetector(
                         behavior: HitTestBehavior.translucent,
-                        onTap: _clearWidgetResizeSelection,
+                        gestures: <Type, GestureRecognizerFactory>{
+                          TapGestureRecognizer:
+                              GestureRecognizerFactoryWithHandlers<
+                                  TapGestureRecognizer>(
+                            () => TapGestureRecognizer(),
+                            (r) => r.onTap = _clearWidgetResizeSelection,
+                          ),
+                          _WidgetEdgeLongPressGestureRecognizer:
+                              GestureRecognizerFactoryWithHandlers<
+                                  _WidgetEdgeLongPressGestureRecognizer>(
+                            () => _WidgetEdgeLongPressGestureRecognizer(),
+                            (r) => r.onLongPressStart =
+                                (details) => _handleBackgroundLongPressStart(
+                                      details,
+                                      cellWidth,
+                                      cellHeight,
+                                    ),
+                          ),
+                        },
                       )
                     : RawGestureDetector(
                         behavior: HitTestBehavior.translucent,
@@ -2023,6 +2067,57 @@ class _CellLayoutViewState extends State<CellLayoutView>
       cellWidth,
       cellHeight,
     );
+  }
+
+  int? _widgetSlotNearPoint(
+    Offset localPosition,
+    double cellWidth,
+    double cellHeight,
+  ) {
+    final gridWidth = cellWidth * widget.settings.gridColumns +
+        _gridGap * (widget.settings.gridColumns - 1);
+    final gridHeight = cellHeight * widget.settings.gridRows +
+        _gridGap * (widget.settings.gridRows - 1);
+    final gridBounds = Rect.fromLTWH(0, 0, gridWidth, gridHeight);
+    int? closestSlot;
+    var closestDistance = double.infinity;
+
+    for (final entry in widget.page.slots.entries) {
+      final content = entry.value;
+      if (content is! WidgetSlot && content is! WidgetStackSlot) continue;
+
+      final (spanX, spanY) = _effectiveSpanForContent(content);
+      if (spanX <= 0 || spanY <= 0) continue;
+
+      final slotRect = _slotRect(entry.key, cellWidth, cellHeight);
+      final widgetRect = Rect.fromLTWH(
+        slotRect.left,
+        slotRect.top,
+        cellWidth * spanX + _gridGap * (spanX - 1),
+        cellHeight * spanY + _gridGap * (spanY - 1),
+      );
+      final expandedRect =
+          widgetRect.inflate(_widgetLongPressHitOutset).intersect(gridBounds);
+      if (!expandedRect.contains(localPosition)) continue;
+
+      final dx = localPosition.dx < widgetRect.left
+          ? widgetRect.left - localPosition.dx
+          : localPosition.dx > widgetRect.right
+              ? localPosition.dx - widgetRect.right
+              : 0.0;
+      final dy = localPosition.dy < widgetRect.top
+          ? widgetRect.top - localPosition.dy
+          : localPosition.dy > widgetRect.bottom
+              ? localPosition.dy - widgetRect.bottom
+              : 0.0;
+      final distance = dx * dx + dy * dy;
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestSlot = entry.key;
+      }
+    }
+
+    return closestSlot;
   }
 
   Widget _buildSlotContent(
@@ -4275,4 +4370,9 @@ class _EagerDismissPanGestureRecognizer extends PanGestureRecognizer {
       PointerDeviceKind pointerDeviceKind, double? deviceTouchSlop) {
     return globalDistanceMoved.abs() > 8.0;
   }
+}
+
+class _WidgetEdgeLongPressGestureRecognizer extends LongPressGestureRecognizer {
+  _WidgetEdgeLongPressGestureRecognizer()
+      : super(duration: const Duration(milliseconds: 350));
 }

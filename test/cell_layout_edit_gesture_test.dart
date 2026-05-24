@@ -168,6 +168,74 @@ void main() {
   );
 
   testWidgets(
+    'long pressing a widget edge after dismissing selection reselects widget',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final widgetInfo = LauncherWidgetInfo(
+        id: 1,
+        appWidgetId: 1,
+        providerPackage: WorkspaceCubit.defaultClockProviderPackage,
+        providerClass: WorkspaceCubit.defaultClockProviderClass,
+        isCustomWidget: true,
+        spanX: 1,
+        spanY: 1,
+      );
+      final workspace = TestWorkspaceCubit(
+        WorkspaceState(
+          pages: [
+            WorkspacePage({0: WidgetSlot(widgetInfo)}),
+          ],
+        ),
+      );
+      var menuOpened = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MultiBlocProvider(
+            providers: [
+              BlocProvider<WorkspaceCubit>.value(value: workspace),
+              BlocProvider<AppsCubit>(create: (_) => AppsCubit()),
+              BlocProvider<SettingsCubit>(create: (_) => SettingsCubit()),
+            ],
+            child: SizedBox(
+              width: 600,
+              height: 600,
+              child: CellLayoutView(
+                page: workspace.state.pages.first,
+                pageIndex: 0,
+                settings: const LauncherSettings(
+                  gridColumns: 4,
+                  gridRows: 4,
+                ),
+                dragController: DragController(),
+                onAppTap: (_) {},
+                onAppLongPress: (_, __, ___) {},
+                onBackgroundLongPress: () => menuOpened = true,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.longPress(find.byType(HomeWidgetSlot));
+      await tester.pump();
+      expect(WidgetResizeGestureGuard.isResizing, isTrue);
+
+      await tester.tapAt(const Offset(500, 500));
+      await tester.pump();
+      expect(WidgetResizeGestureGuard.isResizing, isFalse);
+
+      await tester.longPressAt(const Offset(154, 70));
+      await tester.pump();
+
+      expect(menuOpened, isFalse);
+      expect(WidgetResizeGestureGuard.isResizing, isTrue);
+    },
+  );
+
+  testWidgets(
     'stack edit menu scales widget previews inside each carousel page',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(400, 720));
