@@ -33,7 +33,16 @@ class WidgetStackSlot extends SlotContent {
   final List<LauncherWidgetInfo> widgets;
   final int spanX;
   final int spanY;
-  WidgetStackSlot(this.widgets, {this.spanX = 2, this.spanY = 1});
+  final int currentIndex;
+
+  WidgetStackSlot(
+    this.widgets, {
+    this.spanX = 2,
+    this.spanY = 1,
+    int currentIndex = 0,
+  }) : currentIndex = widgets.isEmpty
+            ? 0
+            : currentIndex.clamp(0, widgets.length - 1).toInt();
 }
 
 class EmptySlot extends SlotContent {}
@@ -430,9 +439,16 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
   }
 
   /// Removes the widget at [index] from a [WidgetStackSlot] at (page, slot).
-  /// If only one widget remains, the stack is downgraded to a [WidgetSlot].
+  /// If only one widget remains, the stack is downgraded to a [WidgetSlot]
+  /// unless [collapseSingle] is false for stack-edit flows that should stay
+  /// open after removal.
   /// If the stack becomes empty, the slot is cleared entirely.
-  void removeWidgetFromStack(int page, int slot, int index) {
+  void removeWidgetFromStack(
+    int page,
+    int slot,
+    int index, {
+    bool collapseSingle = true,
+  }) {
     final pages = List<WorkspacePage>.from(state.pages);
     if (page < 0 || page >= pages.length) return;
     final slots = Map<int, SlotContent>.from(pages[page].slots);
@@ -442,15 +458,23 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
 
     final remaining = List<LauncherWidgetInfo>.from(current.widgets)
       ..removeAt(index);
+    var nextIndex = current.currentIndex;
+    if (index < nextIndex) nextIndex -= 1;
+    if (remaining.isNotEmpty && nextIndex >= remaining.length) {
+      nextIndex = remaining.length - 1;
+    }
+    if (nextIndex < 0) nextIndex = 0;
+
     if (remaining.isEmpty) {
       slots.remove(slot);
-    } else if (remaining.length == 1) {
+    } else if (remaining.length == 1 && collapseSingle) {
       slots[slot] = WidgetSlot(remaining.single);
     } else {
       slots[slot] = WidgetStackSlot(
         remaining,
         spanX: current.spanX,
         spanY: current.spanY,
+        currentIndex: nextIndex,
       );
     }
     pages[page] = WorkspacePage(slots);
@@ -460,8 +484,8 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
 
   /// Adds [newWidget] to the slot at (page, slot). If the slot is already a
   /// [WidgetStackSlot], appends to it. If it's a [WidgetSlot], converts it
-  /// into a stack containing both widgets. The stack's spanX/spanY is the
-  /// max of any contained widget so all members fit.
+  /// into a stack containing both widgets. Existing stacks keep their saved
+  /// size; the new widget is normalized into that same span before rendering.
   void addWidgetToStackSlot(
     int page,
     int slot,
@@ -472,15 +496,37 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     final slots = Map<int, SlotContent>.from(pages[page].slots);
     final current = slots[slot];
 
-    final List<LauncherWidgetInfo> merged = [];
-    if (current is WidgetSlot) merged.add(current.widget);
-    if (current is WidgetStackSlot) merged.addAll(current.widgets);
-    merged.add(newWidget);
-    if (merged.isEmpty) return;
-
-    final spanX = merged.map((w) => w.spanX).reduce((a, b) => a > b ? a : b);
-    final spanY = merged.map((w) => w.spanY).reduce((a, b) => a > b ? a : b);
-    slots[slot] = WidgetStackSlot(merged, spanX: spanX, spanY: spanY);
+    if (current is WidgetStackSlot) {
+      final spanX = current.spanX <= 0 ? 1 : current.spanX;
+      final spanY = current.spanY <= 0 ? 1 : current.spanY;
+      slots[slot] = WidgetStackSlot(
+        [
+          ...current.widgets,
+          newWidget.copyWith(spanX: spanX, spanY: spanY),
+        ],
+        spanX: spanX,
+        spanY: spanY,
+        currentIndex: current.widgets.length,
+      );
+    } else if (current is WidgetSlot) {
+      final spanX = current.widget.spanX <= 0 ? 1 : current.widget.spanX;
+      final spanY = current.widget.spanY <= 0 ? 1 : current.widget.spanY;
+      slots[slot] = WidgetStackSlot(
+        [
+          current.widget.copyWith(spanX: spanX, spanY: spanY),
+          newWidget.copyWith(spanX: spanX, spanY: spanY),
+        ],
+        spanX: spanX,
+        spanY: spanY,
+        currentIndex: 1,
+      );
+    } else {
+      slots[slot] = WidgetStackSlot(
+        [newWidget],
+        spanX: newWidget.spanX <= 0 ? 1 : newWidget.spanX,
+        spanY: newWidget.spanY <= 0 ? 1 : newWidget.spanY,
+      );
+    }
     pages[page] = WorkspacePage(slots);
     emit(state.copyWith(pages: pages));
     saveLayout();
@@ -814,13 +860,23 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     if (fromPage == toPage) {
       final slots = Map<int, SlotContent>.from(pages[fromPage].slots)
         ..remove(fromSlot)
-        ..[toSlot] = WidgetStackSlot(merged, spanX: spanX, spanY: spanY);
+        ..[toSlot] = WidgetStackSlot(
+          merged,
+          spanX: spanX,
+          spanY: spanY,
+          currentIndex: merged.length - 1,
+        );
       pages[fromPage] = WorkspacePage(slots);
     } else {
       final fromSlots = Map<int, SlotContent>.from(pages[fromPage].slots)
         ..remove(fromSlot);
       final toSlots = Map<int, SlotContent>.from(pages[toPage].slots)
-        ..[toSlot] = WidgetStackSlot(merged, spanX: spanX, spanY: spanY);
+        ..[toSlot] = WidgetStackSlot(
+          merged,
+          spanX: spanX,
+          spanY: spanY,
+          currentIndex: merged.length - 1,
+        );
       pages[fromPage] = WorkspacePage(fromSlots);
       pages[toPage] = WorkspacePage(toSlots);
     }
@@ -1084,12 +1140,35 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     final slots = Map<int, SlotContent>.from(pages[page].slots);
     final current = slots[slot];
     if (current is WidgetStackSlot) {
-      slots[slot] =
-          WidgetStackSlot(current.widgets, spanX: spanX, spanY: spanY);
+      slots[slot] = WidgetStackSlot(
+        current.widgets,
+        spanX: spanX,
+        spanY: spanY,
+        currentIndex: current.currentIndex,
+      );
       pages[page] = WorkspacePage(slots);
       emit(state.copyWith(pages: pages));
       saveLayout();
     }
+  }
+
+  void updateWidgetStackIndex(int page, int slot, int index) {
+    final pages = List<WorkspacePage>.from(state.pages);
+    if (page < 0 || page >= pages.length) return;
+    final slots = Map<int, SlotContent>.from(pages[page].slots);
+    final current = slots[slot];
+    if (current is! WidgetStackSlot || current.widgets.isEmpty) return;
+    final nextIndex = index.clamp(0, current.widgets.length - 1).toInt();
+    if (nextIndex == current.currentIndex) return;
+    slots[slot] = WidgetStackSlot(
+      current.widgets,
+      spanX: current.spanX,
+      spanY: current.spanY,
+      currentIndex: nextIndex,
+    );
+    pages[page] = WorkspacePage(slots);
+    emit(state.copyWith(pages: pages));
+    saveLayout();
   }
 
   void refreshWidgetProviderMetadata(
@@ -1163,6 +1242,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
             spanY: content.spanY
                 .clamp(minSpanY, maxSpanY < minSpanY ? minSpanY : maxSpanY)
                 .toInt(),
+            currentIndex: content.currentIndex,
           );
         }
         return content;
@@ -1321,6 +1401,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
         'type': 'widgetStack',
         'spanX': slot.spanX,
         'spanY': slot.spanY,
+        'currentIndex': slot.currentIndex,
         'widgets': slot.widgets
             .map((w) => {
                   'appWidgetId': w.appWidgetId,
@@ -1455,6 +1536,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
           widgets,
           spanX: data['spanX'] as int? ?? 2,
           spanY: data['spanY'] as int? ?? 1,
+          currentIndex: data['currentIndex'] as int? ?? 0,
         );
       default:
         return EmptySlot();

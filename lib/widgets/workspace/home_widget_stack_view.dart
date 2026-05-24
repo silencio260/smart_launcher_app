@@ -16,6 +16,7 @@ class HomeWidgetStackView extends StatefulWidget {
   final int spanY;
   final int page;
   final int slot;
+  final int currentIndex;
   final int minSpanX;
   final int minSpanY;
   final int maxSpanX;
@@ -27,6 +28,7 @@ class HomeWidgetStackView extends StatefulWidget {
   final double gridGap;
   final bool isSelected;
   final VoidCallback onDismissResize;
+  final ValueChanged<int>? onIndexChanged;
   final void Function(int slot, int spanX, int spanY) onResize;
 
   const HomeWidgetStackView({
@@ -36,6 +38,7 @@ class HomeWidgetStackView extends StatefulWidget {
     required this.spanY,
     required this.page,
     required this.slot,
+    required this.currentIndex,
     required this.minSpanX,
     required this.minSpanY,
     required this.maxSpanX,
@@ -47,6 +50,7 @@ class HomeWidgetStackView extends StatefulWidget {
     required this.gridGap,
     required this.isSelected,
     required this.onDismissResize,
+    this.onIndexChanged,
     required this.onResize,
   });
 
@@ -67,7 +71,19 @@ class _HomeWidgetStackViewState extends State<HomeWidgetStackView> {
   @override
   void initState() {
     super.initState();
-    _pageController = PageController();
+    _currentIndex = _safeIndex(widget.currentIndex);
+    _pageController = PageController(initialPage: _currentIndex);
+  }
+
+  @override
+  void didUpdateWidget(HomeWidgetStackView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextIndex = _safeIndex(widget.currentIndex);
+    if (nextIndex == _currentIndex) return;
+    _currentIndex = nextIndex;
+    if (_pageController.hasClients) {
+      _pageController.jumpToPage(nextIndex);
+    }
   }
 
   @override
@@ -99,11 +115,15 @@ class _HomeWidgetStackViewState extends State<HomeWidgetStackView> {
                 child: PageView.builder(
                   controller: _pageController,
                   physics: const BouncingScrollPhysics(),
-                  onPageChanged: (i) => setState(() => _currentIndex = i),
+                  onPageChanged: (i) {
+                    setState(() => _currentIndex = i);
+                    widget.onIndexChanged?.call(i);
+                  },
                   itemCount: widget.widgets.length,
                   itemBuilder: (_, i) {
                     final w = widget.widgets[i];
                     return _WidgetStackItem(
+                      key: ValueKey('stack-widget-${w.appWidgetId}'),
                       widgetInfo: w,
                       stackSpanX: widget.spanX,
                       stackSpanY: widget.spanY,
@@ -132,6 +152,11 @@ class _HomeWidgetStackViewState extends State<HomeWidgetStackView> {
       },
     );
   }
+
+  int _safeIndex(int index) {
+    if (widget.widgets.isEmpty) return 0;
+    return index.clamp(0, widget.widgets.length - 1).toInt();
+  }
 }
 
 class _WidgetStackItem extends StatelessWidget {
@@ -145,6 +170,7 @@ class _WidgetStackItem extends StatelessWidget {
   final double gap;
 
   const _WidgetStackItem({
+    super.key,
     required this.widgetInfo,
     required this.stackSpanX,
     required this.stackSpanY,

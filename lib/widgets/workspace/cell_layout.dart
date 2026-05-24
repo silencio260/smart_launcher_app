@@ -1128,37 +1128,9 @@ class _CellLayoutViewState extends State<CellLayoutView>
         );
       case WidgetStackSlot(:final widgets, :final spanX, :final spanY):
         if (widgets.isEmpty) return (0, 0);
-        final minSpanX = widgets.fold<int>(
-          1,
-          (value, widget) => math.max(value, _minSpanXForWidget(widget)),
-        );
-        final minSpanY = widgets.fold<int>(
-          1,
-          (value, widget) => math.max(value, _minSpanYForWidget(widget)),
-        );
-        final maxSpanX = widgets.fold<int>(
-          widget.settings.gridColumns,
-          (value, widget) => math.min(
-            value,
-            _maxSpanXForWidget(
-              widget,
-              minSpanX: _minSpanXForWidget(widget),
-            ),
-          ),
-        );
-        final maxSpanY = widgets.fold<int>(
-          widget.settings.gridRows,
-          (value, widget) => math.min(
-            value,
-            _maxSpanYForWidget(
-              widget,
-              minSpanY: _minSpanYForWidget(widget),
-            ),
-          ),
-        );
         return (
-          spanX.clamp(minSpanX, math.max(minSpanX, maxSpanX)).toInt(),
-          spanY.clamp(minSpanY, math.max(minSpanY, maxSpanY)).toInt(),
+          spanX.clamp(1, widget.settings.gridColumns).toInt(),
+          spanY.clamp(1, widget.settings.gridRows).toInt(),
         );
       default:
         return (0, 0);
@@ -1884,21 +1856,40 @@ class _CellLayoutViewState extends State<CellLayoutView>
         transitionDuration: const Duration(milliseconds: 180),
         reverseTransitionDuration: const Duration(milliseconds: 140),
         pageBuilder: (routeCtx, animation, _) {
-          return _StackEditOverlay(
-            stack: stack,
-            cellWidth: cellWidth,
-            cellHeight: cellHeight,
-            gap: _gridGap,
-            gridColumns: widget.settings.gridColumns,
-            gridRows: widget.settings.gridRows,
-            canAddWidget: pick != null,
-            onRemoveAt: (index) {
-              workspace.removeWidgetFromStack(pageIndex, slot, index);
-              Navigator.of(routeCtx).pop(_StackEditAction.removed);
+          return BlocBuilder<WorkspaceCubit, WorkspaceState>(
+            bloc: workspace,
+            builder: (context, state) {
+              final liveContent =
+                  pageIndex >= 0 && pageIndex < state.pages.length
+                      ? state.pages[pageIndex].slots[slot]
+                      : null;
+              if (liveContent is! WidgetStackSlot) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (routeCtx.mounted) Navigator.of(routeCtx).maybePop();
+                });
+                return const SizedBox.shrink();
+              }
+              return _StackEditOverlay(
+                stack: liveContent,
+                cellWidth: cellWidth,
+                cellHeight: cellHeight,
+                gap: _gridGap,
+                gridColumns: widget.settings.gridColumns,
+                gridRows: widget.settings.gridRows,
+                canAddWidget: pick != null,
+                onRemoveAt: (index) {
+                  workspace.removeWidgetFromStack(
+                    pageIndex,
+                    slot,
+                    index,
+                    collapseSingle: false,
+                  );
+                },
+                onAddWidget: () =>
+                    Navigator.of(routeCtx).pop(_StackEditAction.addWidget),
+                onDismiss: () => Navigator.of(routeCtx).pop(),
+              );
             },
-            onAddWidget: () =>
-                Navigator.of(routeCtx).pop(_StackEditAction.addWidget),
-            onDismiss: () => Navigator.of(routeCtx).pop(),
           );
         },
         transitionsBuilder: (_, animation, __, child) {
@@ -2239,6 +2230,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
       spanY: content.spanY,
       page: widget.pageIndex,
       slot: slot,
+      currentIndex: content.currentIndex,
       minSpanX: minSpanX,
       minSpanY: minSpanY,
       maxSpanX: safeMaxSpanX,
@@ -2250,6 +2242,9 @@ class _CellLayoutViewState extends State<CellLayoutView>
       gridGap: _gridGap,
       isSelected: isSelected,
       onDismissResize: _clearWidgetResizeSelection,
+      onIndexChanged: (index) => context
+          .read<WorkspaceCubit>()
+          .updateWidgetStackIndex(widget.pageIndex, slot, index),
       onResize: (nextSlot, nextSpanX, nextSpanY) =>
           _resizeWidgetStack(slot, content, nextSlot, nextSpanX, nextSpanY),
     );
@@ -2280,6 +2275,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
           spanY: content.spanY,
           page: widget.pageIndex,
           slot: slot,
+          currentIndex: content.currentIndex,
           minSpanX: minSpanX,
           minSpanY: minSpanY,
           maxSpanX: safeMaxSpanX,
@@ -2308,6 +2304,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
               spanY: content.spanY,
               page: widget.pageIndex,
               slot: slot,
+              currentIndex: content.currentIndex,
               minSpanX: minSpanX,
               minSpanY: minSpanY,
               maxSpanX: safeMaxSpanX,
@@ -3152,6 +3149,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
       stack.widgets,
       spanX: stack.spanX,
       spanY: stack.spanY,
+      currentIndex: stack.currentIndex,
     ));
     final minSpanX = stack.widgets.fold<int>(
       1,
@@ -3811,7 +3809,7 @@ class _CornerBracketPainter extends CustomPainter {
   bool shouldRepaint(_CornerBracketPainter old) => old.direction != direction;
 }
 
-enum _StackEditAction { removed, addWidget }
+enum _StackEditAction { addWidget }
 
 const double _stackEditViewportFraction = 0.86;
 const double _stackEditMaxPreviewScale = 0.88;
@@ -3864,6 +3862,21 @@ class _StackEditOverlayState extends State<_StackEditOverlay> {
     super.initState();
     // viewportFraction < 1 makes adjacent pages peek from the sides.
     _controller = PageController(viewportFraction: _stackEditViewportFraction);
+  }
+
+  @override
+  void didUpdateWidget(_StackEditOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final pageCount =
+        widget.stack.widgets.length + (widget.canAddWidget ? 1 : 0);
+    final nextIndex =
+        pageCount == 0 ? 0 : _index.clamp(0, pageCount - 1).toInt();
+    if (nextIndex == _index) return;
+    _index = nextIndex;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.hasClients) return;
+      _controller.jumpToPage(nextIndex);
+    });
   }
 
   @override
@@ -3986,6 +3999,9 @@ class _StackEditOverlayState extends State<_StackEditOverlay> {
                                                 onTap: widget.onAddWidget,
                                               )
                                             : _StackEditTile(
+                                                key: ValueKey(
+                                                  'stack-edit-widget-${widget.stack.widgets[i].appWidgetId}',
+                                                ),
                                                 widgetInfo:
                                                     widget.stack.widgets[i],
                                                 stackSpanX: widget.stack.spanX,
@@ -4065,6 +4081,7 @@ class _StackEditTile extends StatelessWidget {
   final VoidCallback onRemove;
 
   const _StackEditTile({
+    super.key,
     required this.widgetInfo,
     required this.stackSpanX,
     required this.stackSpanY,
