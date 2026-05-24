@@ -1,12 +1,25 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:smart_launcher_app/models/app_info.dart';
+import 'package:smart_launcher_app/models/item_info.dart';
 import 'package:smart_launcher_app/models/launcher_settings.dart';
+import 'package:smart_launcher_app/models/workspace_item_info.dart';
+import 'package:smart_launcher_app/state/apps_cubit.dart';
 import 'package:smart_launcher_app/state/workspace_cubit.dart';
 import 'package:smart_launcher_app/widgets/edit_mode/edit_mode_overlay.dart';
+import 'package:smart_launcher_app/widgets/icons/shaped_icon.dart';
 
 class TestWorkspaceCubit extends WorkspaceCubit {
   TestWorkspaceCubit(WorkspaceState initialState) {
+    emit(initialState);
+  }
+}
+
+class TestAppsCubit extends AppsCubit {
+  TestAppsCubit(AppsState initialState) {
     emit(initialState);
   }
 }
@@ -27,8 +40,13 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: BlocProvider<WorkspaceCubit>.value(
-          value: cubit,
+        home: MultiBlocProvider(
+          providers: [
+            BlocProvider<WorkspaceCubit>.value(value: cubit),
+            BlocProvider<AppsCubit>(
+              create: (_) => TestAppsCubit(AppsState()),
+            ),
+          ],
           child: EditModeOverlay(
             settings: const LauncherSettings(),
             onDismiss: () {},
@@ -61,8 +79,13 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: BlocProvider<WorkspaceCubit>.value(
-          value: cubit,
+        home: MultiBlocProvider(
+          providers: [
+            BlocProvider<WorkspaceCubit>.value(value: cubit),
+            BlocProvider<AppsCubit>(
+              create: (_) => TestAppsCubit(AppsState()),
+            ),
+          ],
           child: EditModeOverlay(
             settings: const LauncherSettings(),
             onDismiss: () => dismissed = true,
@@ -93,5 +116,66 @@ void main() {
 
     await tester.pumpAndSettle();
     expect(dismissed, isTrue);
+  });
+
+  testWidgets('page preview resolves app icons from live apps', (tester) async {
+    final liveIcon = Uint8List.fromList([1, 2, 3, 4]);
+    final cubit = TestWorkspaceCubit(
+      WorkspaceState(
+        pages: [
+          WorkspacePage({
+            0: AppSlot(
+              WorkspaceItemInfo(
+                id: 1,
+                itemType: ItemType.application,
+                packageName: 'com.example.live',
+                componentName: 'com.example.live/.MainActivity',
+                title: 'Stored',
+              ),
+            ),
+          }),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MultiBlocProvider(
+          providers: [
+            BlocProvider<WorkspaceCubit>.value(value: cubit),
+            BlocProvider<AppsCubit>(
+              create: (_) => TestAppsCubit(
+                AppsState(
+                  apps: [
+                    AppInfo(
+                      id: 1,
+                      packageName: 'com.example.live',
+                      appComponentName: 'com.example.live/.MainActivity',
+                      title: 'Live',
+                      icon: liveIcon,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          child: EditModeOverlay(
+            settings: const LauncherSettings(),
+            onDismiss: () {},
+            onWallpaper: () {},
+            onThemes: () {},
+            onWidgets: () {},
+            onSettings: () {},
+            onPageSelected: cubit.setCurrentPage,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final shapedIcon = tester.widget<ShapedIcon>(find.byType(ShapedIcon));
+    expect(shapedIcon.iconBytes, same(liveIcon));
+    expect(shapedIcon.cacheKey, 'com.example.live');
   });
 }

@@ -2,9 +2,11 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../models/app_info.dart';
 import '../../models/folder_info.dart';
 import '../../models/launcher_settings.dart';
 import '../../models/workspace_item_info.dart';
+import '../../state/apps_cubit.dart';
 import '../../state/workspace_cubit.dart';
 import '../icons/shaped_icon.dart';
 import 'threshold_reorderable_list.dart';
@@ -176,6 +178,8 @@ class _EditModeOverlayState extends State<EditModeOverlay>
   Widget _buildPagesRow(WorkspaceState state) {
     return LayoutBuilder(
       builder: (context, constraints) {
+        final appsByPackage =
+            context.select((AppsCubit cubit) => cubit.state.appsByPackage);
         // Show ~2 thumbnails per screen so dragging between slots feels natural.
         final viewH = constraints.maxHeight - 8; // vertical padding allowance
         final thumbH = viewH;
@@ -234,6 +238,7 @@ class _EditModeOverlayState extends State<EditModeOverlay>
                     page: page,
                     folders: state.folders,
                     settings: widget.settings,
+                    appsByPackage: appsByPackage,
                     onJump: () {
                       widget.onPageSelected(i);
                       _dismiss();
@@ -428,12 +433,14 @@ class _PageDots extends StatelessWidget {
 class _PageCard extends StatelessWidget {
   final WorkspacePage page;
   final Map<String, FolderInfo> folders;
+  final Map<String, AppInfo> appsByPackage;
   final LauncherSettings settings;
   final VoidCallback onJump;
 
   const _PageCard({
     required this.page,
     required this.folders,
+    required this.appsByPackage,
     required this.settings,
     required this.onJump,
   });
@@ -461,6 +468,7 @@ class _PageCard extends StatelessWidget {
               child: _PagePreview(
                 page: page,
                 folders: folders,
+                appsByPackage: appsByPackage,
                 settings: settings,
               ),
             ),
@@ -511,11 +519,13 @@ class _JumpToPageButton extends StatelessWidget {
 class _PagePreview extends StatelessWidget {
   final WorkspacePage page;
   final Map<String, FolderInfo> folders;
+  final Map<String, AppInfo> appsByPackage;
   final LauncherSettings settings;
 
   const _PagePreview({
     required this.page,
     required this.folders,
+    required this.appsByPackage,
     required this.settings,
   });
 
@@ -576,6 +586,7 @@ class _PagePreview extends StatelessWidget {
       case AppSlot(:final item):
         return _AppTile(
           item: item,
+          liveApp: appsByPackage[item.packageName],
           iconSize: iconSize,
           shape: settings.iconShape,
           showLabel: settings.showLabels,
@@ -584,6 +595,7 @@ class _PagePreview extends StatelessWidget {
         final folder = folders[folderId];
         return _FolderTile(
           folder: folder,
+          appsByPackage: appsByPackage,
           iconSize: iconSize,
           shape: settings.iconShape,
           showLabel: settings.showLabels,
@@ -606,12 +618,14 @@ class _PagePreview extends StatelessWidget {
 
 class _AppTile extends StatelessWidget {
   final WorkspaceItemInfo item;
+  final AppInfo? liveApp;
   final double iconSize;
   final String shape;
   final bool showLabel;
 
   const _AppTile({
     required this.item,
+    required this.liveApp,
     required this.iconSize,
     required this.shape,
     required this.showLabel,
@@ -619,15 +633,17 @@ class _AppTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = item.title ?? '';
+    final label = item.title ?? liveApp?.name ?? '';
     final fontSize = (iconSize * 0.3).clamp(7.5, 10.0);
+    final cacheKey = item.packageName.isEmpty ? null : item.packageName;
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       mainAxisSize: MainAxisSize.min,
       children: [
         ShapedIcon(
-          iconBytes: item.icon,
-          iconPath: item.iconPath,
+          iconBytes: liveApp?.icon ?? item.icon,
+          iconPath: liveApp?.iconPath ?? item.iconPath,
+          cacheKey: cacheKey,
           shape: shape,
           size: iconSize,
         ),
@@ -655,12 +671,14 @@ class _AppTile extends StatelessWidget {
 
 class _FolderTile extends StatelessWidget {
   final FolderInfo? folder;
+  final Map<String, AppInfo> appsByPackage;
   final double iconSize;
   final String shape;
   final bool showLabel;
 
   const _FolderTile({
     required this.folder,
+    required this.appsByPackage,
     required this.iconSize,
     required this.shape,
     required this.showLabel,
@@ -702,9 +720,9 @@ class _FolderTile extends StatelessWidget {
                       SizedBox(
                         width: miniSize,
                         height: miniSize,
-                        child: ShapedIcon(
-                          iconBytes: item.icon,
-                          iconPath: item.iconPath,
+                        child: _FolderPreviewIcon(
+                          item: item,
+                          liveApp: appsByPackage[item.packageName],
                           shape: shape,
                           size: miniSize,
                         ),
@@ -730,6 +748,32 @@ class _FolderTile extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _FolderPreviewIcon extends StatelessWidget {
+  final WorkspaceItemInfo item;
+  final AppInfo? liveApp;
+  final String shape;
+  final double size;
+
+  const _FolderPreviewIcon({
+    required this.item,
+    required this.liveApp,
+    required this.shape,
+    required this.size,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cacheKey = item.packageName.isEmpty ? null : item.packageName;
+    return ShapedIcon(
+      iconBytes: liveApp?.icon ?? item.icon,
+      iconPath: liveApp?.iconPath ?? item.iconPath,
+      cacheKey: cacheKey,
+      shape: shape,
+      size: size,
     );
   }
 }
