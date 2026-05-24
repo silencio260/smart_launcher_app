@@ -73,6 +73,12 @@ class _HotseatViewState extends State<HotseatView> {
     return true;
   }
 
+  bool _consumeEditModeTap() {
+    if (!WidgetResizeGestureGuard.isResizing) return false;
+    WidgetResizeGestureGuard.requestDismiss();
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!widget.settings.showDock) return const SizedBox.shrink();
@@ -92,12 +98,15 @@ class _HotseatViewState extends State<HotseatView> {
             dragController: widget.dragController,
             onAppTap: widget.onAppTap,
             onAppLongPress: widget.onAppLongPress,
+            onDismissEditSelection: _consumeEditModeTap,
           ),
         );
       }),
     );
 
     return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: _consumeEditModeTap,
       onVerticalDragStart: (_) {
         _consumeCurrentVerticalSwipe = false;
         _consumeEditModeSwipe();
@@ -151,6 +160,7 @@ class _DockSlot extends StatelessWidget {
   final DragController dragController;
   final void Function(AppInfo) onAppTap;
   final void Function(AppInfo) onAppLongPress;
+  final bool Function() onDismissEditSelection;
 
   const _DockSlot({
     required this.item,
@@ -160,6 +170,7 @@ class _DockSlot extends StatelessWidget {
     required this.dragController,
     required this.onAppTap,
     required this.onAppLongPress,
+    required this.onDismissEditSelection,
   });
 
   // Writes `packageName` at position `slot` in dockPackages, expanding the
@@ -241,15 +252,19 @@ class _DockSlot extends StatelessWidget {
           return SizedBox(
             width: slotWidth,
             height: slotHeight,
-            child: candidateData.isNotEmpty
-                ? Container(
-                    margin: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  )
-                : null,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: onDismissEditSelection,
+              child: candidateData.isNotEmpty
+                  ? Container(
+                      margin: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    )
+                  : const SizedBox.expand(),
+            ),
           );
         },
       );
@@ -334,6 +349,8 @@ class _DockSlot extends StatelessWidget {
           child: LongPressDraggable<DragPayload>(
             data: payload,
             delay: const Duration(milliseconds: 350),
+            maxSimultaneousDrags:
+                WidgetResizeGestureGuard.isResizing ? 0 : null,
             onDragStarted: () {
               _initDockPackagesIfNeeded(context);
               dragController.startDrag(payload.item, -1, slot, Offset.zero);
@@ -370,8 +387,14 @@ class _DockSlot extends StatelessWidget {
                 showLabel: settings.showDockLabels,
                 iconShape: settings.iconShape,
                 badgeCount: badge,
-                onTap: () => onAppTap(currentApp),
-                onLongPress: () => onAppLongPress(currentApp),
+                onTap: () {
+                  if (onDismissEditSelection()) return;
+                  onAppTap(currentApp);
+                },
+                onLongPress: () {
+                  if (onDismissEditSelection()) return;
+                  onAppLongPress(currentApp);
+                },
               ),
             ),
           ),
@@ -438,8 +461,11 @@ class _DockSlot extends StatelessWidget {
             child: FolderIconView(
               folder: current.folder,
               settings: folderSettings,
-              onTap: () => _openFolder(context, current.folderId),
-              onLongPress: () {},
+              onTap: () {
+                if (onDismissEditSelection()) return;
+                _openFolder(context, current.folderId);
+              },
+              onLongPress: onDismissEditSelection,
             ),
           ),
         );

@@ -247,6 +247,14 @@ class _CellLayoutViewState extends State<CellLayoutView>
     _syncSelectionGuard();
   }
 
+  bool _dismissWidgetResizeSelectionIfActive() {
+    if (_selectedWidgetSlot == null && !WidgetResizeGestureGuard.isResizing) {
+      return false;
+    }
+    _clearWidgetResizeSelection();
+    return true;
+  }
+
   void _openBackgroundEditMenu() {
     _clearWidgetResizeSelection();
     widget.onBackgroundLongPress();
@@ -2218,6 +2226,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
           return LongPressDraggable<DragPayload>(
             data: payload,
             delay: const Duration(milliseconds: 350),
+            maxSimultaneousDrags: _selectedWidgetSlot == null ? null : 0,
             onDragStarted: () {
               setState(() {
                 _draggingSlot = slot;
@@ -2270,13 +2279,13 @@ class _CellLayoutViewState extends State<CellLayoutView>
                 iconShape: widget.settings.iconShape,
                 badgeCount: badge,
                 onTap: () {
-                  _clearWidgetResizeSelection();
+                  if (_dismissWidgetResizeSelectionIfActive()) return;
                   widget.onAppTap(app);
                 },
                 onLongPress: _draggingSlot == slot
                     ? null
                     : () {
-                        _clearWidgetResizeSelection();
+                        if (_dismissWidgetResizeSelectionIfActive()) return;
                         final box = context.findRenderObject() as RenderBox?;
                         final center = box == null
                             ? Offset.zero
