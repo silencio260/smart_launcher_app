@@ -1690,7 +1690,6 @@ class _CellLayoutViewState extends State<CellLayoutView>
           stepY: cellHeight + _gridGap,
           showDebugHitZones: widget.settings.showGridDebugOverlay,
           onDismiss: _clearWidgetResizeSelection,
-          onResizeEnded: _clearWidgetResizeSelection,
           onResizeSteps: _resizeSelectedWidgetBySteps,
         ),
       ),
@@ -3060,7 +3059,6 @@ class _WorkspaceWidgetResizeFrame extends StatefulWidget {
   final double stepY;
   final bool showDebugHitZones;
   final VoidCallback onDismiss;
-  final VoidCallback onResizeEnded;
   final void Function(
     _WorkspaceResizeDirection direction,
     int dxSteps,
@@ -3073,7 +3071,6 @@ class _WorkspaceWidgetResizeFrame extends StatefulWidget {
     required this.stepY,
     required this.showDebugHitZones,
     required this.onDismiss,
-    required this.onResizeEnded,
     required this.onResizeSteps,
   });
 
@@ -3192,7 +3189,6 @@ class _WorkspaceWidgetResizeFrameState
       showDebugHitZone: widget.showDebugHitZones,
       onPreviewChanged: _setPreview,
       onPreviewEnded: _clearPreview,
-      onResizeEnded: widget.onResizeEnded,
       onResizeSteps: widget.onResizeSteps,
       child: const SizedBox.expand(),
     );
@@ -3243,7 +3239,6 @@ class _WorkspaceWidgetResizeFrameState
         showDebugHitZone: widget.showDebugHitZones,
         onPreviewChanged: _setPreview,
         onPreviewEnded: _clearPreview,
-        onResizeEnded: widget.onResizeEnded,
         onResizeSteps: widget.onResizeSteps,
         child: Center(
           child: DecoratedBox(
@@ -3327,7 +3322,6 @@ class _WorkspaceResizeDragTarget extends StatefulWidget {
     double dy,
   ) onPreviewChanged;
   final VoidCallback onPreviewEnded;
-  final VoidCallback onResizeEnded;
   final Widget child;
 
   const _WorkspaceResizeDragTarget({
@@ -3338,7 +3332,6 @@ class _WorkspaceResizeDragTarget extends StatefulWidget {
     required this.onResizeSteps,
     required this.onPreviewChanged,
     required this.onPreviewEnded,
-    required this.onResizeEnded,
     required this.child,
   });
 
@@ -3420,7 +3413,6 @@ class _WorkspaceResizeDragTargetState
   void _finishResize(double stepX, double stepY) {
     _commitSnapSteps(stepX, stepY);
     widget.onPreviewEnded();
-    widget.onResizeEnded();
     WidgetResizeGestureGuard.end();
     _activePointer = null;
   }
