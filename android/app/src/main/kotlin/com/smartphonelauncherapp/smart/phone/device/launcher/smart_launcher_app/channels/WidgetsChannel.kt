@@ -68,6 +68,18 @@ class WidgetsChannel(
                     logD("getAvailableWidgets args=$profile")
                     getAvailableWidgets(profile, result)
                 }
+                "getPlacedWidgetProviderMetadata" -> {
+                    val profile = WidgetGridProfile(
+                        columns = call.argument<Int>("gridColumns") ?: 5,
+                        rows = call.argument<Int>("gridRows") ?: 6,
+                        cellWidthDp = (call.argument<Double>("cellWidth") ?: 0.0).toFloat(),
+                        cellHeightDp = (call.argument<Double>("cellHeight") ?: 0.0).toFloat(),
+                        gapDp = (call.argument<Double>("gap") ?: 8.0).toFloat(),
+                    )
+                    val widgets = call.argument<List<Any?>>("widgets") ?: emptyList()
+                    logD("getPlacedWidgetProviderMetadata args count=${widgets.size} profile=$profile")
+                    getPlacedWidgetProviderMetadata(widgets, profile, result)
+                }
                 "bindWidget" -> {
                     val packageName = call.argument<String>("packageName") ?: ""
                     val providerClass = call.argument<String>("providerClass") ?: ""
@@ -215,6 +227,72 @@ class WidgetsChannel(
                 mainHandler.post { result.error("WIDGET_ERROR", e.message, null) }
             }
         }.start()
+    }
+
+    private fun getPlacedWidgetProviderMetadata(
+        widgets: List<Any?>,
+        profile: WidgetGridProfile,
+        result: MethodChannel.Result,
+    ) {
+        val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        Thread {
+            try {
+                val manager = AppWidgetManager.getInstance(context)
+                val list = widgets.mapNotNull { raw ->
+                    val ref = raw as? Map<*, *> ?: return@mapNotNull null
+                    val appWidgetId = (ref["appWidgetId"] as? Number)?.toInt() ?: -1
+                    if (appWidgetId <= 0) {
+                        logD("getPlacedWidgetProviderMetadata skip invalidId=$appWidgetId")
+                        return@mapNotNull null
+                    }
+                    val info = manager.getAppWidgetInfo(appWidgetId)
+                    if (info == null) {
+                        logD("getPlacedWidgetProviderMetadata skip missingInfo id=$appWidgetId")
+                        return@mapNotNull null
+                    }
+                    val sizing = WidgetSizing.fromProviderInfo(context, info, profile)
+                    logD(
+                        "placedProviderResult id=$appWidgetId provider=${info.provider.flattenToShortString()} " +
+                            "span=${sizing.spanX}x${sizing.spanY} min=${sizing.minSpanX}x${sizing.minSpanY} " +
+                            "max=${sizing.maxSpanX}x${sizing.maxSpanY}",
+                    )
+                    providerMetadataMap(info, sizing)
+                }
+                mainHandler.post { result.success(list) }
+            } catch (e: Exception) {
+                mainHandler.post { result.error("PLACED_WIDGET_METADATA_ERROR", e.message, null) }
+            }
+        }.start()
+    }
+
+    private fun providerMetadataMap(
+        info: android.appwidget.AppWidgetProviderInfo,
+        sizing: WidgetSizing,
+    ): MutableMap<String, Any?> {
+        val map = mutableMapOf<String, Any?>(
+            "packageName" to info.provider.packageName,
+            "providerClass" to info.provider.className,
+            "appName" to "",
+            "label" to "",
+            "minWidth" to info.minWidth,
+            "minHeight" to info.minHeight,
+            "minResizeWidth" to info.minResizeWidth,
+            "minResizeHeight" to info.minResizeHeight,
+            "resizeMode" to info.resizeMode,
+            "minSpanX" to sizing.minSpanX,
+            "minSpanY" to sizing.minSpanY,
+            "spanX" to sizing.spanX,
+            "spanY" to sizing.spanY,
+            "maxSpanX" to sizing.maxSpanX,
+            "maxSpanY" to sizing.maxSpanY,
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            map["targetCellWidth"] = info.targetCellWidth
+            map["targetCellHeight"] = info.targetCellHeight
+            map["maxResizeWidth"] = info.maxResizeWidth
+            map["maxResizeHeight"] = info.maxResizeHeight
+        }
+        return map
     }
 
     private fun loadWidgetPreview(

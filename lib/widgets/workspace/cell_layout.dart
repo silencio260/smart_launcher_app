@@ -73,6 +73,8 @@ class _CellLayoutViewState extends State<CellLayoutView>
   static const int _resizeVertical = 2;
   static const double _widgetLongPressHitOutset =
       _WorkspaceWidgetResizeFrame.touchOutset;
+  static const Duration _widgetMetadataRefreshDelay =
+      Duration(milliseconds: 1600);
 
   static const double _widgetDragActivationDistance = 8;
   int? _draggingSlot;
@@ -1400,7 +1402,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
             _lastRefreshedCellHeight = chRounded;
             _widgetMetadataRefreshDebounce?.cancel();
             _widgetMetadataRefreshDebounce = Timer(
-              const Duration(milliseconds: 300),
+              _widgetMetadataRefreshDelay,
               () {
                 if (mounted) _refreshWorkspaceWidgetMetadata();
               },
@@ -2978,14 +2980,29 @@ class _CellLayoutViewState extends State<CellLayoutView>
       );
       return;
     }
-    final hasSystemWidgets = widget.page.slots.values.any((content) {
-      if (content is WidgetSlot) return !content.widget.isCustomWidget;
-      if (content is WidgetStackSlot) {
-        return content.widgets.any((widget) => !widget.isCustomWidget);
-      }
-      return false;
-    });
-    if (!hasSystemWidgets) {
+    if (context.read<AppsCubit>().drawerActive) {
+      _lastRefreshedCellWidth = -1;
+      _lastRefreshedCellHeight = -1;
+      _lastWidgetMetadataRefreshKey = null;
+      widgetLog(
+        '[CellLayoutWidgetSizing] refreshMetadata skipped drawerActive '
+        'page=${widget.pageIndex}',
+      );
+      return;
+    }
+    if (_workspacePageIsScrolling()) {
+      _lastRefreshedCellWidth = -1;
+      _lastRefreshedCellHeight = -1;
+      _lastWidgetMetadataRefreshKey = null;
+      widgetLog(
+        '[CellLayoutWidgetSizing] refreshMetadata skipped pageScrolling '
+        'page=${widget.pageIndex}',
+      );
+      return;
+    }
+
+    final placedWidgets = _placedSystemWidgetsForRefresh();
+    if (placedWidgets.isEmpty) {
       widgetLog(
         '[CellLayoutWidgetSizing] refreshMetadata skipped noSystemWidgets '
         'page=${widget.pageIndex}',
@@ -2993,12 +3010,17 @@ class _CellLayoutViewState extends State<CellLayoutView>
       return;
     }
 
+    final widgetKey = placedWidgets
+        .map((widget) =>
+            '${widget.appWidgetId}:${widget.providerPackage}/${widget.providerClass}')
+        .join(',');
     final key = [
       widget.settings.gridColumns,
       widget.settings.gridRows,
       _cellWidth.round(),
       _cellHeight.round(),
       _gridGap.round(),
+      widgetKey,
     ].join(':');
     if (_lastWidgetMetadataRefreshKey == key) {
       widgetLog(
@@ -3009,14 +3031,16 @@ class _CellLayoutViewState extends State<CellLayoutView>
     _lastWidgetMetadataRefreshKey = key;
     widgetLog(
       '[CellLayoutWidgetSizing] refreshMetadata request '
-      'page=${widget.pageIndex} key=$key '
+      'page=${widget.pageIndex} count=${placedWidgets.length} key=$key '
       'grid=${widget.settings.gridColumns}x${widget.settings.gridRows} '
       'cell=${_cellWidth.toStringAsFixed(2)}x${_cellHeight.toStringAsFixed(2)} gap=$_gridGap',
     );
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      final providers = await LauncherService.getAvailableWidgets(
+      final stopwatch = Stopwatch()..start();
+      final providers = await LauncherService.getPlacedWidgetProviderMetadata(
+        widgets: placedWidgets,
         gridColumns: widget.settings.gridColumns,
         gridRows: widget.settings.gridRows,
         cellWidth: _cellWidth,
@@ -3026,7 +3050,8 @@ class _CellLayoutViewState extends State<CellLayoutView>
       if (!mounted) return;
       widgetLog(
         '[CellLayoutWidgetSizing] refreshMetadata response '
-        'page=${widget.pageIndex} providers=${providers.length}',
+        'page=${widget.pageIndex} requested=${placedWidgets.length} '
+        'providers=${providers.length} durationMs=${stopwatch.elapsedMilliseconds}',
       );
       context.read<WorkspaceCubit>().refreshWidgetProviderMetadata(
             providers,
@@ -3034,6 +3059,52 @@ class _CellLayoutViewState extends State<CellLayoutView>
             widget.settings.gridRows,
           );
     });
+  }
+
+  bool _workspacePageIsScrolling() {
+    final scrollable = Scrollable.maybeOf(context);
+    return scrollable?.position.isScrollingNotifier.value ?? false;
+  }
+
+  List<LauncherWidgetInfo> _placedSystemWidgetsForRefresh() {
+    final pages = context.read<WorkspaceCubit>().state.pages;
+    final byKey = <String, LauncherWidgetInfo>{};
+    for (final page in pages) {
+      for (final content in page.slots.values) {
+        if (content is WidgetSlot) {
+          _collectRefreshWidget(content.widget, byKey);
+        } else if (content is WidgetStackSlot) {
+          for (final widgetInfo in content.widgets) {
+            _collectRefreshWidget(widgetInfo, byKey);
+          }
+        }
+      }
+    }
+    final widgets = byKey.values.toList(growable: false);
+    widgets.sort((a, b) {
+      final appWidgetCompare = a.appWidgetId.compareTo(b.appWidgetId);
+      if (appWidgetCompare != 0) return appWidgetCompare;
+      final packageCompare = a.providerPackage.compareTo(b.providerPackage);
+      if (packageCompare != 0) return packageCompare;
+      return a.providerClass.compareTo(b.providerClass);
+    });
+    return widgets;
+  }
+
+  void _collectRefreshWidget(
+    LauncherWidgetInfo widgetInfo,
+    Map<String, LauncherWidgetInfo> byKey,
+  ) {
+    if (widgetInfo.isCustomWidget) return;
+    if (widgetInfo.appWidgetId <= 0) {
+      widgetLog(
+        '[CellLayoutWidgetSizing] refreshMetadata skipped invalidWidget '
+        '${widgetInfo.providerPackage}/${widgetInfo.providerClass} id=${widgetInfo.appWidgetId}',
+      );
+      return;
+    }
+    byKey['${widgetInfo.appWidgetId}:${widgetInfo.providerPackage}/${widgetInfo.providerClass}'] =
+        widgetInfo;
   }
 
   void _resizeSelectedWidgetBySteps(

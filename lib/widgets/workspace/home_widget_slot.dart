@@ -6,6 +6,7 @@ import '../../models/launcher_widget_info.dart';
 import '../../services/launcher_service.dart';
 import '../../state/workspace_cubit.dart';
 import '../clock_widget.dart';
+import '../../utils/drawer_perf.dart';
 import '../edit_mode/edit_mode_scope.dart';
 import 'route_coverage_scope.dart';
 
@@ -170,6 +171,8 @@ class _SpanSyncedWidgetHostViewState extends State<_SpanSyncedWidgetHostView> {
   @override
   void initState() {
     super.initState();
+    DrawerPerf.event('widgetSlot.mount',
+        extra: {'appWidgetId': widget.widgetInfo.appWidgetId});
     _scheduleSizeSync();
   }
 
@@ -221,7 +224,11 @@ class _SpanSyncedWidgetHostViewState extends State<_SpanSyncedWidgetHostView> {
         viewType: 'com.genrevibes.smartlauncher/widget_host_view',
         creationParams: {'appWidgetId': widget.widgetInfo.appWidgetId},
         creationParamsCodec: const StandardMessageCodec(),
-        onPlatformViewCreated: (_) => _scheduleSizeSync(),
+        onPlatformViewCreated: (_) {
+          DrawerPerf.event('widgetSlot.platformViewCreated',
+              extra: {'appWidgetId': widget.widgetInfo.appWidgetId});
+          _scheduleSizeSync();
+        },
         // Empty set: the platform view only receives a pointer sequence when
         // no Flutter recognizer in the arena claimed it (i.e. taps). Horizontal
         // drags go to PageView; vertical drags go to the workspace touch

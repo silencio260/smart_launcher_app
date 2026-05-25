@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import '../models/app_info.dart';
+import '../models/launcher_widget_info.dart';
 import '../models/widget_provider_info.dart';
 import '../utils/debug_flags.dart';
 
@@ -132,6 +133,55 @@ class LauncherService {
     } catch (error, stackTrace) {
       widgetLog(
         '[LauncherServiceWidgets] getAvailableWidgets error=$error\n$stackTrace',
+      );
+      return [];
+    }
+  }
+
+  /// Returns provider sizing metadata only for widgets already placed on home.
+  static Future<List<WidgetProviderInfo>> getPlacedWidgetProviderMetadata({
+    required List<LauncherWidgetInfo> widgets,
+    int? gridColumns,
+    int? gridRows,
+    double? cellWidth,
+    double? cellHeight,
+    double? gap,
+  }) async {
+    if (widgets.isEmpty) return [];
+    try {
+      final stopwatch = Stopwatch()..start();
+      widgetLog(
+        '[LauncherServiceWidgets] getPlacedWidgetProviderMetadata request '
+        'count=${widgets.length} grid=${gridColumns}x$gridRows '
+        'cell=${cellWidth?.toStringAsFixed(2)}x${cellHeight?.toStringAsFixed(2)} gap=$gap',
+      );
+      final List<dynamic> raw = await _widgets.invokeMethod(
+        'getPlacedWidgetProviderMetadata',
+        {
+          'widgets': widgets
+              .map((widget) => {
+                    'appWidgetId': widget.appWidgetId,
+                    'providerPackage': widget.providerPackage,
+                    'providerClass': widget.providerClass,
+                  })
+              .toList(growable: false),
+          if (gridColumns != null) 'gridColumns': gridColumns,
+          if (gridRows != null) 'gridRows': gridRows,
+          if (cellWidth != null) 'cellWidth': cellWidth,
+          if (cellHeight != null) 'cellHeight': cellHeight,
+          if (gap != null) 'gap': gap,
+        },
+      );
+      final providers =
+          raw.map((e) => WidgetProviderInfo.fromMap(e as Map)).toList();
+      widgetLog(
+        '[LauncherServiceWidgets] getPlacedWidgetProviderMetadata response '
+        'count=${providers.length} durationMs=${stopwatch.elapsedMilliseconds}',
+      );
+      return providers;
+    } catch (error, stackTrace) {
+      widgetLog(
+        '[LauncherServiceWidgets] getPlacedWidgetProviderMetadata error=$error\n$stackTrace',
       );
       return [];
     }

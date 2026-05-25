@@ -868,10 +868,20 @@ class _HomeScreenState extends State<HomeScreen>
     int targetPx, {
     required int generation,
   }) async {
+    final sw = Stopwatch()..start();
+    DrawerPerf.event('drawer.prewarm.start',
+        extra: {'apps': apps.length, 'targetPx': targetPx, 'gen': generation});
     var fileCount = 0;
     for (final app in apps) {
       if (!mounted) return;
-      if (!_shouldContinueDrawerPrewarm(generation)) return;
+      if (!_shouldContinueDrawerPrewarm(generation)) {
+        DrawerPerf.event('drawer.prewarm.cancelled', extra: {
+          'phase': 'precache',
+          'processed': fileCount,
+          'durationMs': sw.elapsedMilliseconds,
+        });
+        return;
+      }
       final iconPath = app.iconPath;
       if (iconPath == null || iconPath.isEmpty) continue;
       try {
@@ -886,12 +896,26 @@ class _HomeScreenState extends State<HomeScreen>
       }
       fileCount += 1;
       if (fileCount % 8 == 0) {
+        DrawerPerf.event('drawer.prewarm.batch', extra: {
+          'processed': fileCount,
+          'durationMs': sw.elapsedMilliseconds,
+        });
         await SchedulerBinding.instance.endOfFrame;
       }
       await Future<void>.delayed(const Duration(milliseconds: 3));
     }
+    DrawerPerf.event('drawer.prewarm.precacheDone', extra: {
+      'processed': fileCount,
+      'durationMs': sw.elapsedMilliseconds,
+    });
 
-    if (!_shouldContinueDrawerPrewarm(generation)) return;
+    if (!_shouldContinueDrawerPrewarm(generation)) {
+      DrawerPerf.event('drawer.prewarm.cancelled', extra: {
+        'phase': 'beforeDecode',
+        'durationMs': sw.elapsedMilliseconds,
+      });
+      return;
+    }
     await DecodedIconCache.instance.prewarm(
       apps,
       targetPx: targetPx,
@@ -900,6 +924,10 @@ class _HomeScreenState extends State<HomeScreen>
       pauseBetweenDecodes: const Duration(milliseconds: 6),
       shouldContinue: () => _shouldContinueDrawerPrewarm(generation),
     );
+    DrawerPerf.event('drawer.prewarm.end', extra: {
+      'apps': apps.length,
+      'durationMs': sw.elapsedMilliseconds,
+    });
   }
 
   bool _shouldContinueDrawerPrewarm(int generation) =>

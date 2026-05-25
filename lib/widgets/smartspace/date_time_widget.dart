@@ -19,7 +19,11 @@ class _DateTimeWidgetState extends State<DateTimeWidget> {
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+    // PERF: clock format is `h:mm a` / `HH:mm` — no seconds shown, so a 1Hz
+    // tick was pure waste. 30s is plenty to keep minute boundaries fresh and
+    // stops a 1Hz setState chain that was tripping a CellLayout LayoutBuilder
+    // pass + 100-200ms AppWidgetManager IPC stall every second.
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) setState(() => _now = DateTime.now());
     });
   }

@@ -796,9 +796,6 @@ class _WidgetTile extends StatelessWidget {
       ),
       child: id != null && id > 0
           ? AndroidView(
-              // Keying on the appWidgetId keeps the PlatformView identity tied
-              // to the widget, not to the slot position, so swiping between
-              // pages doesn't dispose/recreate views unnecessarily.
               key: ValueKey('edit-overlay-$id'),
               viewType: 'com.genrevibes.smartlauncher/widget_host_view',
               creationParams: {'appWidgetId': id},

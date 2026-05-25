@@ -1250,7 +1250,12 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
       return WorkspacePage(slots);
     }).toList();
 
-    if (!changed) return;
+    if (!changed) {
+      widgetLog(
+        '[WorkspaceWidgetSizing] refreshMetadata changed=false',
+      );
+      return;
+    }
     widgetLog(
         '[WorkspaceWidgetSizing] refreshMetadata changed=true saving layout');
     emit(state.copyWith(pages: pages));

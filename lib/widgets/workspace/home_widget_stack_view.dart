@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../models/launcher_widget_info.dart';
 import '../../services/launcher_service.dart';
+import '../../utils/drawer_perf.dart';
 import '../edit_mode/edit_mode_scope.dart';
 import 'route_coverage_scope.dart';
 
@@ -324,6 +325,8 @@ class _SpanSyncedStackWidgetViewState
   @override
   void initState() {
     super.initState();
+    DrawerPerf.event('stackSlot.mount',
+        extra: {'appWidgetId': widget.widgetInfo.appWidgetId});
     _scheduleSizeSync();
   }
 
@@ -371,7 +374,6 @@ class _SpanSyncedStackWidgetViewState
 
   @override
   Widget build(BuildContext context) {
-    // See HomeWidgetSlot for the full rationale on these two early returns.
     if (EditModeScope.isActive(context)) {
       return const SizedBox.shrink();
     }
@@ -386,7 +388,11 @@ class _SpanSyncedStackWidgetViewState
         viewType: 'com.genrevibes.smartlauncher/widget_host_view',
         creationParams: {'appWidgetId': widget.widgetInfo.appWidgetId},
         creationParamsCodec: const StandardMessageCodec(),
-        onPlatformViewCreated: (_) => _scheduleSizeSync(),
+        onPlatformViewCreated: (_) {
+          DrawerPerf.event('stackSlot.platformViewCreated',
+              extra: {'appWidgetId': widget.widgetInfo.appWidgetId});
+          _scheduleSizeSync();
+        },
         // Empty set: the platform view only receives the pointer sequence
         // when no Flutter recognizer in the arena claimed it (taps).
         // Horizontal drags flow to the nearest PageView (the stack's own
