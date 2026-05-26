@@ -717,6 +717,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
           payload.sourceSlot,
           widget.pageIndex,
           resolvedSlot,
+          maxSpanY: _stackMaxRowSpan(),
         );
       } else if (resolvedTarget is AppSlot) {
         final path = _findDisplacementPath(
@@ -2293,7 +2294,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
       ),
     );
     final maxSpanY = content.widgets.fold<int>(
-      widget.settings.gridRows,
+      _stackMaxRowSpan(),
       (value, widget) => math.min(
         value,
         _maxSpanYForWidget(
@@ -2903,6 +2904,11 @@ class _CellLayoutViewState extends State<CellLayoutView>
     );
   }
 
+  // Stacks are capped one row below the grid height so a stack can never
+  // fill the column. A full-height stack would block touching the page
+  // background and would dominate the workspace visually.
+  int _stackMaxRowSpan() => math.max(1, widget.settings.gridRows - 1);
+
   int _maxSpanYForWidget(
     LauncherWidgetInfo widgetInfo, {
     required int minSpanY,
@@ -3172,7 +3178,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
           ),
         );
         final maxSpanY = widgets.fold<int>(
-          widget.settings.gridRows,
+          _stackMaxRowSpan(),
           (value, widget) => math.min(
             value,
             _maxSpanYForWidget(
@@ -3336,7 +3342,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
       ),
     );
     final maxSpanY = stack.widgets.fold<int>(
-      widget.settings.gridRows,
+      _stackMaxRowSpan(),
       (value, widget) => math.min(
         value,
         _maxSpanYForWidget(

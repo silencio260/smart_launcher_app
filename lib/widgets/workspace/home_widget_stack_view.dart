@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import '../../models/launcher_widget_info.dart';
 import '../../services/launcher_service.dart';
@@ -121,28 +122,30 @@ class _HomeWidgetStackViewState extends State<HomeWidgetStackView> {
               // PageView/AndroidViews.
               child: AbsorbPointer(
                 absorbing: widget.isSelected,
-                child: PageView.builder(
-                  controller: _pageController,
-                  physics: const BouncingScrollPhysics(),
-                  onPageChanged: (i) {
-                    setState(() => _currentIndex = i);
-                    widget.onIndexChanged?.call(i);
-                  },
-                  itemCount: widget.widgets.length,
-                  itemBuilder: (_, i) {
-                    final w = widget.widgets[i];
-                    return _WidgetStackItem(
-                      key: ValueKey('stack-widget-${w.appWidgetId}'),
-                      widgetInfo: w,
-                      stackSpanX: widget.spanX,
-                      stackSpanY: widget.spanY,
-                      gridColumns: widget.gridColumns,
-                      gridRows: widget.gridRows,
-                      cellWidth: widget.resizeStepX - widget.gridGap,
-                      cellHeight: widget.resizeStepY - widget.gridGap,
-                      gap: widget.gridGap,
-                    );
-                  },
+                child: _maybeReserveEdgeGutters(
+                  child: PageView.builder(
+                    controller: _pageController,
+                    physics: const BouncingScrollPhysics(),
+                    onPageChanged: (i) {
+                      setState(() => _currentIndex = i);
+                      widget.onIndexChanged?.call(i);
+                    },
+                    itemCount: widget.widgets.length,
+                    itemBuilder: (_, i) {
+                      final w = widget.widgets[i];
+                      return _WidgetStackItem(
+                        key: ValueKey('stack-widget-${w.appWidgetId}'),
+                        widgetInfo: w,
+                        stackSpanX: widget.spanX,
+                        stackSpanY: widget.spanY,
+                        gridColumns: widget.gridColumns,
+                        gridRows: widget.gridRows,
+                        cellWidth: widget.resizeStepX - widget.gridGap,
+                        cellHeight: widget.resizeStepY - widget.gridGap,
+                        gap: widget.gridGap,
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
@@ -165,6 +168,58 @@ class _HomeWidgetStackViewState extends State<HomeWidgetStackView> {
   int _safeIndex(int index) {
     if (widget.widgets.isEmpty) return 0;
     return index.clamp(0, widget.widgets.length - 1).toInt();
+  }
+
+  // When the stack covers most of the screen width, paging the stack and
+  // paging the workspace are both horizontal swipes on the same area — they
+  // feel identical. Reserve a narrow band on each horizontal edge where
+  // pointers skip the stack's PageView entirely, so the workspace pager
+  // claims those gestures. Pointers in the central region still drive the
+  // stack. Trade-off: taps that land inside the gutter fall through to the
+  // workspace; the band is kept tight so this is rarely hit in practice.
+  static const double _edgeGutterWidth = 24.0;
+
+  Widget _maybeReserveEdgeGutters({required Widget child}) {
+    final isFullWidth = widget.spanX >= widget.gridColumns - 1;
+    if (!isFullWidth) return child;
+    return _EdgeBandHitTestGate(bandWidth: _edgeGutterWidth, child: child);
+  }
+}
+
+class _EdgeBandHitTestGate extends SingleChildRenderObjectWidget {
+  final double bandWidth;
+  const _EdgeBandHitTestGate({required this.bandWidth, required Widget child})
+      : super(child: child);
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderEdgeBandHitTestGate(bandWidth: bandWidth);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderEdgeBandHitTestGate renderObject,
+  ) {
+    renderObject.bandWidth = bandWidth;
+  }
+}
+
+class _RenderEdgeBandHitTestGate extends RenderProxyBox {
+  _RenderEdgeBandHitTestGate({required double bandWidth})
+      : _bandWidth = bandWidth;
+
+  double _bandWidth;
+  set bandWidth(double value) {
+    if (value == _bandWidth) return;
+    _bandWidth = value;
+  }
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (position.dx < _bandWidth || position.dx > size.width - _bandWidth) {
+      return false;
+    }
+    return super.hitTest(result, position: position);
   }
 }
 

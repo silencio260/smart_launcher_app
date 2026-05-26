@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
@@ -838,7 +839,16 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
   }
 
   // Creates a widget stack from two widget slots (or a widget and a stack).
-  void createWidgetStack(int fromPage, int fromSlot, int toPage, int toSlot) {
+  // [maxSpanY] is the caller-provided cap so stacks can never fill the column
+  // (see _stackMaxRowSpan in cell_layout). The cubit doesn't know grid
+  // dimensions itself, so the constraint travels in with the call.
+  void createWidgetStack(
+    int fromPage,
+    int fromSlot,
+    int toPage,
+    int toSlot, {
+    required int maxSpanY,
+  }) {
     final pages = List<WorkspacePage>.from(state.pages);
     if (fromPage < 0 || fromPage >= pages.length) return;
     if (toPage < 0 || toPage >= pages.length) return;
@@ -855,7 +865,8 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     if (merged.isEmpty) return;
 
     final spanX = merged.map((w) => w.spanX).reduce((a, b) => a > b ? a : b);
-    final spanY = merged.map((w) => w.spanY).reduce((a, b) => a > b ? a : b);
+    final rawSpanY = merged.map((w) => w.spanY).reduce((a, b) => a > b ? a : b);
+    final spanY = rawSpanY.clamp(1, math.max(1, maxSpanY)).toInt();
 
     if (fromPage == toPage) {
       final slots = Map<int, SlotContent>.from(pages[fromPage].slots)
