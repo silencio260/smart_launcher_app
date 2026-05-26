@@ -42,6 +42,7 @@ class _EditModeOverlayState extends State<EditModeOverlay>
   late ScrollController _scrollController;
   int _displayedPage = 0;
   bool _didAlignInitialPage = false;
+  double _itemExtent = 1;
 
   @override
   void initState() {
@@ -54,11 +55,36 @@ class _EditModeOverlayState extends State<EditModeOverlay>
     _animController.forward();
 
     _displayedPage = context.read<WorkspaceCubit>().state.currentPage;
-    _scrollController = ScrollController();
+    _scrollController = ScrollController()..addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients || _itemExtent <= 1) return;
+    final raw = _scrollController.position.pixels / _itemExtent;
+    final pageCount = context.read<WorkspaceCubit>().state.pages.length;
+    final nearest = raw.round();
+    // Clamp to real pages (the add-page slot at index pageCount has no dot).
+    final clamped = nearest.clamp(0, pageCount - 1);
+    final mapped = nearest >= pageCount ? -1 : clamped;
+    if (mapped != _displayedPage) {
+      setState(() => _displayedPage = mapped);
+    }
+  }
+
+  void _jumpToPage(int pageIndex) {
+    if (!_scrollController.hasClients || _itemExtent <= 1) return;
+    final target = (pageIndex * _itemExtent)
+        .clamp(0.0, _scrollController.position.maxScrollExtent);
+    _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+    );
   }
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _animController.dispose();
     super.dispose();
@@ -125,6 +151,11 @@ class _EditModeOverlayState extends State<EditModeOverlay>
   }
 
   void _onReorder(int oldIndex, int newIndex) {
+    final pageCount = context.read<WorkspaceCubit>().state.pages.length;
+    // The trailing slot at `pageCount` is the add-page card; it isn't movable
+    // and can't be a drop destination past the last real page.
+    if (oldIndex >= pageCount) return;
+    if (newIndex > pageCount) newIndex = pageCount;
     if (newIndex > oldIndex) newIndex -= 1;
     if (oldIndex == newIndex) return;
     final cubit = context.read<WorkspaceCubit>();
@@ -142,8 +173,11 @@ class _EditModeOverlayState extends State<EditModeOverlay>
         child: SafeArea(
           child: BlocBuilder<WorkspaceCubit, WorkspaceState>(
             builder: (context, state) {
-              final activeIndex =
-                  _displayedPage.clamp(0, state.pages.length - 1);
+              // _displayedPage == -1 means the add-page card is centered;
+              // no dot should be active in that case.
+              final activeIndex = _displayedPage < 0
+                  ? -1
+                  : _displayedPage.clamp(0, state.pages.length - 1);
               return Column(
                 children: [
                   const SizedBox(height: 6),
@@ -162,6 +196,7 @@ class _EditModeOverlayState extends State<EditModeOverlay>
                     count: state.pages.length,
                     active: activeIndex,
                     onAddPage: _addPage,
+                    onDotTap: _jumpToPage,
                   ),
                   const SizedBox(height: 22),
                   _buildBottomBar(),
@@ -186,14 +221,16 @@ class _EditModeOverlayState extends State<EditModeOverlay>
         final thumbW = thumbH * 9 / 16;
         final horizontalInset =
             ((constraints.maxWidth - thumbW) / 2).clamp(12.0, 80.0);
-        _alignInitialPage(itemExtent: thumbW + 12);
+        _itemExtent = thumbW + 12;
+        _alignInitialPage(itemExtent: _itemExtent);
 
         return ThresholdReorderableList(
           controller: _scrollController,
           scrollDirection: Axis.horizontal,
           padding:
               EdgeInsets.symmetric(horizontal: horizontalInset, vertical: 4),
-          itemCount: state.pages.length,
+          // +1 for the trailing add-page card (not part of the cubit state).
+          itemCount: state.pages.length + 1,
           onReorder: _onReorder,
           // Slow the edge auto-scroll way down so neighbors don't whip past
           // when the dragged page gets near the left/right edge. Stock value
@@ -222,6 +259,20 @@ class _EditModeOverlayState extends State<EditModeOverlay>
             );
           },
           itemBuilder: (context, i) {
+            // Last slot is the static "+" card. Not reorderable, not deletable.
+            if (i == state.pages.length) {
+              return Padding(
+                key: const ValueKey('edit-mode-add-page-card'),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: SizedBox(
+                  width: thumbW,
+                  child: IgnorePointer(
+                    ignoring: false,
+                    child: _AddPageCard(onTap: _addPage),
+                  ),
+                ),
+              );
+            }
             final page = state.pages[i];
             return Padding(
               key: ObjectKey(page),
@@ -383,11 +434,13 @@ class _PageDots extends StatelessWidget {
   final int count;
   final int active;
   final VoidCallback onAddPage;
+  final ValueChanged<int> onDotTap;
 
   const _PageDots({
     required this.count,
     required this.active,
     required this.onAddPage,
+    required this.onDotTap,
   });
 
   @override
@@ -396,21 +449,26 @@ class _PageDots extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         for (var i = 0; i < count; i++)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: i == active ? 8 : 6,
-              height: i == active ? 8 : 6,
-              decoration: BoxDecoration(
-                color: i == active
-                    ? Colors.white
-                    : Colors.white.withValues(alpha: 0.35),
-                shape: BoxShape.circle,
+          GestureDetector(
+            onTap: () => onDotTap(i),
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              // Bigger hit area than the visible dot so it's easy to tap.
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: i == active ? 8 : 6,
+                height: i == active ? 8 : 6,
+                decoration: BoxDecoration(
+                  color: i == active
+                      ? Colors.white
+                      : Colors.white.withValues(alpha: 0.35),
+                  shape: BoxShape.circle,
+                ),
               ),
             ),
           ),
-        const SizedBox(width: 6),
+        const SizedBox(width: 4),
         GestureDetector(
           onTap: onAddPage,
           behavior: HitTestBehavior.opaque,
@@ -451,63 +509,54 @@ class _PageCard extends StatelessWidget {
       key: const ValueKey('edit-mode-page-card'),
       onTap: onJump,
       behavior: HitTestBehavior.opaque,
-      child: Stack(
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.55),
-                width: 1.4,
-              ),
-            ),
-            clipBehavior: Clip.antiAlias,
-            padding: const EdgeInsets.all(6),
-            child: IgnorePointer(
-              child: _PagePreview(
-                page: page,
-                folders: folders,
-                appsByPackage: appsByPackage,
-                settings: settings,
-              ),
-            ),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.55),
+            width: 1.4,
           ),
-          Positioned(
-            right: 6,
-            bottom: 6,
-            child: _JumpToPageButton(onTap: onJump),
+        ),
+        clipBehavior: Clip.antiAlias,
+        padding: const EdgeInsets.all(6),
+        child: IgnorePointer(
+          child: _PagePreview(
+            page: page,
+            folders: folders,
+            appsByPackage: appsByPackage,
+            settings: settings,
           ),
-        ],
+        ),
       ),
     );
   }
 }
 
-class _JumpToPageButton extends StatelessWidget {
+class _AddPageCard extends StatelessWidget {
   final VoidCallback onTap;
-  const _JumpToPageButton({required this.onTap});
+  const _AddPageCard({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: 28,
-        height: 28,
+      child: DecoratedBox(
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.55),
-          shape: BoxShape.circle,
+          color: Colors.white.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(22),
           border: Border.all(
-            color: Colors.white.withValues(alpha: 0.4),
-            width: 1,
+            color: Colors.white.withValues(alpha: 0.35),
+            width: 1.2,
           ),
         ),
-        child: const Icon(
-          Icons.open_in_full,
-          color: Colors.white,
-          size: 14,
+        child: Center(
+          child: Icon(
+            Icons.add,
+            color: Colors.white.withValues(alpha: 0.85),
+            size: 48,
+          ),
         ),
       ),
     );
