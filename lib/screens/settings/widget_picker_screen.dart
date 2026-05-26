@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/launcher_widget_info.dart';
 import '../../models/widget_provider_info.dart';
 import '../../services/launcher_service.dart';
+import '../../services/widget_provider_cache_service.dart';
 import '../../state/apps_cubit.dart';
 import '../../state/settings_cubit.dart';
 import '../../state/workspace_cubit.dart';
@@ -20,10 +22,25 @@ class WidgetPickerScreen extends StatefulWidget {
   /// merge the picked widget into an existing slot.
   final void Function(LauncherWidgetInfo widget)? onWidgetPicked;
 
+  /// Test seam: override the cache service. Production uses the singleton.
+  final WidgetProviderCacheService? cacheService;
+
+  /// Test seam: override the platform fetch. Production calls
+  /// [LauncherService.getAvailableWidgets].
+  final Future<List<WidgetProviderInfo>> Function({
+    required int gridColumns,
+    required int gridRows,
+    required double cellWidth,
+    required double cellHeight,
+    required double gap,
+  })? fetchWidgets;
+
   const WidgetPickerScreen({
     super.key,
     this.onWidgetAdded,
     this.onWidgetPicked,
+    this.cacheService,
+    this.fetchWidgets,
   });
 
   @override
@@ -33,11 +50,41 @@ class WidgetPickerScreen extends StatefulWidget {
 class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
   List<WidgetProviderInfo> _providers = [];
   bool _loading = true;
+  bool _refreshing = false;
   String _error = '';
   bool _loadedInitialWidgets = false;
 
   // Which app package names are expanded
   final Set<String> _expanded = {};
+
+  WidgetProviderCacheService get _cache =>
+      widget.cacheService ?? WidgetProviderCacheService.instance;
+
+  Future<List<WidgetProviderInfo>> _fetch({
+    required int gridColumns,
+    required int gridRows,
+    required double cellWidth,
+    required double cellHeight,
+    required double gap,
+  }) {
+    final override = widget.fetchWidgets;
+    if (override != null) {
+      return override(
+        gridColumns: gridColumns,
+        gridRows: gridRows,
+        cellWidth: cellWidth,
+        cellHeight: cellHeight,
+        gap: gap,
+      );
+    }
+    return LauncherService.getAvailableWidgets(
+      gridColumns: gridColumns,
+      gridRows: gridRows,
+      cellWidth: cellWidth,
+      cellHeight: cellHeight,
+      gap: gap,
+    );
+  }
 
   @override
   void initState() {
@@ -49,66 +96,118 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
     super.didChangeDependencies();
     if (_loadedInitialWidgets) return;
     _loadedInitialWidgets = true;
-    _loadWidgets();
+    _bootstrap();
   }
 
-  Future<void> _loadWidgets() async {
-    setState(() {
-      _loading = true;
-      _error = '';
-    });
+  ({double cellWidth, double cellHeight, int gridColumns, int gridRows})
+      _computeGrid() {
+    final settings = context.read<SettingsCubit>().state;
+    final mediaQuery = MediaQuery.of(context);
+    const gap = 8.0;
+    final cellWidth =
+        (mediaQuery.size.width - 16.0 - (settings.gridColumns - 1) * gap) /
+            settings.gridColumns;
+    final hotseatSlotHeight = settings.iconSize +
+        (settings.showDockLabels ? settings.iconSize * 0.6 : 16.0);
+    final hotseatTotalHeight = settings.showDock
+        ? hotseatSlotHeight + 24.0 + mediaQuery.padding.bottom + 12.0
+        : 0.0;
+    final workspaceHeight = mediaQuery.size.height -
+        mediaQuery.padding.top -
+        8.0 -
+        hotseatTotalHeight -
+        16.0;
+    final cellHeight =
+        (workspaceHeight - (settings.gridRows - 1) * gap) / settings.gridRows;
+    return (
+      cellWidth: cellWidth,
+      cellHeight: cellHeight,
+      gridColumns: settings.gridColumns,
+      gridRows: settings.gridRows,
+    );
+  }
+
+  Future<void> _bootstrap() async {
+    final grid = _computeGrid();
+    final key = WidgetCacheKey.from(
+      gridColumns: grid.gridColumns,
+      gridRows: grid.gridRows,
+      cellWidth: grid.cellWidth,
+      cellHeight: grid.cellHeight,
+    );
+
+    final cached = await _cache.load(key);
+    if (!mounted) return;
+    if (cached != null && cached.isNotEmpty) {
+      setState(() {
+        _providers = [_builtinClockProvider(), ...cached];
+        _loading = false;
+        _refreshing = true;
+        _error = '';
+      });
+    }
+    await _refreshFromPlatform(key);
+  }
+
+  Future<void> _refreshFromPlatform(WidgetCacheKey key) async {
+    final grid = _computeGrid();
+    if (mounted) {
+      setState(() {
+        _refreshing = true;
+        if (_providers.isEmpty) _loading = true;
+      });
+    }
+    widgetLog(
+      '[WidgetPickerSizing] refresh '
+      'grid=${grid.gridColumns}x${grid.gridRows} '
+      'cell=${grid.cellWidth.toStringAsFixed(2)}x${grid.cellHeight.toStringAsFixed(2)}',
+    );
     try {
-      final settings = context.read<SettingsCubit>().state;
-      final mediaQuery = MediaQuery.of(context);
-      const gap = 8.0;
-      final cellWidth =
-          (mediaQuery.size.width - 16.0 - (settings.gridColumns - 1) * gap) /
-              settings.gridColumns;
-      // Estimate actual workspace height using real system insets.
-      // Mirrors home_screen.dart: statusBar+8 at top, hotseat+navBar+12 at bottom,
-      // plus CellLayout's EdgeInsets.all(8) padding (16dp total off height).
-      final hotseatSlotHeight = settings.iconSize +
-          (settings.showDockLabels ? settings.iconSize * 0.6 : 16.0);
-      final hotseatTotalHeight = settings.showDock
-          ? hotseatSlotHeight + 24.0 + mediaQuery.padding.bottom + 12.0
-          : 0.0;
-      final workspaceHeight = mediaQuery.size.height -
-          mediaQuery.padding.top -
-          8.0 -
-          hotseatTotalHeight -
-          16.0;
-      final cellHeight =
-          (workspaceHeight - (settings.gridRows - 1) * gap) / settings.gridRows;
-      widgetLog(
-        '[WidgetPickerSizing] loadWidgets '
-        'screen=${mediaQuery.size.width.toStringAsFixed(2)}x${mediaQuery.size.height.toStringAsFixed(2)} '
-        'padding=${mediaQuery.padding} '
-        'grid=${settings.gridColumns}x${settings.gridRows} '
-        'gap=$gap dock(show=${settings.showDock}, icon=${settings.iconSize}, labels=${settings.showDockLabels}) '
-        'workspaceHeight=${workspaceHeight.toStringAsFixed(2)} '
-        'cell=${cellWidth.toStringAsFixed(2)}x${cellHeight.toStringAsFixed(2)}',
+      final list = await _fetch(
+        gridColumns: grid.gridColumns,
+        gridRows: grid.gridRows,
+        cellWidth: grid.cellWidth,
+        cellHeight: grid.cellHeight,
+        gap: 8.0,
       );
-      final list = await LauncherService.getAvailableWidgets(
-        gridColumns: settings.gridColumns,
-        gridRows: settings.gridRows,
-        cellWidth: cellWidth,
-        cellHeight: cellHeight,
-        gap: gap,
-      );
-      if (mounted) {
-        setState(() {
-          _providers = [_builtinClockProvider(), ...list];
-          _loading = false;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _providers = [_builtinClockProvider(), ...list];
+        _loading = false;
+        _refreshing = false;
+        _error = '';
+      });
+      // Cache only the platform-derived providers, never the synthetic
+      // builtin clock — that's re-prepended on every load.
+      unawaited(_cache.save(key, list));
     } catch (e) {
-      if (mounted) {
-        setState(() {
+      if (!mounted) return;
+      setState(() {
+        _refreshing = false;
+        if (_providers.isEmpty) {
           _error = 'Could not load widgets: $e';
           _loading = false;
-        });
+        }
+      });
+      if (_providers.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not refresh widgets. Showing cached list.'),
+          ),
+        );
       }
     }
+  }
+
+  Future<void> _onPullToRefresh() async {
+    final grid = _computeGrid();
+    final key = WidgetCacheKey.from(
+      gridColumns: grid.gridColumns,
+      gridRows: grid.gridRows,
+      cellWidth: grid.cellWidth,
+      cellHeight: grid.cellHeight,
+    );
+    await _refreshFromPlatform(key);
   }
 
   // Group providers by packageName
@@ -257,9 +356,15 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
-            onPressed: _loadWidgets,
+            onPressed: _refreshing ? null : _onPullToRefresh,
           ),
         ],
+        bottom: _refreshing && !_loading
+            ? const PreferredSize(
+                preferredSize: Size.fromHeight(2),
+                child: LinearProgressIndicator(minHeight: 2),
+              )
+            : null,
       ),
       body: _buildBody(),
     );
@@ -281,7 +386,10 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
             const SizedBox(height: 12),
             Text(_error, textAlign: TextAlign.center),
             const SizedBox(height: 16),
-            FilledButton(onPressed: _loadWidgets, child: const Text('Retry')),
+            FilledButton(
+              onPressed: _onPullToRefresh,
+              child: const Text('Retry'),
+            ),
           ],
         ),
       );
@@ -313,9 +421,12 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
         return nameA.compareTo(nameB);
       });
 
-    return ListView.builder(
-      itemCount: packages.length,
-      itemBuilder: (context, i) {
+    return RefreshIndicator(
+      onRefresh: _onPullToRefresh,
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        itemCount: packages.length,
+        itemBuilder: (context, i) {
         final pkg = packages[i];
         final providers = grouped[pkg]!
           ..sort(
@@ -393,6 +504,7 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
           ],
         );
       },
+      ),
     );
   }
 }
