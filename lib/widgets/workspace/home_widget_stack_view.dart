@@ -106,6 +106,14 @@ class _HomeWidgetStackViewState extends State<HomeWidgetStackView> {
         return Stack(
           children: [
             Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            ),
+            Positioned.fill(
               // AbsorbPointer (not IgnorePointer): same reason as
               // HomeWidgetSlot — keeps the subtree hit-testable so the parent
               // LongPressDraggable can re-arm a move drag on long-press,
