@@ -1372,7 +1372,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
     }
 
     return Padding(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final columns = widget.settings.gridColumns;
@@ -1412,6 +1412,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
 
           return Stack(
             key: _stackKey,
+            clipBehavior: Clip.none,
             children: [
               // Page-wide dismiss catcher behind the widgets. When nothing is
               // selected we only register a tap recognizer so it can't compete
@@ -1547,6 +1548,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
                   final widgetDropPreview =
                       _buildWidgetDropPreview(cellWidth, cellHeight);
                   return Stack(
+                    clipBehavior: Clip.none,
                     children: [
                       if (widgetDropPreview != null) widgetDropPreview,
                       ...List.generate(totalSlots, (slot) {
