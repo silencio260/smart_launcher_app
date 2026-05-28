@@ -99,7 +99,8 @@ class _EdgePageZone extends StatefulWidget {
 }
 
 class _EdgePageZoneState extends State<_EdgePageZone> {
-  static const double _width = 60;
+  static const double _width = 36;
+  static const Duration _kTriggerDelay = Duration(milliseconds: 850);
 
   Timer? _timer;
   // After this zone successfully triggers a page change, stop accepting the
@@ -184,7 +185,7 @@ class _EdgePageZoneState extends State<_EdgePageZone> {
 
   void _startTimer() {
     _timer?.cancel();
-    _timer = Timer(const Duration(milliseconds: 600), () {
+    _timer = Timer(_kTriggerDelay, () {
       _timer = null;
       final pc = widget.pageController;
       if (pc == null || !pc.hasClients) {
@@ -263,6 +264,12 @@ class _EdgePageZoneState extends State<_EdgePageZone> {
         'pos=$position',
       );
       widget.dragController.updateDragPosition(position);
+      // Re-arm so a still-hovering pointer can chain into the next page
+      // without needing to leave and re-enter the edge band.
+      if (_hasTriggered) {
+        setState(() => _hasTriggered = false);
+        _syncHoverState();
+      }
     });
   }
 
