@@ -12,6 +12,7 @@ import '../../state/settings_cubit.dart';
 import '../../state/workspace_cubit.dart';
 import '../../utils/debug_flags.dart';
 import '../../widgets/icons/shaped_icon.dart';
+import '../../widgets/workspace/widget_grid_math.dart';
 
 class WidgetPickerScreen extends StatefulWidget {
   /// Called after a widget is activated and placed on the home screen.
@@ -339,11 +340,13 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
   }
 
   (int, int) _initialSpanForProvider(WidgetProviderInfo provider) {
-    final settings = context.read<SettingsCubit>().state;
+    final grid = _computeGrid();
     return _preferredCellsForProvider(
       provider,
-      gridColumns: settings.gridColumns,
-      gridRows: settings.gridRows,
+      gridColumns: grid.gridColumns,
+      gridRows: grid.gridRows,
+      cellWidth: grid.cellWidth,
+      cellHeight: grid.cellHeight,
     );
   }
 
@@ -538,6 +541,8 @@ class _WidgetTile extends StatelessWidget {
       provider,
       gridColumns: gridColumns,
       gridRows: gridRows,
+      cellWidth: cellWidth,
+      cellHeight: cellHeight,
     );
 
     final useExpandedPreview =
@@ -782,15 +787,37 @@ class _WidgetTile extends StatelessWidget {
   WidgetProviderInfo provider, {
   required int gridColumns,
   required int gridRows,
+  required double cellWidth,
+  required double cellHeight,
 }) {
   // provider.spanX/Y already accounts for targetCellWidth/Height (clamped to
   // this grid) via WidgetSizing.fromProviderInfo on the native side.
   // Using raw targetCellWidth/Height here would apply the widget's declared
   // cell count against a different (larger) reference grid.
-  final result = (
-    provider.spanX.clamp(1, gridColumns).toInt(),
-    provider.spanY.clamp(1, gridRows).toInt(),
+  //
+  // The effective span must match what cell_layout will render — otherwise
+  // placement reserves a slot smaller than the widget and it bleeds past the
+  // grid edge. See effectiveWidgetSpan in widget_grid_math.dart.
+  final effective = effectiveWidgetSpan(
+    storedSpanX: provider.spanX,
+    storedSpanY: provider.spanY,
+    minSpanX: provider.minSpanX,
+    minSpanY: provider.minSpanY,
+    maxSpanX: provider.maxSpanX,
+    maxSpanY: provider.maxSpanY,
+    minWidth: provider.minWidth,
+    minHeight: provider.minHeight,
+    minResizeWidth: provider.minResizeWidth,
+    minResizeHeight: provider.minResizeHeight,
+    maxResizeWidth: provider.maxResizeWidth,
+    maxResizeHeight: provider.maxResizeHeight,
+    resizeMode: provider.resizeMode,
+    gridColumns: gridColumns,
+    gridRows: gridRows,
+    cellWidth: cellWidth,
+    cellHeight: cellHeight,
   );
+  final result = (effective.spanX, effective.spanY);
   widgetLog(
     '[WidgetPickerSizing] preferredCells provider=${provider.packageName}/${provider.providerClass} '
     'grid=${gridColumns}x$gridRows '

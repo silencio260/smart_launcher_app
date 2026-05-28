@@ -714,12 +714,10 @@ class _CellLayoutViewState extends State<CellLayoutView>
 
   // Fraction of the target icon area covered by the dragged icon.
   //
-  // [localPos] is the dragged feedback's TOP-LEFT in tile-local coords —
-  // `_centerDragAnchorStrategy` anchors the pointer at the feedback center,
-  // so `details.offset = pointer - iconSize/2`. Both icons are iconSize ×
-  // iconSize; the target is centered in the tile at (cellW/2, cellH/2).
-  // Returns 1.0 when icons are perfectly overlapped; 0.0 when separated by
-  // ≥ iconSize on either axis.
+  // [localPos] is the dragged feedback's TOP-LEFT in tile-local coords.
+  // Both icons are iconSize × iconSize; the target is centered in the tile
+  // at (cellW/2, cellH/2). Returns 1.0 when icons are perfectly overlapped;
+  // 0.0 when separated by ≥ iconSize on either axis.
   double _overlapFraction(Offset localPos) {
     final iconSize = widget.settings.iconSize.toDouble();
     final draggedCenterX = localPos.dx + iconSize / 2;
@@ -2771,7 +2769,6 @@ class _CellLayoutViewState extends State<CellLayoutView>
     return LongPressDraggable<DragPayload>(
       data: payload,
       rootOverlay: true,
-      dragAnchorStrategy: _centerDragAnchorStrategy,
       delay: const Duration(milliseconds: 350),
       onDragStarted: () => _armWidgetDrag(slot),
       onDragUpdate: (details) {
@@ -2927,7 +2924,6 @@ class _CellLayoutViewState extends State<CellLayoutView>
     return LongPressDraggable<DragPayload>(
       data: payload,
       rootOverlay: true,
-      dragAnchorStrategy: _centerDragAnchorStrategy,
       delay: const Duration(milliseconds: 350),
       onDragStarted: () => _armWidgetDrag(slot),
       onDragUpdate: (details) {
@@ -3037,15 +3033,6 @@ class _CellLayoutViewState extends State<CellLayoutView>
         );
       },
     );
-  }
-
-  Offset _centerDragAnchorStrategy(
-    Draggable<Object> draggable,
-    BuildContext context,
-    Offset position,
-  ) {
-    final box = context.findRenderObject() as RenderBox?;
-    return box == null ? Offset.zero : box.size.center(Offset.zero);
   }
 
   Widget _buildWidgetDragFeedback({

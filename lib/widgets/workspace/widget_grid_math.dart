@@ -1,4 +1,10 @@
+import '../../models/launcher_widget_info.dart';
 import '../../state/workspace_cubit.dart';
+
+/// Matches `_gridGap` in cell_layout.dart — the spacing between cells used when
+/// converting pixel sizes to cell counts. Centralized so placement-time span
+/// math agrees with render-time span math.
+const double kGridGap = 8.0;
 
 Iterable<int>? slotsForSpan(
   int anchorSlot,
@@ -186,4 +192,148 @@ int? findFirstWidgetFit(
     }
   }
   return null;
+}
+
+/// Effective render-time span for a widget on this grid.
+///
+/// Mirrors the clamp cell_layout applies at render time: the stored span is
+/// pulled up to the resolved min (from explicit minSpan, else from
+/// minResizeWidth/minWidth ÷ cell size) and down to the resolved max.
+/// Placement search MUST use this — otherwise a reserved slot can be smaller
+/// than what gets drawn, and the widget bleeds past its cells.
+({int spanX, int spanY}) effectiveWidgetSpan({
+  required int storedSpanX,
+  required int storedSpanY,
+  required int minSpanX,
+  required int minSpanY,
+  required int maxSpanX,
+  required int maxSpanY,
+  required int minWidth,
+  required int minHeight,
+  required int minResizeWidth,
+  required int minResizeHeight,
+  required int maxResizeWidth,
+  required int maxResizeHeight,
+  required int resizeMode,
+  required int gridColumns,
+  required int gridRows,
+  required double cellWidth,
+  required double cellHeight,
+  double gridGap = kGridGap,
+}) {
+  // resizeMode bits match Android's AppWidgetProviderInfo: 1 = horizontal,
+  // 2 = vertical. cell_layout uses these to decide whether a fills-the-grid
+  // min should fall back to 1.
+  final canResizeH = (resizeMode & 1) != 0;
+  final canResizeV = (resizeMode & 2) != 0;
+
+  final effMinX = _resolveMinSpan(
+    explicitMin: minSpanX,
+    sourceSize: minResizeWidth > 0 ? minResizeWidth : minWidth,
+    cellSize: cellWidth,
+    maxSpan: gridColumns,
+    canResize: canResizeH,
+    gridGap: gridGap,
+  );
+  final effMinY = _resolveMinSpan(
+    explicitMin: minSpanY,
+    sourceSize: minResizeHeight > 0 ? minResizeHeight : minHeight,
+    cellSize: cellHeight,
+    maxSpan: gridRows,
+    canResize: canResizeV,
+    gridGap: gridGap,
+  );
+  final effMaxX = _resolveMaxSpan(
+    explicitMax: maxSpanX,
+    sourceSize: maxResizeWidth,
+    cellSize: cellWidth,
+    minSpan: effMinX,
+    maxSpan: gridColumns,
+    gridGap: gridGap,
+  );
+  final effMaxY = _resolveMaxSpan(
+    explicitMax: maxSpanY,
+    sourceSize: maxResizeHeight,
+    cellSize: cellHeight,
+    minSpan: effMinY,
+    maxSpan: gridRows,
+    gridGap: gridGap,
+  );
+
+  return (
+    spanX: storedSpanX.clamp(effMinX, effMaxX).toInt(),
+    spanY: storedSpanY.clamp(effMinY, effMaxY).toInt(),
+  );
+}
+
+/// Convenience wrapper for stored widgets — feeds [effectiveWidgetSpan] from a
+/// [LauncherWidgetInfo] instead of raw fields.
+({int spanX, int spanY}) effectiveSpanForWidget(
+  LauncherWidgetInfo widget, {
+  required int gridColumns,
+  required int gridRows,
+  required double cellWidth,
+  required double cellHeight,
+  double gridGap = kGridGap,
+}) =>
+    effectiveWidgetSpan(
+      storedSpanX: widget.spanX,
+      storedSpanY: widget.spanY,
+      minSpanX: widget.minSpanX,
+      minSpanY: widget.minSpanY,
+      maxSpanX: widget.maxSpanX,
+      maxSpanY: widget.maxSpanY,
+      minWidth: widget.minWidth,
+      minHeight: widget.minHeight,
+      minResizeWidth: widget.minResizeWidth,
+      minResizeHeight: widget.minResizeHeight,
+      maxResizeWidth: widget.maxResizeWidth,
+      maxResizeHeight: widget.maxResizeHeight,
+      resizeMode: widget.resizeMode,
+      gridColumns: gridColumns,
+      gridRows: gridRows,
+      cellWidth: cellWidth,
+      cellHeight: cellHeight,
+      gridGap: gridGap,
+    );
+
+int _resolveMinSpan({
+  required int explicitMin,
+  required int sourceSize,
+  required double cellSize,
+  required int maxSpan,
+  required bool canResize,
+  required double gridGap,
+}) {
+  if (explicitMin > 0) {
+    final span = explicitMin.clamp(1, maxSpan).toInt();
+    // cell_layout's escape hatch: a min that fills the whole axis AND is
+    // resizable is almost always bogus provider metadata, so allow shrinking
+    // to 1 rather than locking the widget at full size.
+    if (span >= maxSpan && canResize) return 1;
+    return span;
+  }
+  if (sourceSize <= 0 || cellSize <= 0) return 1;
+  final span = ((sourceSize + gridGap) / (cellSize + gridGap))
+      .ceil()
+      .clamp(1, maxSpan)
+      .toInt();
+  if (span >= maxSpan && canResize) return 1;
+  return span;
+}
+
+int _resolveMaxSpan({
+  required int explicitMax,
+  required int sourceSize,
+  required double cellSize,
+  required int minSpan,
+  required int maxSpan,
+  required double gridGap,
+}) {
+  if (explicitMax > 0) return explicitMax.clamp(minSpan, maxSpan).toInt();
+  if (sourceSize <= 0 || cellSize <= 0) return maxSpan;
+  return ((sourceSize + gridGap) / (cellSize + gridGap))
+      .ceil()
+      .clamp(minSpan, maxSpan)
+      .toInt();
 }

@@ -56,34 +56,40 @@ class DragLayer extends StatelessWidget {
                     ),
                   ),
                 ),
-                // Left edge zone — hover 600 ms to go to previous page
+                // Left edge zone — hover to go to previous page. Runs full
+                // height; the trash zone is inset from each edge so the
+                // bottom corners remain reachable for page navigation.
                 Positioned(
                   left: 0,
                   top: 0,
-                  bottom: 80,
+                  bottom: 0,
                   child: _EdgePageZone(
                     direction: -1,
                     pageController: pageController,
                     dragController: dragController,
                   ),
                 ),
-                // Right edge zone — hover 600 ms to go to next page. Creates a
-                // new empty page when on the last page and that page is not
+                // Right edge zone — hover to go to next page. Creates a new
+                // empty page when on the last page and that page is not
                 // itself empty (prevents stacking empty pages).
                 Positioned(
                   right: 0,
                   top: 0,
-                  bottom: 80,
+                  bottom: 0,
                   child: _EdgePageZone(
                     direction: 1,
                     pageController: pageController,
                     dragController: dragController,
                   ),
                 ),
-                // Trash zone at the bottom — drop here to remove from home/dock
+                // Trash zone at the bottom — drop here to remove from
+                // home/dock. Inset 64 px from each edge so the edge page
+                // zones can extend all the way to the bottom corners; the
+                // trash zone still wins in the lower-center via Stack
+                // z-order (it's rendered after the edge zones).
                 Positioned(
-                  left: 0,
-                  right: 0,
+                  left: 64,
+                  right: 64,
                   bottom: 0,
                   child: _TrashZone(dragController: dragController),
                 ),
@@ -113,12 +119,12 @@ class _EdgePageZone extends StatefulWidget {
 
 class _EdgePageZoneState extends State<_EdgePageZone> {
   static const double _width = 36;
-  // Visual chevron is 36 px wide so it's easy to see, but the *trigger* zone
-  // is much tighter — only the outer 12 px counts as "at the edge." This way
-  // the chain only continues while the finger is pressed against the literal
-  // screen edge; drifting inward by even a few pixels cancels it.
-  static const double _kEdgeTriggerPx = 12;
-  static const Duration _kTriggerDelay = Duration(milliseconds: 850);
+  // Trigger band matches the visible chevron width minus a 4 px inner
+  // deadband, so pressing the chevron actually fires the page flip. A
+  // narrower band made the chevron look pressable but require pixel-perfect
+  // edge contact.
+  static const double _kEdgeTriggerPx = 32;
+  static const Duration _kTriggerDelay = Duration(milliseconds: 400);
 
   Timer? _timer;
   // After this zone successfully triggers a page change, stop accepting the
