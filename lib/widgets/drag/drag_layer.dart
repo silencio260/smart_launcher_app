@@ -23,62 +23,75 @@ class DragLayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Pass `child` (the entire workspace subtree) through the `child:` param so
-    // it does NOT rebuild on every drag-position notification — the controller
-    // notifies on each pointer move, but only the overlay needs that cadence.
-    return ListenableBuilder(
-      listenable: dragController,
-      child: child,
-      builder: (context, staticChild) {
-        return Stack(
-          children: [
-            staticChild!,
-            if (dragController.isDragging) ...[
-              // Subtle background dim while dragging
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.2),
+    // Top-level Listener keeps `dragController.dragPosition` fresh even when
+    // LongPressDraggable.onDragUpdate stalls (it can stop firing while
+    // PageView is mid-animation). Without this, the edge-flip chain reads a
+    // stale on-edge position after each flip completes and keeps triggering
+    // even after the finger has moved away.
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerMove: (event) {
+        if (dragController.isDragging) {
+          dragController.updateDragPosition(event.position);
+        }
+      },
+      // Pass `child` (the entire workspace subtree) through the `child:` param so
+      // it does NOT rebuild on every drag-position notification — the controller
+      // notifies on each pointer move, but only the overlay needs that cadence.
+      child: ListenableBuilder(
+        listenable: dragController,
+        child: child,
+        builder: (context, staticChild) {
+          return Stack(
+            children: [
+              staticChild!,
+              if (dragController.isDragging) ...[
+                // Subtle background dim while dragging
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.2),
+                      ),
                     ),
                   ),
                 ),
-              ),
-              // Left edge zone — hover 600 ms to go to previous page
-              Positioned(
-                left: 0,
-                top: 0,
-                bottom: 80,
-                child: _EdgePageZone(
-                  direction: -1,
-                  pageController: pageController,
-                  dragController: dragController,
+                // Left edge zone — hover 600 ms to go to previous page
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 80,
+                  child: _EdgePageZone(
+                    direction: -1,
+                    pageController: pageController,
+                    dragController: dragController,
+                  ),
                 ),
-              ),
-              // Right edge zone — hover 600 ms to go to next page. Creates a
-              // new empty page when on the last page and that page is not
-              // itself empty (prevents stacking empty pages).
-              Positioned(
-                right: 0,
-                top: 0,
-                bottom: 80,
-                child: _EdgePageZone(
-                  direction: 1,
-                  pageController: pageController,
-                  dragController: dragController,
+                // Right edge zone — hover 600 ms to go to next page. Creates a
+                // new empty page when on the last page and that page is not
+                // itself empty (prevents stacking empty pages).
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  bottom: 80,
+                  child: _EdgePageZone(
+                    direction: 1,
+                    pageController: pageController,
+                    dragController: dragController,
+                  ),
                 ),
-              ),
-              // Trash zone at the bottom — drop here to remove from home/dock
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: _TrashZone(dragController: dragController),
-              ),
+                // Trash zone at the bottom — drop here to remove from home/dock
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: _TrashZone(dragController: dragController),
+                ),
+              ],
             ],
-          ],
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
@@ -100,6 +113,11 @@ class _EdgePageZone extends StatefulWidget {
 
 class _EdgePageZoneState extends State<_EdgePageZone> {
   static const double _width = 36;
+  // Visual chevron is 36 px wide so it's easy to see, but the *trigger* zone
+  // is much tighter — only the outer 12 px counts as "at the edge." This way
+  // the chain only continues while the finger is pressed against the literal
+  // screen edge; drifting inward by even a few pixels cancels it.
+  static const double _kEdgeTriggerPx = 12;
   static const Duration _kTriggerDelay = Duration(milliseconds: 850);
 
   Timer? _timer;
@@ -139,8 +157,7 @@ class _EdgePageZoneState extends State<_EdgePageZone> {
 
   void _syncHoverState() {
     if (!mounted) return;
-    final box = context.findRenderObject() as RenderBox?;
-    if (box == null || !box.attached || !widget.dragController.isDragging) {
+    if (!widget.dragController.isDragging) {
       _setHovered(false);
       return;
     }
@@ -151,8 +168,11 @@ class _EdgePageZoneState extends State<_EdgePageZone> {
       return;
     }
 
-    final localPosition = box.globalToLocal(globalPosition);
-    _setHovered((Offset.zero & box.size).contains(localPosition));
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final atEdge = widget.direction > 0
+        ? globalPosition.dx >= screenWidth - _kEdgeTriggerPx
+        : globalPosition.dx <= _kEdgeTriggerPx;
+    _setHovered(atEdge);
   }
 
   void _setHovered(bool hovered) {

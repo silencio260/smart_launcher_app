@@ -429,15 +429,17 @@ class _CellLayoutViewState extends State<CellLayoutView>
     // the menu on a fresh selection (different slot or none selected).
     final isReselectionOfHiddenMenu =
         _selectedWidgetSlot == slot && _menuHiddenForGesture;
-    setState(() {
-      _draggingSlot = slot;
-      _selectedWidgetSlot = slot;
-      _armedWidgetDragSlot = slot;
-      _armedWidgetDragDistance = 0;
-      if (!isReselectionOfHiddenMenu) {
-        _menuHiddenForGesture = false;
-      }
-    });
+    if (mounted) {
+      setState(() {
+        _draggingSlot = slot;
+        _selectedWidgetSlot = slot;
+        _armedWidgetDragSlot = slot;
+        _armedWidgetDragDistance = 0;
+        if (!isReselectionOfHiddenMenu) {
+          _menuHiddenForGesture = false;
+        }
+      });
+    }
     _syncSelectionGuard();
     _activeWidgetDragFeedbackSlot.value = null;
   }
@@ -479,23 +481,25 @@ class _CellLayoutViewState extends State<CellLayoutView>
       'finishWidgetDrag slot=$slot wasActive=$wasActive '
       'wasAccepted=$wasAccepted dragPos=${widget.dragController.dragPosition}',
     );
-    setState(() {
-      _draggingSlot = null;
-      _armedWidgetDragSlot = null;
-      _armedWidgetDragDistance = 0;
-      // On a CANCELLED active drag (user released in a non-target area), do
-      // NOT re-select the source widget. Re-selecting would set
-      // _selectionActive=true on the gesture guard, which freezes the
-      // PageView (physics → NeverScrollableScrollPhysics) and the user is
-      // then "stuck" — every page swipe is blocked until they manually
-      // tap to deselect. Clear selection so the home screen returns to a
-      // fully interactive state.
-      if (wasActive && !wasAccepted) {
-        _selectedWidgetSlot = null;
-      } else if (!wasAccepted) {
-        _selectedWidgetSlot = slot;
-      }
-    });
+    if (mounted) {
+      setState(() {
+        _draggingSlot = null;
+        _armedWidgetDragSlot = null;
+        _armedWidgetDragDistance = 0;
+        // On a CANCELLED active drag (user released in a non-target area), do
+        // NOT re-select the source widget. Re-selecting would set
+        // _selectionActive=true on the gesture guard, which freezes the
+        // PageView (physics → NeverScrollableScrollPhysics) and the user is
+        // then "stuck" — every page swipe is blocked until they manually
+        // tap to deselect. Clear selection so the home screen returns to a
+        // fully interactive state.
+        if (wasActive && !wasAccepted) {
+          _selectedWidgetSlot = null;
+        } else if (!wasAccepted) {
+          _selectedWidgetSlot = slot;
+        }
+      });
+    }
     _syncSelectionGuard();
     _activeWidgetDragFeedbackSlot.value = null;
     _cancelAllDisplacementTimers();
@@ -546,11 +550,13 @@ class _CellLayoutViewState extends State<CellLayoutView>
   }
 
   void _completeWidgetDrag(int slot) {
-    setState(() {
-      _draggingSlot = null;
-      _armedWidgetDragSlot = null;
-      _armedWidgetDragDistance = 0;
-    });
+    if (mounted) {
+      setState(() {
+        _draggingSlot = null;
+        _armedWidgetDragSlot = null;
+        _armedWidgetDragDistance = 0;
+      });
+    }
     _activeWidgetDragFeedbackSlot.value = null;
     _cancelAllDisplacementTimers();
   }
@@ -3132,17 +3138,17 @@ class _CellLayoutViewState extends State<CellLayoutView>
                   .startDrag(item, widget.pageIndex, slot, Offset.zero);
             },
             onDragCompleted: () {
-              setState(() => _draggingSlot = null);
+              if (mounted) setState(() => _draggingSlot = null);
             },
             onDragUpdate: (details) {
               widget.dragController.updateDragPosition(details.globalPosition);
             },
             onDragEnd: (_) {
-              setState(() => _draggingSlot = null);
+              if (mounted) setState(() => _draggingSlot = null);
               widget.dragController.cancelDrag();
             },
             onDraggableCanceled: (_, __) {
-              setState(() => _draggingSlot = null);
+              if (mounted) setState(() => _draggingSlot = null);
               widget.dragController.cancelDrag();
             },
             feedback: PickupFeedback(
@@ -3237,17 +3243,17 @@ class _CellLayoutViewState extends State<CellLayoutView>
                 Offset.zero);
           },
           onDragCompleted: () {
-            setState(() => _draggingSlot = null);
+            if (mounted) setState(() => _draggingSlot = null);
           },
           onDragUpdate: (details) {
             widget.dragController.updateDragPosition(details.globalPosition);
           },
           onDragEnd: (_) {
-            setState(() => _draggingSlot = null);
+            if (mounted) setState(() => _draggingSlot = null);
             widget.dragController.cancelDrag();
           },
           onDraggableCanceled: (_, __) {
-            setState(() => _draggingSlot = null);
+            if (mounted) setState(() => _draggingSlot = null);
             widget.dragController.cancelDrag();
           },
           feedback: PickupFeedback(
