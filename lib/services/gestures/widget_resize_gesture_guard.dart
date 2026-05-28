@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+
 /// Global lock that says "the home screen is currently in some kind of
 /// edit/resize mode and any swipe/tap action that would otherwise navigate
 /// (open drawer, change page, open search, etc.) should be intercepted and

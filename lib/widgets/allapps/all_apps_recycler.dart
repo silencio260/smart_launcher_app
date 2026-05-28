@@ -70,68 +70,70 @@ class _AllAppsRecyclerState extends State<AllAppsRecycler> {
         measureLayout: true,
         measurePaint: true,
         child: CustomScrollView(
-        controller: widget.scrollController,
-        cacheExtent: 1400,
-        slivers: [
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                final item = items[index];
-                if (item is SectionHeader) {
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 12, 0, 4),
-                    child: Text(
-                      item.letter,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
+          controller: widget.scrollController,
+          cacheExtent: 1400,
+          slivers: [
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final item = items[index];
+                  if (item is SectionHeader) {
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 0, 4),
+                      child: Text(
+                        item.letter,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                  );
-                }
-                if (item is AppRow) {
-                  return RepaintBoundary(
-                    child: PerfProbe(
-                      label: 'recycler.row',
-                      child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 6),
-                      child: Row(
-                        children: [
-                          for (final app in item.apps)
-                            Expanded(
-                              child: Center(
-                                child: _DrawerAppIcon(
-                                  key: ValueKey(app.packageName),
-                                  app: app,
-                                  settings: widget.settings,
-                                  dragController: widget.dragController,
-                                  onTap: () => widget.onAppTap(app),
-                                  onLongPress: (pos) =>
-                                      widget.onAppLongPress(app, pos),
-                                  onDragStarted: widget.onDragStarted,
-                                  onDragEnded: widget.onDragEnded,
+                    );
+                  }
+                  if (item is AppRow) {
+                    return RepaintBoundary(
+                      child: PerfProbe(
+                        label: 'recycler.row',
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 6),
+                          child: Row(
+                            children: [
+                              for (final app in item.apps)
+                                Expanded(
+                                  child: Center(
+                                    child: _DrawerAppIcon(
+                                      key: ValueKey(app.packageName),
+                                      app: app,
+                                      settings: widget.settings,
+                                      dragController: widget.dragController,
+                                      onTap: () => widget.onAppTap(app),
+                                      onLongPress: (pos) =>
+                                          widget.onAppLongPress(app, pos),
+                                      onDragStarted: widget.onDragStarted,
+                                      onDragEnded: widget.onDragEnded,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
-                          for (int i = 0; i < columns - item.apps.length; i++)
-                            const Expanded(child: SizedBox.shrink()),
-                        ],
+                              for (int i = 0;
+                                  i < columns - item.apps.length;
+                                  i++)
+                                const Expanded(child: SizedBox.shrink()),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                    ),
-                  );
-                }
-                return const SizedBox.shrink();
-              },
-              childCount: items.length,
-              addRepaintBoundaries: false,
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+                childCount: items.length,
+                addRepaintBoundaries: false,
+              ),
             ),
-          ),
-          const SliverPadding(padding: EdgeInsets.only(bottom: 24)),
-        ],
-      ),
+            const SliverPadding(padding: EdgeInsets.only(bottom: 24)),
+          ],
+        ),
       ),
     );
   }
@@ -220,6 +222,7 @@ class _DrawerAppIconState extends State<_DrawerAppIcon> {
         }
       },
       onDragUpdate: (details) {
+        widget.dragController.updateDragPosition(details.globalPosition);
         // Only navigate to home after a significant downward drag (~one grid row).
         if (_dragArmed && !_dragMoved) {
           final dy = details.globalPosition.dy - _dragStartGlobalPos.dy;

@@ -5,7 +5,7 @@ import '../../models/workspace_item_info.dart';
 import '../../services/drag/drag_controller.dart';
 import '../../state/settings_cubit.dart';
 import '../../state/workspace_cubit.dart';
-import '../workspace/widget_grid_math.dart';
+import '../../utils/debug_flags.dart';
 
 class DragLayer extends StatelessWidget {
   final Widget child;
@@ -55,7 +55,9 @@ class DragLayer extends StatelessWidget {
                   dragController: dragController,
                 ),
               ),
-              // Right edge zone — hover 600 ms to go to next page (creates page if needed)
+              // Right edge zone — hover 600 ms to go to next page. Creates a
+              // new empty page when on the last page and that page is not
+              // itself empty (prevents stacking empty pages).
               Positioned(
                 right: 0,
                 top: 0,
@@ -97,104 +99,171 @@ class _EdgePageZone extends StatefulWidget {
 }
 
 class _EdgePageZoneState extends State<_EdgePageZone> {
+  static const double _width = 60;
+
   Timer? _timer;
+  // After this zone successfully triggers a page change, stop accepting the
+  // drag until the pointer leaves/re-enters the edge band. The edge zone is
+  // intentionally not a DragTarget; it should navigate only, never compete
+  // with workspace cells for the final drop.
+  bool _hasTriggered = false;
+  bool _isHovered = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.dragController.addListener(_syncHoverState);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncHoverState();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _EdgePageZone oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.dragController == widget.dragController) return;
+    oldWidget.dragController.removeListener(_syncHoverState);
+    widget.dragController.addListener(_syncHoverState);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncHoverState();
+    });
+  }
 
   @override
   void dispose() {
+    widget.dragController.removeListener(_syncHoverState);
     _timer?.cancel();
     super.dispose();
+  }
+
+  void _syncHoverState() {
+    if (!mounted) return;
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached || !widget.dragController.isDragging) {
+      _setHovered(false);
+      return;
+    }
+
+    final globalPosition = widget.dragController.dragPosition;
+    if (globalPosition == Offset.zero) {
+      _setHovered(false);
+      return;
+    }
+
+    final localPosition = box.globalToLocal(globalPosition);
+    _setHovered((Offset.zero & box.size).contains(localPosition));
+  }
+
+  void _setHovered(bool hovered) {
+    if (!hovered) {
+      _cancelTimer();
+      if (_isHovered || _hasTriggered) {
+        dragDropLog(
+          '[WidgetDragDrop][edge ${widget.direction}] hoverExit '
+          'pos=${widget.dragController.dragPosition}',
+        );
+        setState(() {
+          _isHovered = false;
+          _hasTriggered = false;
+        });
+      }
+      return;
+    }
+
+    if (!_isHovered) {
+      dragDropLog(
+        '[WidgetDragDrop][edge ${widget.direction}] hoverEnter '
+        'pos=${widget.dragController.dragPosition}',
+      );
+      setState(() => _isHovered = true);
+    }
+    if (!_hasTriggered && _timer == null) {
+      _startTimer();
+    }
   }
 
   void _startTimer() {
     _timer?.cancel();
     _timer = Timer(const Duration(milliseconds: 600), () {
+      _timer = null;
       final pc = widget.pageController;
-      if (pc == null || !pc.hasClients) return;
+      if (pc == null || !pc.hasClients) {
+        dragDropLog(
+          '[WidgetDragDrop][edge ${widget.direction}] triggerAbort reason=noPageController',
+        );
+        return;
+      }
+      bool triggered = false;
       if (widget.direction < 0) {
-        pc.previousPage(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut);
+        dragDropLog(
+          '[WidgetDragDrop][edge -1] trigger previous '
+          'page=${pc.page?.toStringAsFixed(3)}',
+        );
+        _refreshDropPreviewAfterNavigation(
+          pc.previousPage(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut),
+        );
+        triggered = true;
       } else {
-        final workspaceState = context.read<WorkspaceCubit>().state;
-        final settings = context.read<SettingsCubit>().state;
-        final payload = widget.dragController.activeDrag;
+        final workspace = context.read<WorkspaceCubit>();
+        final workspaceState = workspace.state;
         final currentPage = pc.page?.round() ?? workspaceState.currentPage;
         final lastPageIndex = workspaceState.pages.length - 1;
+        dragDropLog(
+          '[WidgetDragDrop][edge 1] triggerCheck '
+          'page=${pc.page?.toStringAsFixed(3)} current=$currentPage '
+          'last=$lastPageIndex lastEmpty=${workspace.isPageEmpty(lastPageIndex)}',
+        );
         if (currentPage < lastPageIndex) {
-          // Navigate to next existing page
-          pc.nextPage(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeInOut);
-        } else {
-          // On the last page, create a new page only if the dragged item
-          // cannot fit anywhere on the current last page.
-          final lastPage = workspaceState.pages[lastPageIndex];
-          final canFitOnLastPage = payload?.isWidget == true
-              ? _canFitWidgetOnPage(
-                  workspaceState,
-                  payload!,
-                  settings.gridColumns,
-                  settings.gridRows,
-                )
-              : findFirstAppFit(
-                    lastPage,
-                    settings.gridColumns,
-                    settings.gridRows,
-                    ignoreSlot:
-                        payload != null && payload.sourcePage == lastPageIndex
-                            ? payload.sourceSlot
-                            : null,
-                  ) !=
-                  null;
-
-          if (!canFitOnLastPage) {
-            context.read<WorkspaceCubit>().addPage();
-            // After addPage, pages.length increases; navigate to the new last page
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              final newLastIndex =
-                  context.read<WorkspaceCubit>().state.pages.length - 1;
+          dragDropLog('[WidgetDragDrop][edge 1] trigger next');
+          _refreshDropPreviewAfterNavigation(
+            pc.nextPage(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut),
+          );
+          triggered = true;
+        } else if (!workspace.isPageEmpty(lastPageIndex)) {
+          // On the last page. Create a new page only if the current last page
+          // actually has content — otherwise the user would be stacking empty
+          // pages every time they hovered the edge.
+          workspace.addPage();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!pc.hasClients) return;
+            final newLastIndex = workspace.state.pages.length - 1;
+            dragDropLog(
+              '[WidgetDragDrop][edge 1] trigger addPageAndAnimate '
+              'newLast=$newLastIndex',
+            );
+            _refreshDropPreviewAfterNavigation(
               pc.animateToPage(newLastIndex,
                   duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut);
-            });
-          }
+                  curve: Curves.easeInOut),
+            );
+          });
+          triggered = true;
+        } else {
+          dragDropLog(
+              '[WidgetDragDrop][edge 1] triggerAbort reason=lastPageEmpty');
         }
+      }
+      if (triggered && mounted) {
+        setState(() => _hasTriggered = true);
       }
     });
   }
 
-  bool _canFitWidgetOnPage(
-    WorkspaceState workspaceState,
-    DragPayload payload,
-    int columns,
-    int rows,
-  ) {
-    if (payload.sourcePage < 0 ||
-        payload.sourcePage >= workspaceState.pages.length) {
-      return false;
-    }
-
-    final sourceContent =
-        workspaceState.pages[payload.sourcePage].slots[payload.sourceSlot];
-    final (spanX, spanY) = switch (sourceContent) {
-      WidgetSlot(:final widget) => (widget.spanX, widget.spanY),
-      WidgetStackSlot(:final spanX, :final spanY) => (spanX, spanY),
-      _ => (1, 1),
-    };
-
-    final lastPage = workspaceState.pages.last;
-    return findFirstWidgetFit(
-          lastPage,
-          spanX,
-          spanY,
-          columns,
-          rows,
-          ignoreAnchorSlot:
-              payload.sourcePage == workspaceState.pages.length - 1
-                  ? payload.sourceSlot
-                  : null,
-        ) !=
-        null;
+  void _refreshDropPreviewAfterNavigation(Future<void> navigation) {
+    navigation.whenComplete(() {
+      if (!mounted || !widget.dragController.isDragging) return;
+      final position = widget.dragController.dragPosition;
+      if (position == Offset.zero) return;
+      dragDropLog(
+        '[WidgetDragDrop][edge ${widget.direction}] refreshDropPreview '
+        'pos=$position',
+      );
+      widget.dragController.updateDragPosition(position);
+    });
   }
 
   void _cancelTimer() {
@@ -204,45 +273,38 @@ class _EdgePageZoneState extends State<_EdgePageZone> {
 
   @override
   Widget build(BuildContext context) {
-    return DragTarget<DragPayload>(
-      onWillAcceptWithDetails: (_) => true,
-      onAcceptWithDetails: (_) {}, // edge zone is not a real drop target
-      builder: (_, candidateData, __) {
-        final isHovered = candidateData.isNotEmpty;
-        if (isHovered && _timer == null) _startTimer();
-        if (!isHovered) _cancelTimer();
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          width: 60,
-          decoration: isHovered
-              ? BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: widget.direction > 0
-                        ? Alignment.centerRight
-                        : Alignment.centerLeft,
-                    end: widget.direction > 0
-                        ? Alignment.centerLeft
-                        : Alignment.centerRight,
-                    colors: [
-                      Colors.white.withValues(alpha: 0.25),
-                      Colors.transparent,
-                    ],
-                  ),
-                )
-              : null,
-          child: isHovered
-              ? Center(
-                  child: Icon(
-                    widget.direction > 0
-                        ? Icons.chevron_right
-                        : Icons.chevron_left,
-                    color: Colors.white.withValues(alpha: 0.8),
-                    size: 32,
-                  ),
-                )
-              : null,
-        );
-      },
+    return IgnorePointer(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        width: _width,
+        decoration: _isHovered
+            ? BoxDecoration(
+                gradient: LinearGradient(
+                  begin: widget.direction > 0
+                      ? Alignment.centerRight
+                      : Alignment.centerLeft,
+                  end: widget.direction > 0
+                      ? Alignment.centerLeft
+                      : Alignment.centerRight,
+                  colors: [
+                    Colors.white.withValues(alpha: 0.25),
+                    Colors.transparent,
+                  ],
+                ),
+              )
+            : null,
+        child: _isHovered
+            ? Center(
+                child: Icon(
+                  widget.direction > 0
+                      ? Icons.chevron_right
+                      : Icons.chevron_left,
+                  color: Colors.white.withValues(alpha: 0.8),
+                  size: 32,
+                ),
+              )
+            : null,
+      ),
     );
   }
 }

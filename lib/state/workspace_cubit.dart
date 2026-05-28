@@ -283,6 +283,16 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     saveLayout();
   }
 
+  bool isPageEmpty(int index) {
+    if (index < 0 || index >= state.pages.length) return true;
+    return !_pageHasContent(state.pages[index]);
+  }
+
+  bool _pageHasContent(WorkspacePage page) {
+    if (page.slots.isEmpty) return false;
+    return page.slots.values.any((v) => v is! EmptySlot);
+  }
+
   void addItem(WorkspaceItemInfo item, int page, int slot) {
     final pages = List<WorkspacePage>.from(state.pages);
     while (pages.length <= page) {
@@ -1125,14 +1135,58 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     saveLayout();
   }
 
-  void collapseEmptyPages() {
-    if (state.pages.length <= 1) return;
-    final nonEmpty = state.pages.where((p) => p.slots.isNotEmpty).toList();
-    if (nonEmpty.length == state.pages.length) return;
-    final retained = nonEmpty.isEmpty ? [WorkspacePage({})] : nonEmpty;
-    final cur = state.currentPage.clamp(0, retained.length - 1);
-    emit(state.copyWith(pages: retained, currentPage: cur));
+  int collapseEmptyPages({int? preferredPage}) {
+    int clampPage(int page, int maxPage) => page.clamp(0, maxPage).toInt();
+
+    if (state.pages.length <= 1) {
+      final current = clampPage(
+        preferredPage ?? state.currentPage,
+        state.pages.isEmpty ? 0 : state.pages.length - 1,
+      );
+      if (preferredPage != null && current != state.currentPage) {
+        emit(state.copyWith(currentPage: current));
+        saveLayout();
+      }
+      return current;
+    }
+
+    final retained = <WorkspacePage>[];
+    final oldToNewPage = <int, int>{};
+    for (var i = 0; i < state.pages.length; i++) {
+      final page = state.pages[i];
+      if (!_pageHasContent(page)) continue;
+      oldToNewPage[i] = retained.length;
+      retained.add(page);
+    }
+
+    if (retained.length == state.pages.length) {
+      final current = clampPage(
+        preferredPage ?? state.currentPage,
+        state.pages.length - 1,
+      );
+      if (preferredPage != null && current != state.currentPage) {
+        emit(state.copyWith(currentPage: current));
+        saveLayout();
+      }
+      return current;
+    }
+
+    final retainedPages = retained.isEmpty ? [WorkspacePage({})] : retained;
+    final maxPage = retainedPages.length - 1;
+    final preferredMapped = preferredPage == null
+        ? null
+        : oldToNewPage[preferredPage] ??
+            oldToNewPage.entries
+                .where((entry) => entry.key < preferredPage)
+                .map((entry) => entry.value)
+                .fold<int?>(null, (last, value) => value);
+    final current = clampPage(
+      preferredMapped ?? preferredPage ?? state.currentPage,
+      maxPage,
+    );
+    emit(state.copyWith(pages: retainedPages, currentPage: current));
     saveLayout();
+    return current;
   }
 
   void updateWidgetSpan(int page, int slot, LauncherWidgetInfo updated) {

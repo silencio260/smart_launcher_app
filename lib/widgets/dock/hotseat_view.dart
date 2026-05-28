@@ -355,6 +355,9 @@ class _DockSlot extends StatelessWidget {
               _initDockPackagesIfNeeded(context);
               dragController.startDrag(payload.item, -1, slot, Offset.zero);
             },
+            onDragUpdate: (details) {
+              dragController.updateDragPosition(details.globalPosition);
+            },
             onDragEnd: (details) {
               dragController.cancelDrag();
             },

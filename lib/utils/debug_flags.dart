@@ -12,3 +12,7 @@ class DebugFlags {
 void widgetLog(String message) {
   if (DebugFlags.widgetLogs) debugPrint(message);
 }
+
+void dragDropLog(String message) {
+  if (DebugFlags.widgetLogs) debugPrint(message);
+}

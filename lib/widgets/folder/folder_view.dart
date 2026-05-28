@@ -364,6 +364,10 @@ class _FolderViewState extends State<FolderView>
                       Offset.zero,
                     );
                   },
+                  onDragUpdate: (details) {
+                    widget.dragController
+                        .updateDragPosition(details.globalPosition);
+                  },
                   onDragEnd: (details) {
                     if (!mounted) return;
                     final draggedItem = _draggedItem;
