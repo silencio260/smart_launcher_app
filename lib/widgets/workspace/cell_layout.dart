@@ -123,9 +123,19 @@ class _CellLayoutViewState extends State<CellLayoutView>
     };
   }
 
-  // Commit-displacement timers (widget-over-app: 240ms, app-over-app: 650ms)
+  // Three-zone drag-hover model for app-over-app (One UI style):
+  //   overlap <  _kFolderHintOverlap   → displace (cascade) after _kDisplaceCommit
+  //   overlap >= _kFolderHintOverlap   → folder HINT only (visual, never commits)
+  //   overlap >= _kFolderArmOverlap    → folder ARMED, commits after _kFolderArm
+  static const double _kFolderHintOverlap = 0.50;
+  static const double _kFolderArmOverlap = 0.60;
+  static const Duration _kFolderArmDuration = Duration(milliseconds: 200);
+  static const Duration _kDisplacePreviewDelay = Duration(milliseconds: 250);
+  static const Duration _kDisplaceCommitDelay = Duration(milliseconds: 500);
+
+  // Commit-displacement timers (widget-over-app: 240ms, app-over-app: 200ms)
   final Map<int, Timer> _displacementTimers = {};
-  // Preview-animation timers (fires at 350ms for app-over-app)
+  // Preview-animation timers (fires at 50ms for app-over-app)
   final Map<int, Timer> _previewTimers = {};
   // Per-slot animation controllers driving the pre-displacement slide
   final Map<int, AnimationController> _displacementPreviewControllers = {};
@@ -135,8 +145,20 @@ class _CellLayoutViewState extends State<CellLayoutView>
   final Map<int, int> _previewDestSlots = {};
   // Slots that show a ghost "landing zone" outline during preview
   final Set<int> _ghostDestinationSlots = {};
-  // Slots showing folder-creation color preview (dragged app covers ≥80% of tile)
+  // Folder-creation state (three stages):
+  //   _folderHintSlots    — overlap in 60–84%; subtle ring, no timer, never commits
+  //   _folderArmedSlots   — overlap ≥85%; bright ring, 1s arm-timer running
+  //   _folderPreviewSlots — arm-timer fired; drop on this slot creates folder
+  final Set<int> _folderHintSlots = {};
+  final Set<int> _folderArmedSlots = {};
   final Set<int> _folderPreviewSlots = {};
+  // Per-slot 1s arm-timers; on fire, slot moves from armed → preview (commit-ready)
+  final Map<int, Timer> _folderArmTimers = {};
+  // Last global drag-pointer position seen in onMove. Used to derive the drag
+  // MOTION direction (delta) for displacement bias, which is far more reliable
+  // than computing direction from the feedback's top-left position inside the
+  // tile (that approach broke when the feedback was centered on the pointer).
+  Offset? _lastDragGlobalPos;
   // Key used to convert global drag coordinates to local Stack space
   final GlobalKey _stackKey = GlobalKey();
   // Latest cell dimensions — updated each build, used for overlap math
@@ -275,6 +297,11 @@ class _CellLayoutViewState extends State<CellLayoutView>
       t.cancel();
     }
     _displacementTimers.clear();
+    for (final t in _folderArmTimers.values) {
+      t.cancel();
+    }
+    _folderArmTimers.clear();
+    _lastDragGlobalPos = null;
     final slots = _displacementPreviewControllers.keys.toList();
     for (final slot in slots) {
       _reversePreviewAnimation(slot);
@@ -282,6 +309,8 @@ class _CellLayoutViewState extends State<CellLayoutView>
     if (mounted) {
       setState(() {
         _ghostDestinationSlots.clear();
+        _folderHintSlots.clear();
+        _folderArmedSlots.clear();
         _folderPreviewSlots.clear();
         _clearWidgetDropPreviewState();
       });
@@ -526,7 +555,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
     _cancelAllDisplacementTimers();
   }
 
-  // withPreview=true  → 350ms preview slide + 650ms commit (app-over-app)
+  // withPreview=true  → ~50ms preview slide + 200ms commit (app-over-app)
   // withPreview=false → 240ms commit only (widget-over-app, existing behaviour)
   void _startDisplacementTimer(
     int slot,
@@ -550,12 +579,12 @@ class _CellLayoutViewState extends State<CellLayoutView>
           _displacementDirectionFromPath(slot, path, settings.gridColumns);
       final destSlot = path[path.length - 2];
 
-      _previewTimers[slot] = Timer(const Duration(milliseconds: 350), () {
+      _previewTimers[slot] = Timer(_kDisplacePreviewDelay, () {
         _previewTimers.remove(slot);
         if (mounted) _startPreviewAnimation(slot, direction, destSlot);
       });
 
-      _displacementTimers[slot] = Timer(const Duration(milliseconds: 650), () {
+      _displacementTimers[slot] = Timer(_kDisplaceCommitDelay, () {
         _displacementTimers.remove(slot);
         _stopPreviewAnimation(slot);
         _tryDisplaceApp(slot, workspace, settings,
@@ -575,9 +604,47 @@ class _CellLayoutViewState extends State<CellLayoutView>
     _displacementTimers[slot]?.cancel();
     _displacementTimers.remove(slot);
     _reversePreviewAnimation(slot);
-    if (_folderPreviewSlots.contains(slot) && mounted) {
-      setState(() => _folderPreviewSlots.remove(slot));
+    _clearFolderState(slot);
+  }
+
+  // ── Folder arm/hint helpers (three-zone hover model) ──────────────────────
+
+  // Slot has entered ARMED zone (overlap ≥ 85%). Start the 1s commit timer.
+  // No-op if already armed or already commit-ready, so onMove can call freely.
+  void _ensureFolderArmed(int slot) {
+    if (_folderPreviewSlots.contains(slot)) return; // already commit-ready
+    if (_folderArmedSlots.contains(slot)) return; // timer already running
+    _folderHintSlots.remove(slot);
+    _folderArmedSlots.add(slot);
+    if (mounted) setState(() {});
+    _folderArmTimers[slot] = Timer(_kFolderArmDuration, () {
+      _folderArmTimers.remove(slot);
+      if (!mounted) return;
+      setState(() {
+        _folderArmedSlots.remove(slot);
+        _folderPreviewSlots.add(slot);
+      });
+    });
+  }
+
+  // Slot has entered HINT zone (60% ≤ overlap < 85%). Show ring, no timer.
+  // Cancels any arm timer / commit-ready state from prior armed hover.
+  void _ensureFolderHint(int slot) {
+    _folderArmTimers.remove(slot)?.cancel();
+    final wasArmed = _folderArmedSlots.remove(slot);
+    final wasReady = _folderPreviewSlots.remove(slot);
+    if (_folderHintSlots.add(slot) || wasArmed || wasReady) {
+      if (mounted) setState(() {});
     }
+  }
+
+  // Drag has left folder territory (overlap < 60%, or pointer left the slot).
+  void _clearFolderState(int slot) {
+    _folderArmTimers.remove(slot)?.cancel();
+    final a = _folderArmedSlots.remove(slot);
+    final h = _folderHintSlots.remove(slot);
+    final p = _folderPreviewSlots.remove(slot);
+    if ((a || h || p) && mounted) setState(() {});
   }
 
   // Returns the unit direction an app at [slot] should slide given [path].
@@ -639,24 +706,38 @@ class _CellLayoutViewState extends State<CellLayoutView>
     return localInStack - tileOrigin;
   }
 
-  // Fraction of the app icon area (iconSize × iconSize) that the dragged icon
-  // covers when the pointer is at [localPos] in tile-local coordinates.
-  // Both icons are iconSize × iconSize; the target icon is centred in the tile.
+  // Fraction of the target icon area covered by the dragged icon.
+  //
+  // [localPos] is the dragged feedback's TOP-LEFT in tile-local coords —
+  // `_centerDragAnchorStrategy` anchors the pointer at the feedback center,
+  // so `details.offset = pointer - iconSize/2`. Both icons are iconSize ×
+  // iconSize; the target is centered in the tile at (cellW/2, cellH/2).
+  // Returns 1.0 when icons are perfectly overlapped; 0.0 when separated by
+  // ≥ iconSize on either axis.
   double _overlapFraction(Offset localPos) {
     final iconSize = widget.settings.iconSize.toDouble();
-    final dx = (localPos.dx - _cellWidth / 2).abs();
-    final dy = (localPos.dy - _cellHeight / 2).abs();
+    final draggedCenterX = localPos.dx + iconSize / 2;
+    final draggedCenterY = localPos.dy + iconSize / 2;
+    final dx = (draggedCenterX - _cellWidth / 2).abs();
+    final dy = (draggedCenterY - _cellHeight / 2).abs();
     final overlapX = (iconSize - dx).clamp(0.0, iconSize);
     final overlapY = (iconSize - dy).clamp(0.0, iconSize);
     return (overlapX * overlapY) / (iconSize * iconSize);
   }
 
-  // Direction the displaced app should move, derived from where the drag entered.
-  // The drag entered from the side closest to localPos, so push the existing app
-  // in the direction from localPos toward the tile center.
-  Offset _pushDirectionFromLocalPos(Offset localPos) {
-    final dx = _cellWidth / 2 - localPos.dx;
-    final dy = _cellHeight / 2 - localPos.dy;
+  // Direction the displaced app should slide, derived from the drag's recent
+  // MOTION (delta of the global pointer position between consecutive onMove
+  // calls). The displaced app slides the same way the drag is moving — so
+  // drag-from-bottom-going-up pushes the existing app UP. Returns Offset.zero
+  // if we don't have a previous sample yet, or the motion is negligible.
+  Offset _pushDirectionFromMotion(Offset currentGlobalPos) {
+    final prev = _lastDragGlobalPos;
+    _lastDragGlobalPos = currentGlobalPos;
+    if (prev == null) return Offset.zero;
+    final dx = currentGlobalPos.dx - prev.dx;
+    final dy = currentGlobalPos.dy - prev.dy;
+    // Ignore tiny jitter (sub-pixel noise from system events).
+    if (dx.abs() < 1 && dy.abs() < 1) return Offset.zero;
     if (dx.abs() >= dy.abs()) {
       return dx > 0 ? const Offset(1, 0) : const Offset(-1, 0);
     } else {
@@ -805,7 +886,11 @@ class _CellLayoutViewState extends State<CellLayoutView>
   void _onDrop(
       BuildContext context, DragTargetDetails<DragPayload> details, int slot) {
     // Capture folder-creation intent BEFORE _cancelAllDisplacementTimers clears it.
-    final isFolderCreationDrop = _folderPreviewSlots.contains(slot);
+    // Release-in-armed-zone counts as folder too — the 200ms arm timer is just
+    // a confirmation indicator, not a hard commit gate (users naturally release
+    // faster than that when intent is obvious).
+    final isFolderCreationDrop = _folderPreviewSlots.contains(slot) ||
+        _folderArmedSlots.contains(slot);
     // Always commit displacements on any successful drop
     widget.dragController.commitDisplacements();
     _cancelAllDisplacementTimers();
@@ -903,7 +988,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
     } else if (target is AppSlot && payload.sourcePage >= 0) {
       final item = payload.item;
       if (isFolderCreationDrop && item is WorkspaceItemInfo) {
-        // Dragged app covered ≥80% of tile — create a folder instead of displacing.
+        // Folder arm-timer fired (≥85% overlap held for 1s) — create folder.
         if (payload.sourcePage == widget.pageIndex) {
           workspace.createFolder(
               widget.pageIndex, payload.sourceSlot, slot, '');
@@ -1913,33 +1998,32 @@ class _CellLayoutViewState extends State<CellLayoutView>
                                           slot, workspace, settings);
                                     }
                                   } else if (content is AppSlot) {
-                                    // Compute how much of the tile the dragged icon covers.
+                                    // Three-zone hover model (One UI style):
+                                    //   ≥85% overlap → ARMED (1s hold → folder)
+                                    //   60–84%        → HINT (visual only)
+                                    //   <60%          → DISPLACE (cascade)
                                     final localPos = _localPositionInSlot(
                                         details.offset, slot);
-                                    if (localPos != null) {
-                                      final overlap =
-                                          _overlapFraction(localPos);
-                                      if (overlap >= 0.25) {
-                                        // Deep hover → folder creation mode
-                                        _cancelDisplacementTimer(slot);
-                                        if (!_folderPreviewSlots
-                                            .contains(slot)) {
-                                          setState(() =>
-                                              _folderPreviewSlots.add(slot));
-                                        }
-                                        return;
-                                      }
+                                    final overlap = localPos != null
+                                        ? _overlapFraction(localPos)
+                                        : 0.0;
+
+                                    if (overlap >= _kFolderArmOverlap) {
+                                      _cancelDisplacementTimer(slot);
+                                      _ensureFolderArmed(slot);
+                                      return;
                                     }
-                                    // Shallow hover → displacement mode
-                                    if (_folderPreviewSlots.contains(slot)) {
-                                      setState(() =>
-                                          _folderPreviewSlots.remove(slot));
+                                    if (overlap >= _kFolderHintOverlap) {
+                                      _cancelDisplacementTimer(slot);
+                                      _ensureFolderHint(slot);
+                                      return;
                                     }
+                                    // Displace zone — drop any folder state and schedule shift.
+                                    _clearFolderState(slot);
                                     final settings =
                                         context.read<SettingsCubit>().state;
-                                    final pushDir = localPos != null
-                                        ? _pushDirectionFromLocalPos(localPos)
-                                        : Offset.zero;
+                                    final pushDir =
+                                        _pushDirectionFromMotion(details.offset);
                                     _startDisplacementTimer(
                                         slot, workspace, settings,
                                         withPreview: true,
@@ -1969,7 +2053,11 @@ class _CellLayoutViewState extends State<CellLayoutView>
                                   final isRejected = rejectData.isNotEmpty;
                                   final isGhost =
                                       _ghostDestinationSlots.contains(slot);
-                                  final isFolderPreview =
+                                  final isFolderHint =
+                                      _folderHintSlots.contains(slot);
+                                  final isFolderArmed =
+                                      _folderArmedSlots.contains(slot);
+                                  final isFolderReady =
                                       _folderPreviewSlots.contains(slot);
                                   final hoveredPayload =
                                       isHovered ? candidateData.first : null;
@@ -1989,7 +2077,11 @@ class _CellLayoutViewState extends State<CellLayoutView>
                                   if (isHoveredWidget) {
                                     return const SizedBox.shrink();
                                   }
-                                  if (isFolderPreview) {
+                                  // Armed/commit-ready use the strong fill; hint
+                                  // is an outline-only ring so the user knows a
+                                  // folder is possible but isn't yet on track to
+                                  // commit. Slide deeper (≥85%) to arm.
+                                  if (isFolderArmed || isFolderReady) {
                                     return AnimatedContainer(
                                       duration:
                                           const Duration(milliseconds: 150),
@@ -1999,7 +2091,21 @@ class _CellLayoutViewState extends State<CellLayoutView>
                                         borderRadius: BorderRadius.circular(16),
                                         border: Border.all(
                                           color: Colors.orange
-                                              .withValues(alpha: 0.8),
+                                              .withValues(alpha: 0.9),
+                                          width: 2,
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  if (isFolderHint) {
+                                    return AnimatedContainer(
+                                      duration:
+                                          const Duration(milliseconds: 150),
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(
+                                          color: Colors.orange
+                                              .withValues(alpha: 0.45),
                                           width: 1.5,
                                         ),
                                       ),
