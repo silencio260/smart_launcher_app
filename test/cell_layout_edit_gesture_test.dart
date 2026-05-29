@@ -88,6 +88,66 @@ void main() {
   );
 
   testWidgets(
+    'stationary long press on a multi-cell widget does not move it',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final widgetInfo = LauncherWidgetInfo(
+        id: 1,
+        appWidgetId: 1,
+        providerPackage: WorkspaceCubit.defaultClockProviderPackage,
+        providerClass: WorkspaceCubit.defaultClockProviderClass,
+        isCustomWidget: true,
+        spanX: 4,
+        spanY: 2,
+      );
+      final workspace = TestWorkspaceCubit(
+        WorkspaceState(
+          pages: [
+            WorkspacePage({0: WidgetSlot(widgetInfo)}),
+          ],
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MultiBlocProvider(
+            providers: [
+              BlocProvider<WorkspaceCubit>.value(value: workspace),
+              BlocProvider<AppsCubit>(create: (_) => AppsCubit()),
+              BlocProvider<SettingsCubit>(create: (_) => SettingsCubit()),
+            ],
+            child: SizedBox(
+              width: 600,
+              height: 600,
+              child: CellLayoutView(
+                page: workspace.state.pages.first,
+                pageIndex: 0,
+                settings: const LauncherSettings(
+                  gridColumns: 5,
+                  gridRows: 4,
+                ),
+                dragController: DragController(),
+                onAppTap: (_) {},
+                onAppLongPress: (_, __, ___) {},
+                onBackgroundLongPress: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.longPress(find.byType(HomeWidgetSlot));
+      await tester.pump();
+
+      final page = workspace.state.pages.first;
+      expect(page.slots[0], isA<WidgetSlot>());
+      expect(page.slots[1], isNull);
+    },
+  );
+
+  testWidgets(
     'tapping a home app dismisses widget selection without launching',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1200, 800));

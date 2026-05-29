@@ -85,6 +85,18 @@ class LauncherService {
     }
   }
 
+  /// Toggles detailed widget drag/drop diagnostics on the native side.
+  static Future<void> setWidgetDragDebugLogsEnabled(bool enabled) async {
+    try {
+      await _widgets.invokeMethod(
+        'setWidgetDragDebugLogs',
+        {'enabled': enabled},
+      );
+    } catch (_) {
+      // Channel may not be ready during cold start; SettingsCubit reapplies.
+    }
+  }
+
   /// Returns a list of all app widget providers installed on the device.
   static Future<List<WidgetProviderInfo>> getAvailableWidgets({
     int? gridColumns,

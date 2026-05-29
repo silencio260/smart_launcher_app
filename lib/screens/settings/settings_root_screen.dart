@@ -56,15 +56,19 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                   icon: Icons.tune,
                   title: 'General',
                   subtitle: 'Theme, icons, badges',
-                  onTap: () => Navigator.push(c,
-                      MaterialPageRoute(builder: (_) => const GeneralSettingsScreen())),
+                  onTap: () => Navigator.push(
+                      c,
+                      MaterialPageRoute(
+                          builder: (_) => const GeneralSettingsScreen())),
                 ),
             (c) => _Tile(
                   icon: Icons.home_outlined,
                   title: 'Home Screen',
                   subtitle: 'Grid, layout, wallpaper',
-                  onTap: () => Navigator.push(c,
-                      MaterialPageRoute(builder: (_) => const HomeScreenSettingsScreen())),
+                  onTap: () => Navigator.push(
+                      c,
+                      MaterialPageRoute(
+                          builder: (_) => const HomeScreenSettingsScreen())),
                 ),
             (c) => _Tile(
                   icon: Icons.widgets_outlined,
@@ -73,8 +77,8 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                   onTap: () => Navigator.push(
                     c,
                     MaterialPageRoute(
-                      builder: (_) =>
-                          WidgetPickerScreen(onWidgetAdded: widget.onWidgetAdded),
+                      builder: (_) => WidgetPickerScreen(
+                          onWidgetAdded: widget.onWidgetAdded),
                     ),
                   ),
                 ),
@@ -82,58 +86,74 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                   icon: Icons.wb_sunny_outlined,
                   title: 'Smartspace',
                   subtitle: 'Clock, date, cards',
-                  onTap: () => Navigator.push(c,
-                      MaterialPageRoute(builder: (_) => const SmartspaceSettingsScreen())),
+                  onTap: () => Navigator.push(
+                      c,
+                      MaterialPageRoute(
+                          builder: (_) => const SmartspaceSettingsScreen())),
                 ),
             (c) => _Tile(
                   icon: Icons.dock,
                   title: 'Dock',
                   subtitle: 'Dock appearance and size',
-                  onTap: () => Navigator.push(c,
-                      MaterialPageRoute(builder: (_) => const DockSettingsScreen())),
+                  onTap: () => Navigator.push(
+                      c,
+                      MaterialPageRoute(
+                          builder: (_) => const DockSettingsScreen())),
                 ),
             (c) => _Tile(
                   icon: Icons.apps,
                   title: 'App Drawer',
                   subtitle: 'Layout, columns, hidden apps',
-                  onTap: () => Navigator.push(c,
-                      MaterialPageRoute(builder: (_) => const DrawerSettingsScreen())),
+                  onTap: () => Navigator.push(
+                      c,
+                      MaterialPageRoute(
+                          builder: (_) => const DrawerSettingsScreen())),
                 ),
             (c) => _Tile(
                   icon: Icons.search,
                   title: 'Search',
                   subtitle: 'Search bar and suggestions',
-                  onTap: () => Navigator.push(c,
-                      MaterialPageRoute(builder: (_) => const SearchSettingsScreen())),
+                  onTap: () => Navigator.push(
+                      c,
+                      MaterialPageRoute(
+                          builder: (_) => const SearchSettingsScreen())),
                 ),
             (c) => _Tile(
                   icon: Icons.folder_outlined,
                   title: 'Folders',
                   subtitle: 'Folder style and grid size',
-                  onTap: () => Navigator.push(c,
-                      MaterialPageRoute(builder: (_) => const FolderSettingsScreen())),
+                  onTap: () => Navigator.push(
+                      c,
+                      MaterialPageRoute(
+                          builder: (_) => const FolderSettingsScreen())),
                 ),
             (c) => _Tile(
                   icon: Icons.swipe,
                   title: 'Gestures',
                   subtitle: 'Swipes, double-tap, buttons',
-                  onTap: () => Navigator.push(c,
-                      MaterialPageRoute(builder: (_) => const GestureSettingsScreen())),
+                  onTap: () => Navigator.push(
+                      c,
+                      MaterialPageRoute(
+                          builder: (_) => const GestureSettingsScreen())),
                 ),
             (c) => _Tile(
                   icon: Icons.history,
                   title: 'Recents',
                   subtitle: 'Recent apps behavior',
-                  onTap: () => Navigator.push(c,
-                      MaterialPageRoute(builder: (_) => const RecentsSettingsScreen())),
+                  onTap: () => Navigator.push(
+                      c,
+                      MaterialPageRoute(
+                          builder: (_) => const RecentsSettingsScreen())),
                 ),
             (_) => const Divider(),
             (c) => _Tile(
                   icon: Icons.backup_outlined,
                   title: 'Backup & Restore',
                   subtitle: 'Export or import settings',
-                  onTap: () => Navigator.push(c,
-                      MaterialPageRoute(builder: (_) => const BackupRestoreScreen())),
+                  onTap: () => Navigator.push(
+                      c,
+                      MaterialPageRoute(
+                          builder: (_) => const BackupRestoreScreen())),
                 ),
             (c) => _Tile(
                   icon: Icons.info_outline,
@@ -173,6 +193,17 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                           value: state.showWidgetDebugLogs,
                           onChanged: (value) => cubit.update(
                             state.copyWith(showWidgetDebugLogs: value),
+                          ),
+                        ),
+                        SwitchListTile(
+                          secondary: const Icon(Icons.open_with_outlined),
+                          title: const Text('Widget Drag Debug Logs'),
+                          subtitle: const Text(
+                            'Log widget long-press, drag activation, drop resolution, placement invariants, and native host-view movement (tags JUMP and WidgetDragDrop)',
+                          ),
+                          value: state.showWidgetDragDebugLogs,
+                          onChanged: (value) => cubit.update(
+                            state.copyWith(showWidgetDragDebugLogs: value),
                           ),
                         ),
                         SwitchListTile(
@@ -232,7 +263,6 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
       ),
     );
   }
-
 }
 
 class _SectionHeader extends StatelessWidget {

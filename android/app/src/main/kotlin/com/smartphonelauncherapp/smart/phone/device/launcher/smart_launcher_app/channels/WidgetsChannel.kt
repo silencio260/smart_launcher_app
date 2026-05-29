@@ -41,12 +41,19 @@ class WidgetsChannel(
         @Volatile
         var widgetDebugLogsEnabled: Boolean = false
 
+        @Volatile
+        var widgetDragDebugLogsEnabled: Boolean = false
+
         fun logD(message: String) {
             if (widgetDebugLogsEnabled) android.util.Log.d(TAG, message)
         }
 
         fun logW(message: String) {
             if (widgetDebugLogsEnabled) android.util.Log.w(TAG, message)
+        }
+
+        fun logJump(message: String) {
+            if (widgetDragDebugLogsEnabled) android.util.Log.d("JUMP", message)
         }
     }
 
@@ -111,6 +118,10 @@ class WidgetsChannel(
                 }
                 "setWidgetDebugLogs" -> {
                     widgetDebugLogsEnabled = call.argument<Boolean>("enabled") ?: false
+                    result.success(null)
+                }
+                "setWidgetDragDebugLogs" -> {
+                    widgetDragDebugLogsEnabled = call.argument<Boolean>("enabled") ?: false
                     result.success(null)
                 }
                 else -> result.notImplemented()

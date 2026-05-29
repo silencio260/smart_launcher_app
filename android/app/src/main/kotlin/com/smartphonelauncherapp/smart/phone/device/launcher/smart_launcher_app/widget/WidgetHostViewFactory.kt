@@ -5,6 +5,7 @@ import android.appwidget.AppWidgetHostView
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.view.View
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.WidgetsChannel
 import io.flutter.plugin.common.StandardMessageCodec
 import io.flutter.plugin.platform.PlatformView
 import io.flutter.plugin.platform.PlatformViewFactory
@@ -25,13 +26,25 @@ object WidgetHostViewRegistry {
     private val views = mutableMapOf<Int, AppWidgetHostView>()
     private val pool = mutableMapOf<Int, AppWidgetHostView>()
 
+    private fun identity(view: AppWidgetHostView): String =
+        "${view.javaClass.simpleName}@${System.identityHashCode(view).toString(16)}"
+
     fun register(appWidgetId: Int, view: AppWidgetHostView) {
         if (appWidgetId <= 0) return
         views[appWidgetId] = view
+        WidgetsChannel.logJump(
+            "registry.register id=$appWidgetId view=${identity(view)} " +
+                "parent=${view.parent?.javaClass?.simpleName ?: "null"} " +
+                "size=${view.width}x${view.height}"
+        )
     }
 
     fun unregister(appWidgetId: Int, view: AppWidgetHostView) {
         if (views[appWidgetId] === view) views.remove(appWidgetId)
+        WidgetsChannel.logJump(
+            "registry.unregister id=$appWidgetId view=${identity(view)} " +
+                "stillRegistered=${views[appWidgetId] === view}"
+        )
     }
 
     fun get(appWidgetId: Int): AppWidgetHostView? = views[appWidgetId]
@@ -40,14 +53,26 @@ object WidgetHostViewRegistry {
     fun pool(appWidgetId: Int, view: AppWidgetHostView) {
         if (appWidgetId <= 0) return
         pool[appWidgetId] = view
+        WidgetsChannel.logJump(
+            "registry.pool id=$appWidgetId view=${identity(view)} " +
+                "poolSize=${pool.size}"
+        )
     }
 
     /// Take the cached AppWidgetHostView for an id (caller takes ownership).
-    fun acquire(appWidgetId: Int): AppWidgetHostView? = pool.remove(appWidgetId)
+    fun acquire(appWidgetId: Int): AppWidgetHostView? {
+        val view = pool.remove(appWidgetId)
+        WidgetsChannel.logJump(
+            "registry.acquire id=$appWidgetId hit=${view != null} " +
+                "view=${if (view != null) identity(view) else "null"} poolSize=${pool.size}"
+        )
+        return view
+    }
 
     /// Drop all pooled views. Call on activity destroy — pooled hosts hold
     /// a context reference and would leak across activity recreations.
     fun clearPool() {
+        WidgetsChannel.logJump("registry.clearPool count=${pool.size}")
         pool.clear()
     }
 }
@@ -60,6 +85,9 @@ class WidgetHostViewFactory(
     override fun create(ctx: Context, viewId: Int, args: Any?): PlatformView {
         val params = args as? Map<*, *>
         val appWidgetId = (params?.get("appWidgetId") as? Int) ?: -1
+        WidgetsChannel.logJump(
+            "factory.create platformViewId=$viewId appWidgetId=$appWidgetId args=$params"
+        )
         return WidgetPlatformView(context, appWidgetHost, appWidgetId)
     }
 }
@@ -78,12 +106,24 @@ private class WidgetPlatformView(
             val info = AppWidgetManager.getInstance(context).getAppWidgetInfo(appWidgetId)
             appWidgetHost.createView(context, appWidgetId, info)
         }
+        WidgetsChannel.logJump(
+            "platformView.init id=$appWidgetId reused=${cached != null} " +
+                "host=${hostView.javaClass.simpleName}@${System.identityHashCode(hostView).toString(16)} " +
+                "parent=${hostView.parent?.javaClass?.simpleName ?: "null"} " +
+                "size=${hostView.width}x${hostView.height}"
+        )
         WidgetHostViewRegistry.register(appWidgetId, hostView)
     }
 
     override fun getView(): View = hostView
 
     override fun dispose() {
+        WidgetsChannel.logJump(
+            "platformView.dispose id=$appWidgetId " +
+                "host=${hostView.javaClass.simpleName}@${System.identityHashCode(hostView).toString(16)} " +
+                "parent=${hostView.parent?.javaClass?.simpleName ?: "null"} " +
+                "size=${hostView.width}x${hostView.height}"
+        )
         WidgetHostViewRegistry.unregister(appWidgetId, hostView)
         // Detach from parent so its Surface stops producing frames immediately.
         // Without this, the abandoned AppWidgetHostView keeps rendering into the

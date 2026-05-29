@@ -39,6 +39,7 @@ class LauncherSettings extends Equatable {
   final bool infiniteScrolling;
   final bool showGridDebugOverlay;
   final bool showWidgetDebugLogs;
+  final bool showWidgetDragDebugLogs;
   final bool showWidgetPickerDebugInfo;
   final bool showDrawerPerfLogs;
   final bool showRouteCoverageLogs;
@@ -110,6 +111,7 @@ class LauncherSettings extends Equatable {
     this.infiniteScrolling = false,
     this.showGridDebugOverlay = false,
     this.showWidgetDebugLogs = false,
+    this.showWidgetDragDebugLogs = false,
     this.showWidgetPickerDebugInfo = false,
     this.showDrawerPerfLogs = false,
     this.showRouteCoverageLogs = false,
@@ -172,6 +174,7 @@ class LauncherSettings extends Equatable {
     bool? infiniteScrolling,
     bool? showGridDebugOverlay,
     bool? showWidgetDebugLogs,
+    bool? showWidgetDragDebugLogs,
     bool? showWidgetPickerDebugInfo,
     bool? showDrawerPerfLogs,
     bool? showRouteCoverageLogs,
@@ -234,6 +237,8 @@ class LauncherSettings extends Equatable {
       infiniteScrolling: infiniteScrolling ?? this.infiniteScrolling,
       showGridDebugOverlay: showGridDebugOverlay ?? this.showGridDebugOverlay,
       showWidgetDebugLogs: showWidgetDebugLogs ?? this.showWidgetDebugLogs,
+      showWidgetDragDebugLogs:
+          showWidgetDragDebugLogs ?? this.showWidgetDragDebugLogs,
       showWidgetPickerDebugInfo:
           showWidgetPickerDebugInfo ?? this.showWidgetPickerDebugInfo,
       showDrawerPerfLogs: showDrawerPerfLogs ?? this.showDrawerPerfLogs,
@@ -306,6 +311,7 @@ class LauncherSettings extends Equatable {
         infiniteScrolling,
         showGridDebugOverlay,
         showWidgetDebugLogs,
+        showWidgetDragDebugLogs,
         showWidgetPickerDebugInfo,
         showDrawerPerfLogs,
         showRouteCoverageLogs,

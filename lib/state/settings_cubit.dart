@@ -32,11 +32,13 @@ class SettingsCubit extends Cubit<LauncherSettings> {
 
   void _applyDebugFlags(LauncherSettings s) {
     DebugFlags.widgetLogs = s.showWidgetDebugLogs;
+    DebugFlags.widgetDragLogs = s.showWidgetDragDebugLogs;
     DebugFlags.widgetPickerInfo = s.showWidgetPickerDebugInfo;
     DebugFlags.drawerPerfLogs = s.showDrawerPerfLogs;
     DebugFlags.routeCoverageLogs = s.showRouteCoverageLogs;
     DebugFlags.settingsLogs = s.showSettingsLogs;
     LauncherService.setWidgetDebugLogsEnabled(s.showWidgetDebugLogs);
+    LauncherService.setWidgetDragDebugLogsEnabled(s.showWidgetDragDebugLogs);
     if (s.showDrawerPerfLogs) DrawerPerf.installGlobalTimings();
   }
 
@@ -56,6 +58,7 @@ class SettingsCubit extends Cubit<LauncherSettings> {
         'infiniteScrolling': s.infiniteScrolling,
         'showGridDebugOverlay': s.showGridDebugOverlay,
         'showWidgetDebugLogs': s.showWidgetDebugLogs,
+        'showWidgetDragDebugLogs': s.showWidgetDragDebugLogs,
         'showWidgetPickerDebugInfo': s.showWidgetPickerDebugInfo,
         'showDrawerPerfLogs': s.showDrawerPerfLogs,
         'showRouteCoverageLogs': s.showRouteCoverageLogs,
@@ -125,6 +128,7 @@ class SettingsCubit extends Cubit<LauncherSettings> {
       infiniteScrolling: j['infiniteScrolling'] as bool? ?? false,
       showGridDebugOverlay: j['showGridDebugOverlay'] as bool? ?? false,
       showWidgetDebugLogs: j['showWidgetDebugLogs'] as bool? ?? false,
+      showWidgetDragDebugLogs: j['showWidgetDragDebugLogs'] as bool? ?? false,
       showWidgetPickerDebugInfo:
           j['showWidgetPickerDebugInfo'] as bool? ?? false,
       showDrawerPerfLogs: j['showDrawerPerfLogs'] as bool? ?? false,

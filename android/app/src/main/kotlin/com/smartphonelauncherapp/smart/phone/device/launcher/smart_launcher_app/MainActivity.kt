@@ -17,12 +17,15 @@ import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.SystemChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.WallpaperChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.WidgetsChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.widget.LauncherAppWidgetHost
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.widget.WidgetHostViewFactory
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.widget.WidgetHostViewRegistry
 
 class MainActivity : FlutterActivity() {
 
-    private val appWidgetHost by lazy { AppWidgetHost(this, 1024) }
+    // DIAGNOSTIC: LauncherAppWidgetHost.onCreateView returns the instrumented
+    // LauncherWidgetHostView so its onLayout/onMeasure JUMP logs actually fire.
+    private val appWidgetHost by lazy { LauncherAppWidgetHost(this, 1024) }
     private var widgetsChannel: WidgetsChannel? = null
     private var notificationChannel: NotificationChannel? = null
 

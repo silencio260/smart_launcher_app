@@ -29,6 +29,11 @@ class HomeWidgetSlot extends StatefulWidget {
   final bool isSelected;
   final VoidCallback onDismissResize;
   final void Function(int slot, int spanX, int spanY) onResize;
+  // DIAGNOSTIC: when supplied (a GlobalKey shared between the resting child and
+  // childWhenDragging), the live AppWidgetHostView migrates across the drag
+  // swap instead of being torn down and re-attached. See _hostViewKeyFor in
+  // cell_layout.dart.
+  final Key? hostViewKey;
 
   const HomeWidgetSlot({
     super.key,
@@ -47,6 +52,7 @@ class HomeWidgetSlot extends StatefulWidget {
     required this.isSelected,
     required this.onDismissResize,
     required this.onResize,
+    this.hostViewKey,
   });
 
   @override
@@ -60,25 +66,36 @@ class _HomeWidgetSlotState extends State<HomeWidgetSlot> {
     return Stack(
       children: [
         Positioned.fill(
-          // AbsorbPointer (not IgnorePointer): while selected, we still want
-          // the parent LongPressDraggable to receive pointer events so a
-          // long-press on the widget body re-arms the move drag. IgnorePointer
-          // makes the subtree invisible to hit-testing, which would block the
-          // ancestor Listener (deferToChild) from ever firing. AbsorbPointer
-          // keeps the subtree hit-testable but stops events from reaching the
-          // AndroidView underneath.
-          child: AbsorbPointer(
-            absorbing: widget.isSelected,
-            child: _WidgetView(
-              widgetInfo: w,
-              gridColumns: widget.gridColumns,
-              gridRows: widget.gridRows,
-              cellWidth: widget.resizeStepX - widget.gridGap,
-              cellHeight: widget.resizeStepY - widget.gridGap,
-              gap: widget.gridGap,
-            ),
+          // The live AppWidgetHostView. Its ancestor chain MUST NOT change with
+          // selection. Previously this was wrapped in
+          // AbsorbPointer(absorbing: isSelected); under hybrid composition +
+          // RenderMode.texture, flipping a pointer-suppression widget directly
+          // above the AndroidView re-evaluates the platform view's overlay
+          // placement and composites the host texture at a persistent
+          // up-and-left offset for the whole duration of the selection -- the
+          // "widget jumps and stays put on long-press" bug. Input is now
+          // blocked by a sibling layer on top (below) instead, which leaves
+          // this subtree's ancestors untouched so the texture never moves.
+          child: _WidgetView(
+            widgetInfo: w,
+            gridColumns: widget.gridColumns,
+            gridRows: widget.gridRows,
+            cellWidth: widget.resizeStepX - widget.gridGap,
+            cellHeight: widget.resizeStepY - widget.gridGap,
+            gap: widget.gridGap,
+            hostViewKey: widget.hostViewKey,
           ),
         ),
+        // While selected, swallow taps before they reach the widget body, but
+        // keep the layer hit-testable (AbsorbPointer, not IgnorePointer) so the
+        // ancestor LongPressDraggable Listener (deferToChild) still fires and a
+        // long-press on the body can re-arm a move drag. Placed as a SIBLING on
+        // top rather than as an ancestor of the AndroidView so toggling it never
+        // perturbs the platform view's placement.
+        if (widget.isSelected)
+          const Positioned.fill(
+            child: AbsorbPointer(child: SizedBox.expand()),
+          ),
       ],
     );
   }
@@ -91,6 +108,7 @@ class _WidgetView extends StatelessWidget {
   final double cellWidth;
   final double cellHeight;
   final double gap;
+  final Key? hostViewKey;
 
   const _WidgetView({
     required this.widgetInfo,
@@ -99,6 +117,7 @@ class _WidgetView extends StatelessWidget {
     required this.cellWidth,
     required this.cellHeight,
     required this.gap,
+    this.hostViewKey,
   });
 
   @override
@@ -127,6 +146,7 @@ class _WidgetView extends StatelessWidget {
       return const SizedBox.shrink();
     }
     return _SpanSyncedWidgetHostView(
+      key: hostViewKey,
       widgetInfo: widgetInfo,
       gridColumns: gridColumns,
       gridRows: gridRows,
@@ -146,6 +166,7 @@ class _SpanSyncedWidgetHostView extends StatefulWidget {
   final double gap;
 
   const _SpanSyncedWidgetHostView({
+    super.key,
     required this.widgetInfo,
     required this.gridColumns,
     required this.gridRows,

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -101,8 +102,104 @@ class _CellLayoutViewState extends State<CellLayoutView>
   final ValueNotifier<int?> _activeWidgetDragFeedbackSlot =
       ValueNotifier<int?>(null);
 
+  // Snapshot bitmap of the widget being dragged, captured at drag-arm while its
+  // live AppWidgetHostView is still mounted. The drag feedback paints THIS
+  // image instead of rebuilding a second live AndroidView for the same
+  // appWidgetId. Two live AppWidgetHostViews bound to one id blow the
+  // ImageReader buffer budget (the exact hazard the edit-mode path avoids by
+  // dropping the AndroidView), and the freshly-created host composites at a
+  // stale up-and-left offset for several frames -- THAT is the "widget jumps
+  // sideways and stays put on long-press" bug (the Flutter render box never
+  // moves; movedX=false in the JUMP trace). A static snapshot owns no host
+  // view, so it can neither reparent nor mis-composite. Keyed by slot.
+  final Map<int, Uint8List> _dragSnapshots = {};
+  // Bumped when a snapshot finishes capturing so the (already-visible) feedback
+  // rebuilds from its neutral placeholder to the real image.
+  final ValueNotifier<int> _dragSnapshotRevision = ValueNotifier<int>(0);
+
+  int _nextWidgetDragDebugSession = 1;
+  int? _activeWidgetDragDebugSession;
+  int? _activeWidgetDragDebugSlot;
+  bool _loggedFirstWidgetDragUpdate = false;
+  final Map<int, Offset> _widgetPointerDownGlobalBySlot = {};
+  final Map<int, DateTime> _widgetPointerDownTimeBySlot = {};
+  final Set<String> _loggedWidgetFeedbackStates = {};
+
+  // DIAGNOSTIC: persistent GlobalKey per appWidgetId so the live
+  // AppWidgetHostView's element migrates across the child -> childWhenDragging
+  // swap on drag start instead of being destroyed and re-attached. A plain
+  // ValueKey does not migrate across different parents, so the native host is
+  // torn down and re-created on long-press, briefly rendering at its default
+  // width (expanding into the empty cells to the right) before the async size
+  // sync corrects it. If this kills the sideways "slide", the platform-view
+  // re-attach is the root cause.
+  final Map<int, GlobalKey> _widgetHostViewKeys = {};
+
+  GlobalKey _hostViewKeyFor(int appWidgetId) =>
+      _widgetHostViewKeys.putIfAbsent(appWidgetId, () => GlobalKey());
+
+  // DIAGNOSTIC: one key per slot attached to the actual rendered in-grid tile
+  // (works for plain widgets AND stacks, unlike the host-view key which only
+  // resolved for WidgetSlot and was returning null). Used by _slotGlobalRect to
+  // measure the tile's real on-screen position before/after long-press.
+  final Map<int, GlobalKey> _slotProbeKeys = {};
+
+  GlobalKey _slotProbeKey(int slot) =>
+      _slotProbeKeys.putIfAbsent(slot, () => GlobalKey());
+
   void _dragDropLog(String message) {
     dragDropLog('[WidgetDragDrop][cell page=${widget.pageIndex}] $message');
+  }
+
+  void _jumpLog(int session, String event, String message) {
+    widgetDragLog(
+      '[JUMP][s=$session][page=${widget.pageIndex}] $event $message',
+    );
+  }
+
+  void _dropTrace(int session, String message) {
+    widgetDragLog(
+      '[WidgetDragDrop][s=$session][cell page=${widget.pageIndex}] $message',
+    );
+  }
+
+  String _fmtOffset(Offset? offset) => offset == null
+      ? 'null'
+      : '(${offset.dx.toStringAsFixed(1)},${offset.dy.toStringAsFixed(1)})';
+
+  int _startWidgetDragDebugSession(int slot) {
+    final session = _nextWidgetDragDebugSession++;
+    _activeWidgetDragDebugSession = session;
+    _activeWidgetDragDebugSlot = slot;
+    _loggedFirstWidgetDragUpdate = false;
+    _loggedWidgetFeedbackStates
+        .removeWhere((key) => key.startsWith('$session:'));
+    return session;
+  }
+
+  int _widgetDragDebugSessionForSlot(int slot) {
+    if (_activeWidgetDragDebugSlot == slot) {
+      return _activeWidgetDragDebugSession ?? 0;
+    }
+    return _activeWidgetDragDebugSession ?? 0;
+  }
+
+  void _endWidgetDragDebugSession(int slot, String reason) {
+    if (_activeWidgetDragDebugSession == null &&
+        _activeWidgetDragDebugSlot != slot) {
+      return;
+    }
+    final session = _widgetDragDebugSessionForSlot(slot);
+    _jumpLog(
+      session,
+      'session.end',
+      'slot=$slot reason=$reason activeSlot=$_activeWidgetDragDebugSlot',
+    );
+    if (_activeWidgetDragDebugSlot == slot) {
+      _activeWidgetDragDebugSession = null;
+      _activeWidgetDragDebugSlot = null;
+      _loggedFirstWidgetDragUpdate = false;
+    }
   }
 
   String _payloadDebug(DragPayload payload) {
@@ -121,6 +218,35 @@ class _CellLayoutViewState extends State<CellLayoutView>
       WidgetSlot() => 'widget',
       WidgetStackSlot() => 'widgetStack',
     };
+  }
+
+  String _slotContentDetail(SlotContent? content) {
+    return switch (content) {
+      null => 'empty',
+      EmptySlot() => 'empty',
+      AppSlot(:final item) => 'app(${item.packageName})',
+      FolderSlot(:final folderId) => 'folder($folderId)',
+      WidgetSlot(:final widget) =>
+        'widget(id=${widget.appWidgetId},span=${widget.spanX}x${widget.spanY})',
+      WidgetStackSlot(:final widgets, :final spanX, :final spanY) =>
+        'widgetStack(count=${widgets.length},span=${spanX}x$spanY)',
+    };
+  }
+
+  String _pageSlotMapDebug(WorkspacePage page) {
+    final entries = page.slots.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    if (entries.isEmpty) return '{}';
+    return entries
+        .map((entry) => '${entry.key}:${_slotContentDetail(entry.value)}')
+        .join('|');
+  }
+
+  String _footprintDebug(WorkspacePage page, Iterable<int>? slots) {
+    if (slots == null) return 'outOfBounds';
+    return slots
+        .map((slot) => '$slot:${_slotContentDetail(page.slots[slot])}')
+        .join(',');
   }
 
   // Three-zone drag-hover model for app-over-app (One UI style):
@@ -253,6 +379,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
     }
     _displacementPreviewControllers.clear();
     _activeWidgetDragFeedbackSlot.dispose();
+    _dragSnapshotRevision.dispose();
     if (_selectionGuardActive) {
       WidgetResizeGestureGuard.setSelectionActive(false);
       WidgetResizeGestureGuard.onRequestDismiss = null;
@@ -422,7 +549,174 @@ class _CellLayoutViewState extends State<CellLayoutView>
     return _activeWidgetDragFeedbackSlot.value == slot;
   }
 
+  // DIAGNOSTIC: on-screen rect of a slot's live widget host, read via its
+  // persistent GlobalKey. Lets us see whether the Flutter render box actually
+  // moves on long-press (Dart-side cause) or stays put while the native view
+  // re-lays-out internally (native-side cause).
+  Rect? _hostGlobalRect(int slot) {
+    // Measure the actual rendered in-grid tile via its per-slot probe key.
+    // This resolves for both widgets and stacks; the old host-view-key path
+    // returned null for stacks and frequently null for widgets too, so every
+    // [JUMP] line logged null and movedX was null==null (i.e. nothing).
+    final ctx = _slotProbeKeys[slot]?.currentContext;
+    final box = ctx?.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return null;
+    final origin = box.localToGlobal(Offset.zero);
+    return origin & box.size;
+  }
+
+  String _fmtRect(Rect? r) => r == null
+      ? 'null'
+      : 'L${r.left.toStringAsFixed(1)} T${r.top.toStringAsFixed(1)} '
+          'W${r.width.toStringAsFixed(1)} H${r.height.toStringAsFixed(1)}';
+
+  void _logWidgetRectProbe(
+    int session,
+    int slot,
+    String phase,
+    Rect? beforeRect,
+  ) {
+    final rect = _hostGlobalRect(slot);
+    final dx =
+        beforeRect == null || rect == null ? null : rect.left - beforeRect.left;
+    final dy =
+        beforeRect == null || rect == null ? null : rect.top - beforeRect.top;
+    final moved =
+        dx != null && dy != null && (dx.abs() > 0.5 || dy.abs() > 0.5);
+    _jumpLog(
+      session,
+      'rect.$phase',
+      'slot=$slot rect=${_fmtRect(rect)} dx=${dx?.toStringAsFixed(1)} '
+          'dy=${dy?.toStringAsFixed(1)} moved=$moved selected=$_selectedWidgetSlot '
+          'active=${_activeWidgetDragFeedbackSlot.value}',
+    );
+  }
+
+  void _scheduleWidgetRectProbes(int session, int slot, Rect? beforeRect) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _logWidgetRectProbe(session, slot, 'postFrame1', beforeRect);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _logWidgetRectProbe(session, slot, 'postFrame2', beforeRect);
+      });
+    });
+    Timer(const Duration(milliseconds: 100), () {
+      if (!mounted) return;
+      _logWidgetRectProbe(session, slot, 'delay100ms', beforeRect);
+    });
+  }
+
+  void _logWidgetPointerDown(int slot, PointerDownEvent event) {
+    _widgetPointerDownGlobalBySlot[slot] = event.position;
+    _widgetPointerDownTimeBySlot[slot] = DateTime.now();
+    _jumpLog(
+      _activeWidgetDragDebugSession ?? 0,
+      'pointer.down',
+      'slot=$slot global=${_fmtOffset(event.position)} '
+          'local=${_fmtOffset(_localPositionInSlot(event.position, slot))} '
+          'rect=${_fmtRect(_hostGlobalRect(slot))} selected=$_selectedWidgetSlot',
+    );
+  }
+
+  Widget _withWidgetDragPointerProbe({
+    required int slot,
+    required Widget child,
+  }) {
+    return Listener(
+      behavior: HitTestBehavior.deferToChild,
+      onPointerDown: (event) => _logWidgetPointerDown(slot, event),
+      onPointerUp: (event) => _jumpLog(
+        _widgetDragDebugSessionForSlot(slot),
+        'pointer.up',
+        'slot=$slot global=${_fmtOffset(event.position)}',
+      ),
+      onPointerCancel: (event) => _jumpLog(
+        _widgetDragDebugSessionForSlot(slot),
+        'pointer.cancel',
+        'slot=$slot global=${_fmtOffset(event.position)}',
+      ),
+      child: child,
+    );
+  }
+
+  Set<int> _sourceWidgetCoverageFromWorkspace(
+    DragPayload payload,
+    WorkspaceCubit workspace,
+  ) {
+    if (!payload.isWidget) return const <int>{};
+    if (payload.sourcePage < 0 ||
+        payload.sourcePage >= workspace.state.pages.length) {
+      return const <int>{};
+    }
+    final sourcePage = workspace.state.pages[payload.sourcePage];
+    final sourceContent = sourcePage.slots[payload.sourceSlot];
+    final (spanX, spanY) = _spanForWidgetContent(sourceContent);
+    if (spanX <= 0 || spanY <= 0) return const <int>{};
+    return {
+      ...?slotsForSpan(
+        payload.sourceSlot,
+        spanX,
+        spanY,
+        widget.settings.gridColumns,
+        widget.settings.gridRows,
+      ),
+    };
+  }
+
+  bool _shouldIgnoreUnactivatedWidgetDrop({
+    required DragPayload payload,
+    required WorkspaceCubit workspace,
+    required int targetPageIndex,
+    required int pointerSlot,
+  }) {
+    if (!payload.isWidget) return false;
+    if (_isWidgetDragActive(payload.sourceSlot)) return false;
+
+    final session = _activeWidgetDragDebugSession ?? 0;
+    final sourceFootprint = _sourceWidgetCoverageFromWorkspace(
+      payload,
+      workspace,
+    );
+    final insideSourceFootprint = targetPageIndex == payload.sourcePage &&
+        sourceFootprint.contains(pointerSlot);
+    _dropTrace(
+      session,
+      'drop.noop reason=widgetDragNotActivated '
+      'target=$targetPageIndex:$pointerSlot '
+      'source=${payload.sourcePage}:${payload.sourceSlot} '
+      'distance=${_armedWidgetDragDistance.toStringAsFixed(1)} '
+      'threshold=$_widgetDragActivationDistance '
+      'insideSourceFootprint=$insideSourceFootprint '
+      'sourceFootprint=$sourceFootprint '
+      'active=${_activeWidgetDragFeedbackSlot.value}',
+    );
+    return true;
+  }
+
   void _armWidgetDrag(int slot) {
+    final session = _startWidgetDragDebugSession(slot);
+    final pointerDown = _widgetPointerDownGlobalBySlot[slot];
+    final pointerDownAt = _widgetPointerDownTimeBySlot[slot];
+    final pointerAgeMs = pointerDownAt == null
+        ? null
+        : DateTime.now().difference(pointerDownAt).inMilliseconds;
+    // Capture a static snapshot of the live widget NOW, while its host view is
+    // still mounted, so the feedback can paint it instead of mounting a second
+    // live AndroidView. Fires async; the round-trip overlaps the 8px drag
+    // activation window so the image is usually ready before the feedback shows.
+    _captureDragSnapshot(slot, session);
+    // DIAGNOSTIC: capture the host rect at the instant the long-press fires,
+    // BEFORE the child -> childWhenDragging swap, then again next frame.
+    final beforeRect = _hostGlobalRect(slot);
+    _jumpLog(
+      session,
+      'arm.fire',
+      'slot=$slot before=${_fmtRect(beforeRect)} '
+          'pointerDown=${_fmtOffset(pointerDown)} pointerAgeMs=$pointerAgeMs '
+          'selected=$_selectedWidgetSlot active=${_activeWidgetDragFeedbackSlot.value} '
+          'pageSlots=${_pageSlotMapDebug(widget.page)}',
+    );
     // If this same slot is already selected with the menu deliberately
     // hidden (e.g. user just finished a resize), keep it hidden — a
     // long-press to move shouldn't bring the info menu back. Only surface
@@ -442,6 +736,9 @@ class _CellLayoutViewState extends State<CellLayoutView>
     }
     _syncSelectionGuard();
     _activeWidgetDragFeedbackSlot.value = null;
+    // DIAGNOSTIC: rect probes after the child/childWhenDragging swap settled,
+    // still before any 8px movement, then again after compositor catch-up time.
+    _scheduleWidgetRectProbes(session, slot, beforeRect);
   }
 
   void _maybeActivateWidgetDrag(
@@ -450,6 +747,19 @@ class _CellLayoutViewState extends State<CellLayoutView>
     int slot,
   ) {
     if (_armedWidgetDragSlot != slot || _isWidgetDragActive(slot)) return;
+
+    final session = _widgetDragDebugSessionForSlot(slot);
+    if (!_loggedFirstWidgetDragUpdate) {
+      _loggedFirstWidgetDragUpdate = true;
+      _jumpLog(
+        session,
+        'drag.firstUpdate',
+        'slot=$slot global=${_fmtOffset(details.globalPosition)} '
+            'delta=${_fmtOffset(details.delta)} '
+            'local=${_fmtOffset(_localPositionInSlot(details.globalPosition, slot))} '
+            'rect=${_fmtRect(_hostGlobalRect(slot))} ${_payloadDebug(payload)}',
+      );
+    }
 
     _armedWidgetDragDistance += details.delta.distance;
     if (_armedWidgetDragDistance < _widgetDragActivationDistance) return;
@@ -460,6 +770,15 @@ class _CellLayoutViewState extends State<CellLayoutView>
       '${_payloadDebug(payload)}',
     );
 
+    // DIAGNOSTIC: rect at the moment the real drag activates (after 8px).
+    _jumpLog(
+      session,
+      'activate',
+      'slot=$slot dist=${_armedWidgetDragDistance.toStringAsFixed(1)} '
+          'global=${_fmtOffset(details.globalPosition)} '
+          'local=${_fmtOffset(_localPositionInSlot(details.globalPosition, slot))} '
+          'rect=${_fmtRect(_hostGlobalRect(slot))} snapshot=${_dragSnapshots.containsKey(slot)}',
+    );
     setState(() {
       _selectedWidgetSlot = null;
       // If onDragEnd later re-selects this slot (cancelled drag), keep the
@@ -473,6 +792,39 @@ class _CellLayoutViewState extends State<CellLayoutView>
         .startDrag(payload.item, widget.pageIndex, slot, Offset.zero);
     _dragDropLog(
         'controller.startDrag active=${widget.dragController.isDragging}');
+  }
+
+  // Renders the dragged widget to a bitmap (native renderLiveWidget) so the
+  // drag feedback never has to mount a live AppWidgetHostView of its own.
+  Future<void> _captureDragSnapshot(int slot, int session) async {
+    final content = widget.page.slots[slot];
+    final appWidgetId = switch (content) {
+      WidgetSlot s => s.widget.appWidgetId,
+      WidgetStackSlot s =>
+        s.widgets.isEmpty ? 0 : s.widgets[s.currentIndex].appWidgetId,
+      _ => 0,
+    };
+    _jumpLog(
+      session,
+      'snapshot.request',
+      'slot=$slot appWidgetId=$appWidgetId content=${_slotContentDetail(content)}',
+    );
+    if (appWidgetId <= 0) return;
+    final bytes = await LauncherService.renderLiveWidget(
+      appWidgetId,
+      maxWidthPx: 1200,
+      maxHeightPx: 1200,
+    );
+    if (!mounted) return;
+    _jumpLog(
+      session,
+      'snapshot.response',
+      'slot=$slot appWidgetId=$appWidgetId bytes=${bytes?.length ?? 0} '
+          'stillActive=${_activeWidgetDragDebugSession == session}',
+    );
+    if (bytes == null) return;
+    _dragSnapshots[slot] = bytes;
+    _dragSnapshotRevision.value++;
   }
 
   void _finishWidgetDrag(int slot, {required bool wasAccepted}) {
@@ -502,16 +854,28 @@ class _CellLayoutViewState extends State<CellLayoutView>
     }
     _syncSelectionGuard();
     _activeWidgetDragFeedbackSlot.value = null;
+    _dragSnapshots.remove(slot);
     _cancelAllDisplacementTimers();
     if (wasActive) {
       widget.dragController.cancelDrag();
     }
+    _endWidgetDragDebugSession(slot, 'finish accepted=$wasAccepted');
   }
 
   bool _tryFallbackWidgetDrop(DragPayload payload) {
     _dragDropLog('fallbackDrop.begin ${_payloadDebug(payload)}');
     if (!payload.isWidget) {
       _dragDropLog('fallbackDrop.abort reason=notWidget');
+      return false;
+    }
+    if (!_isWidgetDragActive(payload.sourceSlot)) {
+      _dropTrace(
+        _activeWidgetDragDebugSession ?? 0,
+        'fallbackDrop.abort reason=widgetDragNotActivated '
+        'source=${payload.sourcePage}:${payload.sourceSlot} '
+        'distance=${_armedWidgetDragDistance.toStringAsFixed(1)} '
+        'threshold=$_widgetDragActivationDistance',
+      );
       return false;
     }
     final resolve = widget.resolveDropLocation;
@@ -558,7 +922,9 @@ class _CellLayoutViewState extends State<CellLayoutView>
       });
     }
     _activeWidgetDragFeedbackSlot.value = null;
+    _dragSnapshots.remove(slot);
     _cancelAllDisplacementTimers();
+    _endWidgetDragDebugSession(slot, 'complete');
   }
 
   // withPreview=true  → ~50ms preview slide + 200ms commit (app-over-app)
@@ -571,6 +937,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
     Offset preferredDirection = Offset.zero,
   }) {
     if (_displacementTimers.containsKey(slot)) return;
+    final session = _activeWidgetDragDebugSession ?? 0;
 
     if (withPreview) {
       final path = _findDisplacementPath(
@@ -580,6 +947,11 @@ class _CellLayoutViewState extends State<CellLayoutView>
         preferredDirection: preferredDirection,
       );
       if (path == null) return; // no room — skip entirely
+      _dropTrace(
+        session,
+        'displaceTimer.start slot=$slot withPreview=true '
+        'preferred=${_fmtOffset(preferredDirection)} path=${path.join('>')}',
+      );
 
       final direction =
           _displacementDirectionFromPath(slot, path, settings.gridColumns);
@@ -597,6 +969,16 @@ class _CellLayoutViewState extends State<CellLayoutView>
             preferredDirection: preferredDirection);
       });
     } else {
+      final path = _findDisplacementPath(
+        slot,
+        settings.gridColumns,
+        settings.gridRows,
+      );
+      _dropTrace(
+        session,
+        'displaceTimer.start slot=$slot withPreview=false '
+        'path=${path == null ? 'null' : path.join('>')}',
+      );
       _displacementTimers[slot] = Timer(const Duration(milliseconds: 240), () {
         _displacementTimers.remove(slot);
         _tryDisplaceApp(slot, workspace, settings);
@@ -772,9 +1154,22 @@ class _CellLayoutViewState extends State<CellLayoutView>
       ignoreSlot: ignoreSlot,
       preferredDirection: preferredDirection,
     );
-    if (path == null) return false;
+    final session = _activeWidgetDragDebugSession ?? 0;
+    if (path == null) {
+      _dropTrace(
+        session,
+        'displaceApp.abort slot=$appSlot reason=noPath ignore=$ignoreSlot '
+        'preferred=${_fmtOffset(preferredDirection)}',
+      );
+      return false;
+    }
 
     if (workspace.shiftItemsAlongPath(widget.pageIndex, path)) {
+      _dropTrace(
+        session,
+        'displaceApp.success slot=$appSlot path=${path.join('>')} '
+        'pageAfter=${_pageSlotMapDebug(workspace.state.pages[widget.pageIndex])}',
+      );
       for (int i = 0; i < path.length - 1; i++) {
         widget.dragController.recordDisplacement(
           widget.pageIndex,
@@ -784,6 +1179,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
       }
       return true;
     }
+    _dropTrace(session, 'displaceApp.abort slot=$appSlot reason=shiftFailed');
     return false;
   }
 
@@ -878,6 +1274,148 @@ class _CellLayoutViewState extends State<CellLayoutView>
     return null;
   }
 
+  String _pathsDebug(Map<int, List<int>> paths) {
+    if (paths.isEmpty) return '{}';
+    final entries = paths.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    return entries
+        .map((entry) => '${entry.key}:${entry.value.join('>')}')
+        .join(',');
+  }
+
+  List<int>? _findWidgetAppEvictionPath(
+    int startSlot,
+    int cols,
+    int rows, {
+    required Set<int> reservedSlots,
+    Set<int> blockedSlots = const <int>{},
+    int? ignoreSlot,
+    WorkspacePage? page,
+  }) {
+    final sourcePage = page ?? widget.page;
+    final occupiedByWidgets = _occupiedWidgetSlots(
+      sourcePage,
+      cols,
+      rows,
+      ignoreAnchorSlot: ignoreSlot,
+    );
+    final blocked = <int>{
+      ...reservedSlots,
+      ...blockedSlots,
+      if (ignoreSlot != null) ignoreSlot,
+    };
+    final startCol = startSlot % cols;
+    final startRow = startSlot ~/ cols;
+    final candidates = <({int slot, int distance})>[];
+
+    for (int slot = 0; slot < cols * rows; slot++) {
+      if (slot == startSlot || blocked.contains(slot)) continue;
+      if (occupiedByWidgets.contains(slot)) continue;
+
+      final content = sourcePage.slots[slot];
+      if (content != null && content is! EmptySlot) continue;
+
+      final col = slot % cols;
+      final row = slot ~/ cols;
+      candidates.add((
+        slot: slot,
+        distance: (col - startCol).abs() + (row - startRow).abs(),
+      ));
+    }
+
+    if (candidates.isEmpty) return null;
+    candidates.sort((a, b) {
+      final byDistance = a.distance.compareTo(b.distance);
+      if (byDistance != 0) return byDistance;
+      return a.slot.compareTo(b.slot);
+    });
+    return [startSlot, candidates.first.slot];
+  }
+
+  Map<int, List<int>>? _widgetFootprintDisplacementPaths({
+    required WorkspacePage page,
+    required Iterable<int> footprint,
+    required int cols,
+    required int rows,
+    int? ignoreAnchorSlot,
+    bool trace = false,
+    int debugSession = 0,
+  }) {
+    final footprintList = footprint.toList(growable: false);
+    final footprintSet = footprintList.toSet();
+    final ignoredCoverage = ignoreAnchorSlot == null
+        ? const <int>{}
+        : _currentWidgetCoverage(page, ignoreAnchorSlot, cols, rows);
+    final occupiedByWidgets = _occupiedWidgetSlots(
+      page,
+      cols,
+      rows,
+      ignoreAnchorSlot: ignoreAnchorSlot,
+    );
+    final claimedDestinations = <int>{};
+    final paths = <int, List<int>>{};
+
+    for (final slot in footprintList) {
+      if (slot == ignoreAnchorSlot || ignoredCoverage.contains(slot)) continue;
+      if (occupiedByWidgets.contains(slot)) {
+        if (trace) {
+          _dropTrace(
+            debugSession,
+            'footprint.blocked slot=$slot reason=widgetCoverage '
+            'content=${_slotContentDetail(page.slots[slot])}',
+          );
+        }
+        return null;
+      }
+
+      final content = page.slots[slot];
+      if (content == null || content is EmptySlot) continue;
+
+      if (content is AppSlot) {
+        final path = _findWidgetAppEvictionPath(
+          slot,
+          cols,
+          rows,
+          reservedSlots: footprintSet,
+          blockedSlots: claimedDestinations,
+          ignoreSlot: ignoreAnchorSlot,
+          page: page,
+        );
+        if (path == null) {
+          if (trace) {
+            _dropTrace(
+              debugSession,
+              'footprint.blocked slot=$slot reason=appNoEvictionPath '
+              'reserved=$footprintSet claimed=$claimedDestinations',
+            );
+          }
+          return null;
+        }
+        claimedDestinations.add(path.last);
+        paths[slot] = path;
+        if (trace) {
+          _dropTrace(
+            debugSession,
+            'footprint.appPath slot=$slot path=${path.join('>')} '
+            'reserved=$footprintSet',
+          );
+        }
+        continue;
+      }
+
+      if (trace) {
+        _dropTrace(
+          debugSession,
+          'footprint.blocked slot=$slot reason=content '
+          'content=${_slotContentDetail(content)}',
+        );
+      }
+      return null;
+    }
+
+    return paths;
+  }
+
   void _removeDockPackage(BuildContext context, int dockSlot) {
     final settings = context.read<SettingsCubit>().state;
     final packages = List<String>.from(settings.dockPackages);
@@ -893,11 +1431,8 @@ class _CellLayoutViewState extends State<CellLayoutView>
     // Release-in-armed-zone counts as folder too — the 200ms arm timer is just
     // a confirmation indicator, not a hard commit gate (users naturally release
     // faster than that when intent is obvious).
-    final isFolderCreationDrop = _folderPreviewSlots.contains(slot) ||
-        _folderArmedSlots.contains(slot);
-    // Always commit displacements on any successful drop
-    widget.dragController.commitDisplacements();
-    _cancelAllDisplacementTimers();
+    final isFolderCreationDrop =
+        _folderPreviewSlots.contains(slot) || _folderArmedSlots.contains(slot);
 
     final payload = details.data;
     final workspace = context.read<WorkspaceCubit>();
@@ -928,6 +1463,11 @@ class _CellLayoutViewState extends State<CellLayoutView>
     }
 
     // ── Normal app/folder drag ─────────────────────────────────────────────────
+    // Always commit displacements on any successful non-widget drop. Widget
+    // drops commit after their anchor resolves, so a stationary long-press can
+    // be rejected without applying stale hover displacement state.
+    widget.dragController.commitDisplacements();
+    _cancelAllDisplacementTimers();
 
     if (payload.folderId != null) {
       final item = payload.item;
@@ -1056,6 +1596,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
     bool selectWhenLocal = true,
   }) {
     final workspace = context.read<WorkspaceCubit>();
+    final session = _activeWidgetDragDebugSession ?? 0;
     _dragDropLog(
       'commit.begin target=$targetPageIndex:$pointerSlot '
       'pages=${workspace.state.pages.length} selectWhenLocal=$selectWhenLocal '
@@ -1073,9 +1614,27 @@ class _CellLayoutViewState extends State<CellLayoutView>
       _clearWidgetDropPreview();
       return false;
     }
+    if (_shouldIgnoreUnactivatedWidgetDrop(
+      payload: payload,
+      workspace: workspace,
+      targetPageIndex: targetPageIndex,
+      pointerSlot: pointerSlot,
+    )) {
+      widget.dragController.cancelDrag();
+      _clearWidgetDropPreview();
+      return false;
+    }
 
     final settings = context.read<SettingsCubit>().state;
     final (spanX, spanY) = _spanForWidgetPayload(payload, workspace);
+    final beforeTargetPage = workspace.state.pages[targetPageIndex];
+    _dropTrace(
+      session,
+      'commit.begin target=$targetPageIndex:$pointerSlot '
+      'span=${spanX}x$spanY selectWhenLocal=$selectWhenLocal '
+      'source=${payload.sourcePage}:${payload.sourceSlot} '
+      'targetPageBefore=${_pageSlotMapDebug(beforeTargetPage)}',
+    );
     final resolvedSlot = _resolveWidgetAnchorSlot(
       payload: payload,
       pointerSlot: pointerSlot,
@@ -1084,6 +1643,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
       workspace: workspace,
       targetPageIndex: targetPageIndex,
       trace: true,
+      debugSession: session,
     );
     if (resolvedSlot == null) {
       _dragDropLog(
@@ -1107,6 +1667,23 @@ class _CellLayoutViewState extends State<CellLayoutView>
       'pointerSlot=$pointerSlot resolvedTarget=${_contentDebug(resolvedTarget)} '
       'ignoreSource=$ignoreSource span=${spanX}x$spanY',
     );
+    final resolvedFootprint = slotsForSpan(
+        resolvedSlot, spanX, spanY, settings.gridColumns, settings.gridRows);
+    _dropTrace(
+      session,
+      'commit.resolved target=$targetPageIndex:$resolvedSlot '
+      'pointerSlot=$pointerSlot resolvedTarget=${_slotContentDetail(resolvedTarget)} '
+      'ignoreSource=$ignoreSource footprint=${_footprintDebug(targetPage, resolvedFootprint)}',
+    );
+
+    final cols = settings.gridColumns;
+    final rows = settings.gridRows;
+    final targetCovered = resolvedFootprint?.toList(growable: false);
+    if (targetCovered == null) {
+      _dragDropLog('commit.abort reason=footprintOutOfBounds');
+      widget.dragController.cancelDrag();
+      return false;
+    }
 
     if (resolvedTarget is WidgetSlot || resolvedTarget is WidgetStackSlot) {
       _dragDropLog(
@@ -1118,58 +1695,19 @@ class _CellLayoutViewState extends State<CellLayoutView>
         resolvedSlot,
         maxSpanY: _stackMaxRowSpan(),
       );
-    } else if (resolvedTarget is AppSlot) {
-      final path = _findDisplacementPath(
-        resolvedSlot,
-        settings.gridColumns,
-        settings.gridRows,
-        ignoreSlot: ignoreSource,
-        page: targetPage,
-      );
-      _dragDropLog(
-        'commit.appTarget displacementPath=${path == null ? 'null' : path.join('>')}',
-      );
-      if (path == null ||
-          !workspace.moveItemWithDisplacement(
-            payload.sourcePage,
-            payload.sourceSlot,
-            targetPageIndex,
-            resolvedSlot,
-            path,
-          )) {
-        _dragDropLog('commit.abort reason=appDisplacementMoveFailed');
+    } else {
+      if (!_displaceAppsForWidgetFootprint(
+        workspace: workspace,
+        targetPageIndex: targetPageIndex,
+        footprint: targetCovered,
+        cols: cols,
+        rows: rows,
+        ignoreAnchorSlot: ignoreSource,
+        session: session,
+      )) {
+        _dragDropLog('commit.abort reason=footprintDisplacementFailed');
         widget.dragController.cancelDrag();
         return false;
-      }
-    } else {
-      final cols = settings.gridColumns;
-      final rows = settings.gridRows;
-      final targetCovered =
-          slotsForSpan(resolvedSlot, spanX, spanY, cols, rows) ?? const [];
-      for (final targetSlot in targetCovered) {
-        if (targetSlot == ignoreSource) continue;
-        final livePage = workspace.state.pages[targetPageIndex];
-        final slotContent = livePage.slots[targetSlot];
-        if (slotContent is AppSlot) {
-          final path = _findDisplacementPath(
-            targetSlot,
-            cols,
-            rows,
-            ignoreSlot: ignoreSource,
-            page: livePage,
-          );
-          _dragDropLog(
-            'commit.coveredApp targetSlot=$targetSlot '
-            'path=${path == null ? 'null' : path.join('>')}',
-          );
-          if (path != null) {
-            workspace.shiftItemsAlongPath(targetPageIndex, path);
-            for (int i = 0; i < path.length - 1; i++) {
-              widget.dragController
-                  .recordDisplacement(targetPageIndex, path[i], path[i + 1]);
-            }
-          }
-        }
       }
       _dragDropLog(
         'commit.action=moveItem from=${payload.sourcePage}:${payload.sourceSlot} '
@@ -1184,6 +1722,14 @@ class _CellLayoutViewState extends State<CellLayoutView>
     }
 
     workspace.setCurrentPage(targetPageIndex);
+    _logWidgetPlacementInvariant(
+      session: session,
+      workspace: workspace,
+      targetPageIndex: targetPageIndex,
+      resolvedSlot: resolvedSlot,
+      spanX: spanX,
+      spanY: spanY,
+    );
     widget.dragController.cancelDrag();
     _clearWidgetDropPreview();
     _dragDropLog(
@@ -1196,6 +1742,67 @@ class _CellLayoutViewState extends State<CellLayoutView>
       _syncSelectionGuard();
     }
     return true;
+  }
+
+  void _logWidgetPlacementInvariant({
+    required int session,
+    required WorkspaceCubit workspace,
+    required int targetPageIndex,
+    required int resolvedSlot,
+    required int spanX,
+    required int spanY,
+  }) {
+    if (targetPageIndex < 0 ||
+        targetPageIndex >= workspace.state.pages.length) {
+      _dropTrace(
+        session,
+        'invariant status=FAIL reason=targetPageOutOfBounds page=$targetPageIndex',
+      );
+      return;
+    }
+    final page = workspace.state.pages[targetPageIndex];
+    final content = page.slots[resolvedSlot];
+    final (actualSpanX, actualSpanY) = switch (content) {
+      WidgetSlot() || WidgetStackSlot() => _effectiveSpanForContent(content),
+      _ => (spanX, spanY),
+    };
+    final footprint = slotsForSpan(
+          resolvedSlot,
+          actualSpanX,
+          actualSpanY,
+          widget.settings.gridColumns,
+          widget.settings.gridRows,
+        )?.toList() ??
+        const <int>[];
+    final appOverlap = <int>[];
+    final folderOverlap = <int>[];
+    final widgetAnchorOverlap = <int>[];
+    for (final slot in footprint) {
+      if (slot == resolvedSlot) continue;
+      switch (page.slots[slot]) {
+        case AppSlot():
+          appOverlap.add(slot);
+        case FolderSlot():
+          folderOverlap.add(slot);
+        case WidgetSlot() || WidgetStackSlot():
+          widgetAnchorOverlap.add(slot);
+        default:
+          break;
+      }
+    }
+    final status = appOverlap.isEmpty &&
+            folderOverlap.isEmpty &&
+            widgetAnchorOverlap.isEmpty
+        ? 'PASS'
+        : 'FAIL';
+    _dropTrace(
+      session,
+      'invariant status=$status page=$targetPageIndex '
+      'widgetAnchor=$resolvedSlot span=${actualSpanX}x$actualSpanY '
+      'footprint=$footprint appOverlap=$appOverlap '
+      'folderOverlap=$folderOverlap widgetAnchorOverlap=$widgetAnchorOverlap '
+      'pageAfter=${_pageSlotMapDebug(page)}',
+    );
   }
 
   bool _willAccept(
@@ -1279,48 +1886,70 @@ class _CellLayoutViewState extends State<CellLayoutView>
     return true;
   }
 
-  /// Like [canPlaceWidgetAt] but treats app-occupied slots as valid — those
-  /// apps will be displaced when the widget is dropped. Only another widget
-  /// or a folder hard-blocks the placement.
-  bool _canPlaceWidgetAllowingAppDisplacement({
-    WorkspacePage? page,
-    required int anchorSlot,
-    required int spanX,
-    required int spanY,
-    int? ignoreAnchorSlot,
+  bool _displaceAppsForWidgetFootprint({
+    required WorkspaceCubit workspace,
+    required int targetPageIndex,
+    required List<int> footprint,
+    required int cols,
+    required int rows,
+    required int? ignoreAnchorSlot,
+    required int session,
   }) {
-    final targetPage = page ?? widget.page;
-    final covered = slotsForSpan(
-      anchorSlot,
-      spanX,
-      spanY,
-      widget.settings.gridColumns,
-      widget.settings.gridRows,
-    );
-    if (covered == null) return false;
-
-    final ignoredCoverage = ignoreAnchorSlot == null
-        ? const <int>{}
-        : _currentWidgetCoverage(
-            targetPage,
-            ignoreAnchorSlot,
-            widget.settings.gridColumns,
-            widget.settings.gridRows,
-          );
-    final occupiedByOtherWidgets = _occupiedWidgetSlots(
-      targetPage,
-      widget.settings.gridColumns,
-      widget.settings.gridRows,
-      ignoreAnchorSlot: ignoreAnchorSlot,
-    );
-
-    for (final s in covered) {
-      if (occupiedByOtherWidgets.contains(s)) return false;
-      if (ignoredCoverage.contains(s)) continue;
-      final content = targetPage.slots[s];
-      if (content is FolderSlot) return false;
-      // AppSlot and empty are fine — apps displaced at drop time.
+    if (targetPageIndex < 0 ||
+        targetPageIndex >= workspace.state.pages.length) {
+      _dropTrace(
+        session,
+        'commit.footprintDisplace.abort reason=targetPageOutOfBounds '
+        'page=$targetPageIndex',
+      );
+      return false;
     }
+
+    final page = workspace.state.pages[targetPageIndex];
+    final paths = _widgetFootprintDisplacementPaths(
+      page: page,
+      footprint: footprint,
+      cols: cols,
+      rows: rows,
+      ignoreAnchorSlot: ignoreAnchorSlot,
+      trace: true,
+      debugSession: session,
+    );
+    if (paths == null) {
+      _dropTrace(
+        session,
+        'commit.footprintDisplace.abort reason=noSafePaths '
+        'footprint=$footprint page=${_pageSlotMapDebug(page)}',
+      );
+      return false;
+    }
+
+    for (final entry in paths.entries) {
+      final path = entry.value;
+      final destination = path.last;
+      final destinationInsideFootprint = footprint.contains(destination);
+      _dropTrace(
+        session,
+        'commit.coveredApp targetSlot=${entry.key} '
+        'path=${path.join('>')} destination=$destination '
+        'destinationInsideFootprint=$destinationInsideFootprint',
+      );
+      if (destinationInsideFootprint ||
+          !workspace.shiftItemsAlongPath(targetPageIndex, path)) {
+        _dropTrace(
+          session,
+          'commit.footprintDisplace.abort reason=shiftFailed '
+          'targetSlot=${entry.key} path=${path.join('>')}',
+        );
+        return false;
+      }
+      widget.dragController.recordDisplacement(
+        targetPageIndex,
+        path.first,
+        path.last,
+      );
+    }
+
     return true;
   }
 
@@ -1378,6 +2007,12 @@ class _CellLayoutViewState extends State<CellLayoutView>
       return;
     }
 
+    _dropTrace(
+      _activeWidgetDragDebugSession ?? 0,
+      'preview.update pointerSlot=$pointerSlot anchorSlot=$anchorSlot '
+      'span=${spanX}x$spanY '
+      'footprint=${_footprintDebug(widget.page, slotsForSpan(anchorSlot, spanX, spanY, widget.settings.gridColumns, widget.settings.gridRows))}',
+    );
     setState(() {
       _widgetDropPreviewPointerSlot = pointerSlot;
       _widgetDropPreviewAnchorSlot = anchorSlot;
@@ -1569,6 +2204,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
     required WorkspaceCubit workspace,
     int? targetPageIndex,
     bool trace = false,
+    int debugSession = 0,
   }) {
     final cols = widget.settings.gridColumns;
     final rows = widget.settings.gridRows;
@@ -1582,10 +2218,12 @@ class _CellLayoutViewState extends State<CellLayoutView>
             ? workspace.state.pages[pageIndex]
             : widget.page;
     if (trace) {
-      _dragDropLog(
+      _dropTrace(
+        debugSession,
         'resolveAnchor.begin targetPage=$pageIndex pointerSlot=$pointerSlot '
         'pointerCell=$pointerCol,$pointerRow span=${spanX}x$spanY '
-        'ignoreSource=$ignoreSource slots=${targetPage.slots.length}',
+        'ignoreSource=$ignoreSource slots=${targetPage.slots.length} '
+        'page=${_pageSlotMapDebug(targetPage)}',
       );
     }
 
@@ -1608,10 +2246,30 @@ class _CellLayoutViewState extends State<CellLayoutView>
 
     for (final candidate in candidates) {
       final anchorSlot = candidate.slot;
+      final footprint = slotsForSpan(anchorSlot, spanX, spanY, cols, rows);
+      if (trace) {
+        _dropTrace(
+          debugSession,
+          'resolveAnchor.candidate slot=$anchorSlot '
+          'distance=${candidate.distance} '
+          'footprint=${_footprintDebug(targetPage, footprint)}',
+        );
+      }
       if (payload.sourcePage == pageIndex && payload.sourceSlot == anchorSlot) {
         if (trace) {
-          _dragDropLog(
-              'resolveAnchor.skip slot=$anchorSlot reason=sourceAnchor');
+          _dropTrace(
+            debugSession,
+            'resolveAnchor.skip slot=$anchorSlot reason=sourceAnchor',
+          );
+        }
+        continue;
+      }
+      if (footprint == null) {
+        if (trace) {
+          _dropTrace(
+            debugSession,
+            'resolveAnchor.skip slot=$anchorSlot reason=footprintOutOfBounds',
+          );
         }
         continue;
       }
@@ -1619,7 +2277,8 @@ class _CellLayoutViewState extends State<CellLayoutView>
       final target = targetPage.slots[anchorSlot];
       if (target is WidgetSlot || target is WidgetStackSlot) {
         if (trace) {
-          _dragDropLog(
+          _dropTrace(
+            debugSession,
             'resolveAnchor.accept slot=$anchorSlot reason=stackTarget '
             'target=${_contentDebug(target)} distance=${candidate.distance}',
           );
@@ -1628,50 +2287,65 @@ class _CellLayoutViewState extends State<CellLayoutView>
       }
       if (target is FolderSlot) {
         if (trace) {
-          _dragDropLog('resolveAnchor.skip slot=$anchorSlot reason=folder');
+          _dropTrace(
+            debugSession,
+            'resolveAnchor.skip slot=$anchorSlot reason=folder',
+          );
         }
         continue;
       }
       if (target is AppSlot) {
-        final path = _findDisplacementPath(
-          anchorSlot,
-          cols,
-          rows,
-          ignoreSlot: ignoreSource,
+        final paths = _widgetFootprintDisplacementPaths(
           page: targetPage,
+          footprint: footprint,
+          cols: cols,
+          rows: rows,
+          ignoreAnchorSlot: ignoreSource,
+          trace: trace,
+          debugSession: debugSession,
         );
-        if (path != null) {
+        if (paths != null) {
           if (trace) {
-            _dragDropLog(
+            _dropTrace(
+              debugSession,
               'resolveAnchor.accept slot=$anchorSlot reason=appDisplace '
-              'path=${path.join('>')} distance=${candidate.distance}',
+              'paths=${_pathsDebug(paths)} distance=${candidate.distance}',
             );
           }
           return anchorSlot;
         }
         if (trace) {
-          _dragDropLog('resolveAnchor.skip slot=$anchorSlot reason=appNoPath');
+          _dropTrace(
+            debugSession,
+            'resolveAnchor.skip slot=$anchorSlot reason=appNoPath',
+          );
         }
         continue;
       }
 
-      if (_canPlaceWidgetAllowingAppDisplacement(
+      final paths = _widgetFootprintDisplacementPaths(
         page: targetPage,
-        anchorSlot: anchorSlot,
-        spanX: spanX,
-        spanY: spanY,
+        footprint: footprint,
+        cols: cols,
+        rows: rows,
         ignoreAnchorSlot: ignoreSource,
-      )) {
+        trace: trace,
+        debugSession: debugSession,
+      );
+      if (paths != null) {
         if (trace) {
-          _dragDropLog(
-            'resolveAnchor.accept slot=$anchorSlot reason=canPlace '
-            'distance=${candidate.distance}',
+          _dropTrace(
+            debugSession,
+            'resolveAnchor.accept slot=$anchorSlot '
+            'reason=${paths.isEmpty ? 'canPlace' : 'appDisplaceFootprint'} '
+            'paths=${_pathsDebug(paths)} distance=${candidate.distance}',
           );
         }
         return anchorSlot;
       }
       if (trace) {
-        _dragDropLog(
+        _dropTrace(
+          debugSession,
           'resolveAnchor.skip slot=$anchorSlot reason=cannotPlace '
           'target=${_contentDebug(target)}',
         );
@@ -1679,7 +2353,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
     }
 
     if (trace) {
-      _dragDropLog('resolveAnchor.fail targetPage=$pageIndex');
+      _dropTrace(debugSession, 'resolveAnchor.fail targetPage=$pageIndex');
     }
     return null;
   }
@@ -2026,8 +2700,8 @@ class _CellLayoutViewState extends State<CellLayoutView>
                                     _clearFolderState(slot);
                                     final settings =
                                         context.read<SettingsCubit>().state;
-                                    final pushDir =
-                                        _pushDirectionFromMotion(details.offset);
+                                    final pushDir = _pushDirectionFromMotion(
+                                        details.offset);
                                     _startDisplacementTimer(
                                         slot, workspace, settings,
                                         withPreview: true,
@@ -2747,74 +3421,30 @@ class _CellLayoutViewState extends State<CellLayoutView>
       sourceSlot: slot,
     );
     final isSelected = _selectedWidgetSlot == slot;
-    final widgetView = HomeWidgetSlot(
-      widget: w,
-      page: widget.pageIndex,
-      slot: slot,
-      minSpanX: minSpanX,
-      minSpanY: minSpanY,
-      maxSpanX: maxSpanX,
-      maxSpanY: maxSpanY,
-      gridColumns: widget.settings.gridColumns,
-      gridRows: widget.settings.gridRows,
-      resizeStepX: resizeStepX,
-      resizeStepY: resizeStepY,
-      gridGap: _gridGap,
-      isSelected: isSelected,
-      onDismissResize: _clearWidgetResizeSelection,
-      onResize: (nextSlot, nextSpanX, nextSpanY) =>
-          _resizeWidget(slot, w, nextSlot, nextSpanX, nextSpanY),
-    );
-
-    return LongPressDraggable<DragPayload>(
-      data: payload,
-      rootOverlay: true,
-      delay: const Duration(milliseconds: 350),
-      onDragStarted: () => _armWidgetDrag(slot),
-      onDragUpdate: (details) {
-        widget.dragController.updateDragPosition(details.globalPosition);
-        _maybeActivateWidgetDrag(
-          details,
-          payload,
-          slot,
-        );
-      },
-      onDragEnd: (details) {
-        final wasAccepted =
-            details.wasAccepted || _tryFallbackWidgetDrop(payload);
-        _finishWidgetDrag(slot, wasAccepted: wasAccepted);
-      },
-      onDraggableCanceled: (_, __) =>
-          _finishWidgetDrag(slot, wasAccepted: false),
-      onDragCompleted: () => _completeWidgetDrag(slot),
-      feedback: _buildDeferredWidgetDragFeedback(
-        slot: slot,
-        width: _spanDragWidth(effectiveSpanX, resizeStepX),
-        height: _spanDragHeight(effectiveSpanY, resizeStepY),
-        child: HomeWidgetSlot(
-          widget: w,
-          page: widget.pageIndex,
-          slot: slot,
-          minSpanX: minSpanX,
-          minSpanY: minSpanY,
-          maxSpanX: maxSpanX,
-          maxSpanY: maxSpanY,
-          gridColumns: widget.settings.gridColumns,
-          gridRows: widget.settings.gridRows,
-          resizeStepX: resizeStepX,
-          resizeStepY: resizeStepY,
-          gridGap: _gridGap,
-          isSelected: false,
-          onDismissResize: _clearWidgetResizeSelection,
-          onResize: (nextSlot, nextSpanX, nextSpanY) =>
-              _resizeWidget(slot, w, nextSlot, nextSpanX, nextSpanY),
-        ),
-      ),
-      childWhenDragging: ValueListenableBuilder<int?>(
+    // ONE in-grid subtree, handed to BOTH `child` and `childWhenDragging`
+    // below. LongPressDraggable swaps child<->childWhenDragging the instant the
+    // long-press fires. The in-grid tile carries a live AppWidgetHostView
+    // AndroidView keyed by a GlobalKey; if the two slots hold *different*
+    // widget instances, that GlobalKey deactivates/reactivates across the swap
+    // -- a platform-view reparent. Under RenderMode.texture a reparent
+    // re-inserts the texture layer and the compositor paints it at a stale
+    // offset (up-and-left) for a frame or two. THAT paint-only shift is the
+    // "widget jumps on long-press" bug: the Flutter render box and native
+    // onLayout both stay put (movedX=false), and the host-view key is
+    // momentarily null mid-swap (before=null in the JUMP trace) -- the jump
+    // lives only in the compositor, between the two layers we instrumented.
+    // Sharing the exact same instance makes the swap a reconcile no-op, so the
+    // texture never reparents and never moves. Dim + selection are driven
+    // reactively from the active-drag ValueListenable so the single subtree
+    // covers both the resting and the actively-dragging states.
+    final inGridSlot = KeyedSubtree(
+      key: _slotProbeKey(slot),
+      child: ValueListenableBuilder<int?>(
         valueListenable: _activeWidgetDragFeedbackSlot,
         builder: (context, activeSlot, _) {
+          final beingDragged = activeSlot == slot;
           return AnimatedOpacity(
-            opacity: activeSlot == slot ? 0.12 : 1,
+            opacity: beingDragged ? 0.12 : 1,
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOut,
             child: HomeWidgetSlot(
@@ -2830,15 +3460,51 @@ class _CellLayoutViewState extends State<CellLayoutView>
               resizeStepX: resizeStepX,
               resizeStepY: resizeStepY,
               gridGap: _gridGap,
-              isSelected: activeSlot != slot,
+              isSelected: !beingDragged && isSelected,
               onDismissResize: _clearWidgetResizeSelection,
               onResize: (nextSlot, nextSpanX, nextSpanY) =>
                   _resizeWidget(slot, w, nextSlot, nextSpanX, nextSpanY),
+              hostViewKey: _hostViewKeyFor(w.appWidgetId),
             ),
           );
         },
       ),
-      child: widgetView,
+    );
+
+    return _withWidgetDragPointerProbe(
+      slot: slot,
+      child: LongPressDraggable<DragPayload>(
+        data: payload,
+        rootOverlay: true,
+        delay: const Duration(milliseconds: 350),
+        onDragStarted: () => _armWidgetDrag(slot),
+        onDragUpdate: (details) {
+          widget.dragController.updateDragPosition(details.globalPosition);
+          _maybeActivateWidgetDrag(
+            details,
+            payload,
+            slot,
+          );
+        },
+        onDragEnd: (details) {
+          final wasAccepted =
+              details.wasAccepted || _tryFallbackWidgetDrop(payload);
+          _finishWidgetDrag(slot, wasAccepted: wasAccepted);
+        },
+        onDraggableCanceled: (_, __) =>
+            _finishWidgetDrag(slot, wasAccepted: false),
+        onDragCompleted: () => _completeWidgetDrag(slot),
+        feedback: _buildDeferredWidgetDragFeedback(
+          slot: slot,
+          width: _spanDragWidth(effectiveSpanX, resizeStepX),
+          height: _spanDragHeight(effectiveSpanY, resizeStepY),
+        ),
+        // Same instance for both: see the inGridSlot comment above. Swapping
+        // identical widgets is a reconcile no-op, so the live AppWidgetHostView
+        // never reparents and the texture never jumps on long-press.
+        childWhenDragging: inGridSlot,
+        child: inGridSlot,
+      ),
     );
   }
 
@@ -2896,83 +3562,17 @@ class _CellLayoutViewState extends State<CellLayoutView>
       sourceSlot: slot,
     );
     final isSelected = _selectedWidgetSlot == slot;
-    final stackView = HomeWidgetStackView(
-      widgets: content.widgets,
-      spanX: content.spanX,
-      spanY: content.spanY,
-      page: widget.pageIndex,
-      slot: slot,
-      currentIndex: content.currentIndex,
-      minSpanX: minSpanX,
-      minSpanY: minSpanY,
-      maxSpanX: safeMaxSpanX,
-      maxSpanY: safeMaxSpanY,
-      gridColumns: widget.settings.gridColumns,
-      gridRows: widget.settings.gridRows,
-      resizeStepX: resizeStepX,
-      resizeStepY: resizeStepY,
-      gridGap: _gridGap,
-      isSelected: isSelected,
-      onDismissResize: _clearWidgetResizeSelection,
-      onIndexChanged: (index) => context
-          .read<WorkspaceCubit>()
-          .updateWidgetStackIndex(widget.pageIndex, slot, index),
-      onResize: (nextSlot, nextSpanX, nextSpanY) =>
-          _resizeWidgetStack(slot, content, nextSlot, nextSpanX, nextSpanY),
-    );
-
-    return LongPressDraggable<DragPayload>(
-      data: payload,
-      rootOverlay: true,
-      delay: const Duration(milliseconds: 350),
-      onDragStarted: () => _armWidgetDrag(slot),
-      onDragUpdate: (details) {
-        widget.dragController.updateDragPosition(details.globalPosition);
-        _maybeActivateWidgetDrag(
-          details,
-          payload,
-          slot,
-        );
-      },
-      onDragEnd: (details) {
-        final wasAccepted =
-            details.wasAccepted || _tryFallbackWidgetDrop(payload);
-        _finishWidgetDrag(slot, wasAccepted: wasAccepted);
-      },
-      onDraggableCanceled: (_, __) =>
-          _finishWidgetDrag(slot, wasAccepted: false),
-      onDragCompleted: () => _completeWidgetDrag(slot),
-      feedback: _buildDeferredWidgetDragFeedback(
-        slot: slot,
-        width: _spanDragWidth(effectiveSpanX, resizeStepX),
-        height: _spanDragHeight(effectiveSpanY, resizeStepY),
-        child: HomeWidgetStackView(
-          widgets: content.widgets,
-          spanX: content.spanX,
-          spanY: content.spanY,
-          page: widget.pageIndex,
-          slot: slot,
-          currentIndex: content.currentIndex,
-          minSpanX: minSpanX,
-          minSpanY: minSpanY,
-          maxSpanX: safeMaxSpanX,
-          maxSpanY: safeMaxSpanY,
-          gridColumns: widget.settings.gridColumns,
-          gridRows: widget.settings.gridRows,
-          resizeStepX: resizeStepX,
-          resizeStepY: resizeStepY,
-          gridGap: _gridGap,
-          isSelected: false,
-          onDismissResize: _clearWidgetResizeSelection,
-          onResize: (nextSlot, nextSpanX, nextSpanY) =>
-              _resizeWidgetStack(slot, content, nextSlot, nextSpanX, nextSpanY),
-        ),
-      ),
-      childWhenDragging: ValueListenableBuilder<int?>(
+    // ONE in-grid subtree shared by both `child` and `childWhenDragging` so the
+    // long-press swap is a reconcile no-op and the live host-view AndroidView
+    // never reparents/re-composites. See the full note in _buildWidgetSlot.
+    final inGridStack = KeyedSubtree(
+      key: _slotProbeKey(slot),
+      child: ValueListenableBuilder<int?>(
         valueListenable: _activeWidgetDragFeedbackSlot,
         builder: (context, activeSlot, _) {
+          final beingDragged = activeSlot == slot;
           return AnimatedOpacity(
-            opacity: activeSlot == slot ? 0.12 : 1,
+            opacity: beingDragged ? 0.12 : 1,
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOut,
             child: HomeWidgetStackView(
@@ -2991,15 +3591,52 @@ class _CellLayoutViewState extends State<CellLayoutView>
               resizeStepX: resizeStepX,
               resizeStepY: resizeStepY,
               gridGap: _gridGap,
-              isSelected: activeSlot != slot,
+              isSelected: !beingDragged && isSelected,
               onDismissResize: _clearWidgetResizeSelection,
+              onIndexChanged: (index) => context
+                  .read<WorkspaceCubit>()
+                  .updateWidgetStackIndex(widget.pageIndex, slot, index),
               onResize: (nextSlot, nextSpanX, nextSpanY) => _resizeWidgetStack(
                   slot, content, nextSlot, nextSpanX, nextSpanY),
             ),
           );
         },
       ),
-      child: stackView,
+    );
+
+    return _withWidgetDragPointerProbe(
+      slot: slot,
+      child: LongPressDraggable<DragPayload>(
+        data: payload,
+        rootOverlay: true,
+        delay: const Duration(milliseconds: 350),
+        onDragStarted: () => _armWidgetDrag(slot),
+        onDragUpdate: (details) {
+          widget.dragController.updateDragPosition(details.globalPosition);
+          _maybeActivateWidgetDrag(
+            details,
+            payload,
+            slot,
+          );
+        },
+        onDragEnd: (details) {
+          final wasAccepted =
+              details.wasAccepted || _tryFallbackWidgetDrop(payload);
+          _finishWidgetDrag(slot, wasAccepted: wasAccepted);
+        },
+        onDraggableCanceled: (_, __) =>
+            _finishWidgetDrag(slot, wasAccepted: false),
+        onDragCompleted: () => _completeWidgetDrag(slot),
+        feedback: _buildDeferredWidgetDragFeedback(
+          slot: slot,
+          width: _spanDragWidth(effectiveSpanX, resizeStepX),
+          height: _spanDragHeight(effectiveSpanY, resizeStepY),
+        ),
+        // Same instance for both: swapping identical widgets is a reconcile
+        // no-op, so the live host-view AndroidView never reparents on long-press.
+        childWhenDragging: inGridStack,
+        child: inGridStack,
+      ),
     );
   }
 
@@ -3017,22 +3654,49 @@ class _CellLayoutViewState extends State<CellLayoutView>
     required int slot,
     required double width,
     required double height,
-    required Widget child,
   }) {
-    return ValueListenableBuilder<int?>(
-      valueListenable: _activeWidgetDragFeedbackSlot,
-      builder: (context, activeSlot, _) {
-        if (activeSlot != slot) {
+    // Rebuild on BOTH the active-slot flip (feedback appears at 8px) and the
+    // snapshot revision (placeholder -> real image once the capture lands).
+    return ListenableBuilder(
+      listenable: Listenable.merge(
+        [_activeWidgetDragFeedbackSlot, _dragSnapshotRevision],
+      ),
+      builder: (context, _) {
+        if (_activeWidgetDragFeedbackSlot.value != slot) {
           return SizedBox(width: width, height: height);
         }
-
+        final session = _widgetDragDebugSessionForSlot(slot);
+        final hasSnapshot = _dragSnapshots.containsKey(slot);
+        final stateKey =
+            '$session:$slot:${hasSnapshot ? 'snapshot' : 'placeholder'}';
+        if (_loggedWidgetFeedbackStates.add(stateKey)) {
+          _jumpLog(
+            session,
+            'feedback.build',
+            'slot=$slot state=${hasSnapshot ? 'snapshot' : 'placeholder'} '
+                'size=${width.toStringAsFixed(1)}x${height.toStringAsFixed(1)} '
+                'rect=${_fmtRect(_hostGlobalRect(slot))}',
+          );
+        }
         return _buildWidgetDragFeedback(
           width: width,
           height: height,
-          child: child,
+          child: _buildDragFeedbackContent(slot),
         );
       },
     );
+  }
+
+  // The visual inside the drag feedback: a static snapshot of the widget if one
+  // was captured at arm, otherwise a neutral placeholder. NEVER a live
+  // AndroidView -- that would be a second AppWidgetHostView for the same id.
+  // See _dragSnapshots.
+  Widget _buildDragFeedbackContent(int slot) {
+    final bytes = _dragSnapshots[slot];
+    if (bytes != null) {
+      return Image.memory(bytes, fit: BoxFit.fill, gaplessPlayback: true);
+    }
+    return const ColoredBox(color: Color(0xFF1C1C1E));
   }
 
   Widget _buildWidgetDragFeedback({
@@ -3041,7 +3705,16 @@ class _CellLayoutViewState extends State<CellLayoutView>
     required Widget child,
   }) {
     return PickupFeedback(
-      peakScale: 1.1,
+      // No scale pop for widgets. PickupFeedback's Transform.scale is
+      // center-anchored, so any peakScale > 1.0 throws a multi-cell widget's
+      // top-left up-and-left by (scale-1)/2 * size the instant the drag
+      // activates (e.g. 1.1 on a 352x242 tile = ~17px left, ~12px up). That is
+      // the "widget jumps sideways into empty space / upward on long-press"
+      // bug — the layout never moves (movedX=false in the JUMP trace); it's the
+      // feedback popping outward from its center. Hold scale at 1.0 so the
+      // widget lifts in place; the shadow + white border + opacity already
+      // convey pickup.
+      peakScale: 1.0,
       targetScale: 1.0,
       opacity: 0.92,
       child: SizedBox(
