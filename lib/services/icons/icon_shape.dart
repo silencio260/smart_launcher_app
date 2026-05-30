@@ -276,11 +276,16 @@ class PebbleShape extends IconShape {
   Path getMaskPath(double size) {
     final path = Path();
     path.moveTo(size * 0.15, 0);
-    path.cubicTo(size * 0.45, -size * 0.04, size * 0.7, 0, size * 0.88, size * 0.12);
-    path.cubicTo(size * 1.04, size * 0.28, size, size * 0.55, size * 0.95, size * 0.78);
-    path.cubicTo(size * 0.88, size * 1.02, size * 0.6, size, size * 0.35, size * 0.98);
-    path.cubicTo(size * 0.12, size * 0.96, -size * 0.02, size * 0.8, 0, size * 0.55);
-    path.cubicTo(-size * 0.02, size * 0.3, size * 0.02, size * 0.06, size * 0.15, 0);
+    path.cubicTo(
+        size * 0.45, -size * 0.04, size * 0.7, 0, size * 0.88, size * 0.12);
+    path.cubicTo(
+        size * 1.04, size * 0.28, size, size * 0.55, size * 0.95, size * 0.78);
+    path.cubicTo(
+        size * 0.88, size * 1.02, size * 0.6, size, size * 0.35, size * 0.98);
+    path.cubicTo(
+        size * 0.12, size * 0.96, -size * 0.02, size * 0.8, 0, size * 0.55);
+    path.cubicTo(
+        -size * 0.02, size * 0.3, size * 0.02, size * 0.06, size * 0.15, 0);
     path.close();
     return path;
   }
@@ -318,8 +323,10 @@ class HeartShape extends IconShape {
     final path = Path();
     path.moveTo(size * 0.5, size * 0.85);
     path.cubicTo(0, size * 0.55, 0, size * 0.2, size * 0.25, size * 0.2);
-    path.cubicTo(size * 0.38, size * 0.2, size * 0.46, size * 0.28, size * 0.5, size * 0.38);
-    path.cubicTo(size * 0.54, size * 0.28, size * 0.62, size * 0.2, size * 0.75, size * 0.2);
+    path.cubicTo(size * 0.38, size * 0.2, size * 0.46, size * 0.28, size * 0.5,
+        size * 0.38);
+    path.cubicTo(size * 0.54, size * 0.28, size * 0.62, size * 0.2, size * 0.75,
+        size * 0.2);
     path.cubicTo(size, size * 0.2, size, size * 0.55, size * 0.5, size * 0.85);
     path.close();
     return path;

@@ -67,11 +67,14 @@ class _DotPainter extends CustomPainter {
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      tp.paint(canvas, Offset((size.width - tp.width) / 2, (size.height - tp.height) / 2));
+      tp.paint(canvas,
+          Offset((size.width - tp.width) / 2, (size.height - tp.height) / 2));
     }
   }
 
   @override
   bool shouldRepaint(_DotPainter old) =>
-      old.count != count || old.dotColor != dotColor || old.showCount != showCount;
+      old.count != count ||
+      old.dotColor != dotColor ||
+      old.showCount != showCount;
 }

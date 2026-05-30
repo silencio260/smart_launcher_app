@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/app_info.dart';
 import '../../state/apps_cubit.dart';
 import '../../state/settings_cubit.dart';
+import '../../widgets/icons/feature_icon.dart';
 
 class HiddenAppsScreen extends StatelessWidget {
   const HiddenAppsScreen({super.key});
@@ -20,7 +21,7 @@ class HiddenAppsScreen extends StatelessWidget {
               final cubit = context.read<SettingsCubit>();
               final settingsCubit = context.read<SettingsCubit>();
               final s = settingsCubit.state;
-              final apps = appsState.apps
+              final apps = List<AppInfo>.from(appsState.apps)
                 ..sort((a, b) => a.name.compareTo(b.name));
 
               if (apps.isEmpty) {
@@ -69,6 +70,13 @@ class _HiddenAppIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final iconPath = app.iconPath;
+    if (app.isInternalFeature) {
+      return FeatureIcon(
+        featureId: app.launcherFeatureId,
+        packageName: app.packageName,
+        size: 40,
+      );
+    }
     if (iconPath != null && iconPath.isNotEmpty) {
       return Image.file(
         File(iconPath),

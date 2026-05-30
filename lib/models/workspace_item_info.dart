@@ -6,6 +6,7 @@ class WorkspaceItemInfo extends ItemInfo {
   String? intentAction;
   Uint8List? icon;
   String? iconPath;
+  String? launcherFeatureId;
   bool isDisabled;
   String? disabledMessage;
   bool isSystemApp;
@@ -28,6 +29,7 @@ class WorkspaceItemInfo extends ItemInfo {
     this.intentAction,
     this.icon,
     this.iconPath,
+    this.launcherFeatureId,
     this.isDisabled = false,
     this.disabledMessage,
     this.isSystemApp = false,

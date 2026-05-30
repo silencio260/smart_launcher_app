@@ -107,8 +107,8 @@ class DrawerPerf {
       final vsyncMs = t.vsyncOverhead.inMicroseconds / 1000.0;
       final buildMs = t.buildDuration.inMicroseconds / 1000.0;
       final rasterMs = t.rasterDuration.inMicroseconds / 1000.0;
-      final gpuWaitMs = (totalMs - vsyncMs - buildMs - rasterMs)
-          .clamp(0.0, double.infinity);
+      final gpuWaitMs =
+          (totalMs - vsyncMs - buildMs - rasterMs).clamp(0.0, double.infinity);
       final tMs = _wall.elapsedMicroseconds / 1000.0;
       debugPrint(
         'DrawerPerf JANK t=${tMs.toStringAsFixed(2)} '

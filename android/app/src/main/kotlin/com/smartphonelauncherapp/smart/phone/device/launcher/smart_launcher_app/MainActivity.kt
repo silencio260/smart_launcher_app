@@ -12,8 +12,11 @@ import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.AppInstallEventChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.AppsChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.CalendarChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.CallStateChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.ContactsChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.FileLockerChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.NotificationChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.SecurityChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.SystemChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.WallpaperChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.WidgetsChannel
@@ -28,6 +31,8 @@ class MainActivity : FlutterActivity() {
     private val appWidgetHost by lazy { LauncherAppWidgetHost(this, 1024) }
     private var widgetsChannel: WidgetsChannel? = null
     private var notificationChannel: NotificationChannel? = null
+    private var securityChannel: SecurityChannel? = null
+    private var fileLockerChannel: FileLockerChannel? = null
 
     override fun getRenderMode(): RenderMode = RenderMode.texture
     override fun getTransparencyMode(): TransparencyMode = TransparencyMode.transparent
@@ -57,7 +62,10 @@ class MainActivity : FlutterActivity() {
         notificationChannel = NotificationChannel(this).also { it.register(messenger) }
         ContactsChannel(this).register(messenger)
         CalendarChannel(this).register(messenger)
+        CallStateChannel(this).register(messenger)
         AlarmChannel(this).register(messenger)
+        securityChannel = SecurityChannel(this).also { it.register(messenger) }
+        fileLockerChannel = FileLockerChannel(this).also { it.register(messenger) }
         AppInstallEventChannel(this).register(messenger)
         widgetsChannel = WidgetsChannel(this, appWidgetHost).also { it.register(messenger) }
 
@@ -75,6 +83,14 @@ class MainActivity : FlutterActivity() {
 
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (securityChannel?.onActivityResult(requestCode, resultCode) == true) {
+            super.onActivityResult(requestCode, resultCode, data)
+            return
+        }
+        if (fileLockerChannel?.onActivityResult(requestCode, resultCode, data) == true) {
+            super.onActivityResult(requestCode, resultCode, data)
+            return
+        }
         widgetsChannel?.onActivityResult(requestCode, resultCode, data)
         super.onActivityResult(requestCode, resultCode, data)
     }

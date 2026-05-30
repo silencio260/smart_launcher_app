@@ -36,9 +36,8 @@ class _DateTimeWidgetState extends State<DateTimeWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final timeFormat = widget.settings.timeFormat == TimeFormat.h12
-        ? 'h:mm a'
-        : 'HH:mm';
+    final timeFormat =
+        widget.settings.timeFormat == TimeFormat.h12 ? 'h:mm a' : 'HH:mm';
     final timeStr = DateFormat(timeFormat).format(_now);
     final dateStr = DateFormat('EEEE, MMMM d').format(_now);
 

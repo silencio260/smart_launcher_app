@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/app_info.dart';
+import '../../models/launcher_feature.dart';
 import '../../models/launcher_settings.dart';
+import '../../services/feature_launch_dispatcher.dart';
 import '../../services/drag/drag_controller.dart';
 import '../../services/launcher_service.dart';
 import '../../state/apps_cubit.dart';
 import '../../state/search_cubit.dart';
+import '../../state/settings_cubit.dart';
 import 'all_apps_recycler.dart';
 import 'all_apps_search_bar.dart';
 
@@ -232,9 +235,24 @@ class _AllAppsContainerState extends State<AllAppsContainer>
           widget.onAddToHome(app);
         },
         onAppInfo: () {
-          final pkg = _menuApp!.packageName;
+          final app = _menuApp!;
           _dismissMenu();
-          LauncherService.openAppSettings(pkg);
+          final featureId = app.launcherFeatureId ??
+              LauncherFeatureCatalog.idForPackage(app.packageName);
+          if (featureId != null) {
+            FeatureLaunchDispatcher.openFeature(context, featureId);
+          } else {
+            LauncherService.openAppSettings(app.packageName);
+          }
+        },
+        onHideIcon: () {
+          final app = _menuApp!;
+          _dismissMenu();
+          final hidden = widget.settings.hiddenApps.toSet()
+            ..add(app.packageName);
+          context.read<SettingsCubit>().update(
+                widget.settings.copyWith(hiddenApps: hidden.toList()..sort()),
+              );
         },
       ),
     );
@@ -326,11 +344,13 @@ class _AppContextMenu extends StatelessWidget {
   final AppInfo app;
   final VoidCallback onAddToHome;
   final VoidCallback onAppInfo;
+  final VoidCallback onHideIcon;
 
   const _AppContextMenu({
     required this.app,
     required this.onAddToHome,
     required this.onAppInfo,
+    required this.onHideIcon,
   });
 
   @override
@@ -368,8 +388,16 @@ class _AppContextMenu extends StatelessWidget {
                 icon: Icons.add_to_home_screen,
                 label: 'Add to Home',
                 onTap: onAddToHome),
-            _ContextMenuItem(
-                icon: Icons.info_outline, label: 'App Info', onTap: onAppInfo),
+            if (app.isInternalFeature)
+              _ContextMenuItem(
+                  icon: Icons.visibility_off_outlined,
+                  label: 'Hide Icon',
+                  onTap: onHideIcon)
+            else
+              _ContextMenuItem(
+                  icon: Icons.info_outline,
+                  label: 'App Info',
+                  onTap: onAppInfo),
           ],
         ),
       ),

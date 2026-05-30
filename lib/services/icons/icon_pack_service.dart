@@ -10,9 +10,7 @@ class IconPackService {
   Future<List<IconPackInfo>> getInstalledPacks() async {
     try {
       final result = await _channel.invokeMethod<List>('getInstalledIconPacks');
-      return (result ?? [])
-          .map((m) => IconPackInfo.fromMap(m as Map))
-          .toList();
+      return (result ?? []).map((m) => IconPackInfo.fromMap(m as Map)).toList();
     } catch (_) {
       return [];
     }

@@ -10,7 +10,8 @@ class SmartspaceCard extends StatefulWidget {
 }
 
 class _SmartspaceCardState extends State<SmartspaceCard> {
-  static const _calendar = MethodChannel('com.genrevibes.smartlauncher/calendar');
+  static const _calendar =
+      MethodChannel('com.genrevibes.smartlauncher/calendar');
   static const _alarm = MethodChannel('com.genrevibes.smartlauncher/alarm');
 
   _CardData? _data;
@@ -85,5 +86,6 @@ class _CardData {
   final IconData icon;
   final String text;
   final String subtitle;
-  const _CardData({required this.icon, required this.text, required this.subtitle});
+  const _CardData(
+      {required this.icon, required this.text, required this.subtitle});
 }

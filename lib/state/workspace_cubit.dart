@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/workspace_item_info.dart';
+import '../models/launcher_feature.dart';
 import '../models/folder_info.dart';
 import '../models/launcher_widget_info.dart';
 import '../models/widget_provider_info.dart';
@@ -405,6 +406,44 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     return placement;
   }
 
+  bool seedLauncherFeatureApps(int columns, int rows) {
+    final pages = state.pages.isEmpty
+        ? <WorkspacePage>[_emptyPage()]
+        : List<WorkspacePage>.from(state.pages);
+    final existingPackages = <String>{};
+    for (final page in pages) {
+      for (final content in page.slots.values) {
+        if (content is AppSlot) existingPackages.add(content.item.packageName);
+      }
+    }
+    for (final folder in state.folders.values) {
+      for (final item in folder.contents) {
+        existingPackages.add(item.packageName);
+      }
+    }
+
+    final pageZeroSlots = Map<int, SlotContent>.from(pages.first.slots);
+    var changed = false;
+    for (final feature in LauncherFeatureCatalog.homeFeatures) {
+      if (existingPackages.contains(feature.packageName)) continue;
+      final slot = findFirstAppFit(
+        WorkspacePage(pageZeroSlots),
+        columns,
+        rows,
+      );
+      if (slot == null) break;
+      pageZeroSlots[slot] = AppSlot(feature.toWorkspaceItem(screenId: 0));
+      existingPackages.add(feature.packageName);
+      changed = true;
+    }
+
+    if (!changed) return false;
+    pages[0] = WorkspacePage(pageZeroSlots);
+    emit(state.copyWith(pages: pages, currentPage: 0));
+    saveLayout();
+    return true;
+  }
+
   ({int page, int slot}) addWidgetToFirstAvailableSlot(
     LauncherWidgetInfo widget,
     int columns,
@@ -474,6 +513,81 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     pages[page] = WorkspacePage(slots);
     emit(state.copyWith(pages: pages));
     saveLayout();
+  }
+
+  bool removePackageArtifacts(String packageName) {
+    if (packageName.isEmpty) return false;
+    final pages = List<WorkspacePage>.from(state.pages);
+    final folders = Map<String, FolderInfo>.from(state.folders);
+    var changed = false;
+
+    for (var pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+      final slots = Map<int, SlotContent>.from(pages[pageIndex].slots);
+      final removals = <int>[];
+      for (final entry in slots.entries) {
+        final content = entry.value;
+        if (content is AppSlot && content.item.packageName == packageName) {
+          removals.add(entry.key);
+        }
+      }
+      for (final slot in removals) {
+        slots.remove(slot);
+        changed = true;
+      }
+      pages[pageIndex] = WorkspacePage(slots);
+    }
+
+    for (final entry in state.folders.entries) {
+      final folderId = entry.key;
+      final folder = entry.value;
+      final contents = folder.contents
+          .where((item) => item.packageName != packageName)
+          .toList(growable: false);
+      if (contents.length == folder.contents.length) continue;
+      changed = true;
+
+      int? folderSlot;
+      int? folderPage;
+      for (var pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+        for (final slotEntry in pages[pageIndex].slots.entries) {
+          if (slotEntry.value is FolderSlot &&
+              (slotEntry.value as FolderSlot).folderId == folderId) {
+            folderPage = pageIndex;
+            folderSlot = slotEntry.key;
+            break;
+          }
+        }
+        if (folderSlot != null) break;
+      }
+
+      if (contents.length > 1) {
+        folders[folderId] = FolderInfo(
+          id: folder.id,
+          folderTitle: folder.folderTitle,
+          contents: contents,
+          cellX: folder.cellX,
+          cellY: folder.cellY,
+          screenId: folder.screenId,
+        );
+      } else {
+        folders.remove(folderId);
+        if (folderPage != null && folderSlot != null) {
+          final slots = Map<int, SlotContent>.from(pages[folderPage].slots);
+          if (contents.length == 1) {
+            slots[folderSlot] = AppSlot(contents.single);
+          } else {
+            slots.remove(folderSlot);
+          }
+          pages[folderPage] = WorkspacePage(slots);
+        }
+      }
+    }
+
+    if (!changed) return false;
+    emit(state.copyWith(pages: pages, folders: folders));
+    collapseEmptyPages();
+    saveLayout();
+    return true;
   }
 
   /// Removes the widget at [index] from a [WidgetStackSlot] at (page, slot).
@@ -1457,6 +1571,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
                         'packageName': i.packageName,
                         'componentName': i.componentName,
                         'title': i.title,
+                        'launcherFeatureId': i.launcherFeatureId,
                       })
                   .toList(),
             })),
@@ -1469,6 +1584,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
         'packageName': slot.item.packageName,
         'componentName': slot.item.componentName,
         'title': slot.item.title,
+        'launcherFeatureId': slot.item.launcherFeatureId,
       };
     } else if (slot is FolderSlot) {
       return {'type': 'folder', 'folderId': slot.folderId};
@@ -1546,6 +1662,9 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
           packageName: cMap['packageName'] as String,
           componentName: cMap['componentName'] as String?,
           title: cMap['title'] as String?,
+          launcherFeatureId: cMap['launcherFeatureId'] as String? ??
+              LauncherFeatureCatalog.idForPackage(
+                  cMap['packageName'] as String),
         );
       }).toList();
       foldersMap[k as String] = FolderInfo(
@@ -1582,6 +1701,9 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
           packageName: data['packageName'] as String,
           componentName: data['componentName'] as String?,
           title: data['title'] as String?,
+          launcherFeatureId: data['launcherFeatureId'] as String? ??
+              LauncherFeatureCatalog.idForPackage(
+                  data['packageName'] as String),
         );
         return AppSlot(item);
       case 'widget':

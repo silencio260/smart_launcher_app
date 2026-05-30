@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../models/search_result.dart';
-import '../services/launcher_service.dart';
+import '../models/launcher_feature.dart';
+import '../services/feature_launch_dispatcher.dart';
 import '../services/search/app_search_service.dart';
 import '../services/search/calculator_service.dart';
 import '../state/apps_cubit.dart';
 import '../state/search_cubit.dart';
 import '../state/settings_cubit.dart';
 import '../widgets/icons/shaped_icon.dart';
+import '../widgets/icons/feature_icon.dart';
 
 class SearchOverlayScreen extends StatefulWidget {
   final String iconShape;
@@ -68,7 +70,7 @@ class _SearchOverlayScreenState extends State<SearchOverlayScreen> {
     switch (result.type) {
       case SearchResultType.app:
         if (result.packageName != null) {
-          LauncherService.launchApp(result.packageName!);
+          FeatureLaunchDispatcher.launchPackage(context, result.packageName!);
         }
       case SearchResultType.calculator:
         break;
@@ -145,6 +147,10 @@ class _SearchOverlayScreenState extends State<SearchOverlayScreen> {
   }
 
   Widget _buildLeading(SearchResult r) {
+    if (r.packageName != null &&
+        LauncherFeatureCatalog.isFeaturePackage(r.packageName!)) {
+      return FeatureIcon(packageName: r.packageName, size: 40);
+    }
     if (r.icon != null || (r.iconPath?.isNotEmpty ?? false)) {
       return ShapedIcon(
         iconBytes: r.icon,

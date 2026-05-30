@@ -26,10 +26,12 @@ class FolderSettingsScreen extends StatelessWidget {
                   final shape = await Navigator.push<String>(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => IconShapePickerScreen(current: s.folderIconShape),
+                      builder: (_) =>
+                          IconShapePickerScreen(current: s.folderIconShape),
                     ),
                   );
-                  if (shape != null) cubit.update(s.copyWith(folderIconShape: shape));
+                  if (shape != null)
+                    cubit.update(s.copyWith(folderIconShape: shape));
                 },
               ),
               ListTile(
@@ -47,7 +49,8 @@ class FolderSettingsScreen extends StatelessWidget {
                 max: 5,
                 divisions: 3,
                 label: '${s.folderMaxColumns}',
-                onChanged: (v) => cubit.update(s.copyWith(folderMaxColumns: v.round())),
+                onChanged: (v) =>
+                    cubit.update(s.copyWith(folderMaxColumns: v.round())),
               ),
               _SliderTile(
                 icon: Icons.table_rows_outlined,
@@ -57,7 +60,8 @@ class FolderSettingsScreen extends StatelessWidget {
                 max: 5,
                 divisions: 3,
                 label: '${s.folderMaxRows}',
-                onChanged: (v) => cubit.update(s.copyWith(folderMaxRows: v.round())),
+                onChanged: (v) =>
+                    cubit.update(s.copyWith(folderMaxRows: v.round())),
               ),
               _SectionHeader('Labels'),
               SwitchListTile(
@@ -73,7 +77,8 @@ class FolderSettingsScreen extends StatelessWidget {
     );
   }
 
-  void _pickColor(BuildContext context, SettingsCubit cubit, LauncherSettings s) {
+  void _pickColor(
+      BuildContext context, SettingsCubit cubit, LauncherSettings s) {
     final options = <(String, Color)>[
       ('Dark', Colors.black54),
       ('Blue', Colors.blue.shade900),

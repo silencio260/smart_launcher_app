@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'models/launcher_settings.dart';
 import 'state/apps_cubit.dart';
 import 'state/launcher_cubit.dart';
+import 'state/launcher_feature_cubit.dart';
 import 'state/search_cubit.dart';
 import 'state/settings_cubit.dart';
 import 'state/workspace_cubit.dart';
@@ -28,6 +29,7 @@ class SmartLauncherApp extends StatelessWidget {
     return MultiBlocProvider(
       providers: [
         BlocProvider(create: (_) => SettingsCubit()..load()),
+        BlocProvider(create: (_) => LauncherFeatureSettingsCubit()..load()),
         BlocProvider(create: (_) => AppsCubit()..loadCachedThenRefresh()),
         BlocProvider(create: (_) => WorkspaceCubit()..loadLayout()),
         BlocProvider(create: (_) => LauncherCubit()),

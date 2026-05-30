@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import '../models/launcher_settings.dart';
+import '../state/launcher_feature_cubit.dart';
 import '../state/settings_cubit.dart';
 import '../state/workspace_cubit.dart';
 
@@ -10,8 +11,13 @@ class BackupService {
 
   final SettingsCubit settingsCubit;
   final WorkspaceCubit workspaceCubit;
+  final LauncherFeatureSettingsCubit? featureSettingsCubit;
 
-  BackupService({required this.settingsCubit, required this.workspaceCubit});
+  BackupService({
+    required this.settingsCubit,
+    required this.workspaceCubit,
+    this.featureSettingsCubit,
+  });
 
   Future<String?> export() async {
     try {
@@ -44,6 +50,17 @@ class BackupService {
       'version': _version,
       'exportedAt': DateTime.now().toIso8601String(),
       'settings': _serializeSettings(s),
+      if (featureSettingsCubit != null)
+        'featureSettings': {
+          'overlayMenusEnabled':
+              featureSettingsCubit!.state.overlayMenusEnabled,
+          'afterCallEnabled': featureSettingsCubit!.state.afterCallEnabled,
+          'installAssistantEnabled':
+              featureSettingsCubit!.state.installAssistantEnabled,
+          'promptOnInstall': featureSettingsCubit!.state.promptOnInstall,
+          'cleanupOnUninstall': featureSettingsCubit!.state.cleanupOnUninstall,
+          'lockedApps': featureSettingsCubit!.state.lockedApps,
+        },
       'workspace': _serializeWorkspace(ws),
     };
   }
@@ -57,6 +74,23 @@ class BackupService {
       if (settingsData != null) {
         final restored = _deserializeSettings(settingsData);
         settingsCubit.update(restored);
+      }
+      final featureData = data['featureSettings'] as Map<String, dynamic>?;
+      if (featureData != null && featureSettingsCubit != null) {
+        featureSettingsCubit!.update(
+          featureSettingsCubit!.state.copyWith(
+            overlayMenusEnabled:
+                featureData['overlayMenusEnabled'] as bool? ?? false,
+            afterCallEnabled: featureData['afterCallEnabled'] as bool? ?? false,
+            installAssistantEnabled:
+                featureData['installAssistantEnabled'] as bool? ?? true,
+            promptOnInstall: featureData['promptOnInstall'] as bool? ?? true,
+            cleanupOnUninstall:
+                featureData['cleanupOnUninstall'] as bool? ?? true,
+            lockedApps: (featureData['lockedApps'] as List?)?.cast<String>() ??
+                const [],
+          ),
+        );
       }
       return true;
     } catch (_) {

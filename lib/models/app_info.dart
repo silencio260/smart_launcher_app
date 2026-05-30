@@ -8,6 +8,7 @@ class AppInfo extends ItemInfo {
   bool isDisabled;
   Uint8List? icon;
   String? iconPath;
+  String? launcherFeatureId;
 
   AppInfo({
     required super.id,
@@ -17,6 +18,7 @@ class AppInfo extends ItemInfo {
     this.isDisabled = false,
     this.icon,
     this.iconPath,
+    this.launcherFeatureId,
     super.title,
     super.rank,
     super.user,
@@ -40,4 +42,6 @@ class AppInfo extends ItemInfo {
   }
 
   String get name => title ?? packageName;
+
+  bool get isInternalFeature => launcherFeatureId != null;
 }

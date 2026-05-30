@@ -64,9 +64,8 @@ class IconShapePickerScreen extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 10,
-                    color: selected
-                        ? Theme.of(context).colorScheme.primary
-                        : null,
+                    color:
+                        selected ? Theme.of(context).colorScheme.primary : null,
                     fontWeight: selected ? FontWeight.bold : null,
                   ),
                 ),

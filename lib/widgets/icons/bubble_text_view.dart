@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../models/app_info.dart';
+import 'feature_icon.dart';
 import 'shaped_icon.dart';
 import 'dot_renderer.dart';
 
@@ -35,13 +36,20 @@ class BubbleTextView extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          ShapedIcon(
-            iconBytes: app.icon,
-            iconPath: app.iconPath,
-            shape: iconShape,
-            size: iconSize,
-            cacheKey: app.packageName,
-          ),
+          if (app.isInternalFeature)
+            FeatureIcon(
+              featureId: app.launcherFeatureId,
+              packageName: app.packageName,
+              size: iconSize,
+            )
+          else
+            ShapedIcon(
+              iconBytes: app.icon,
+              iconPath: app.iconPath,
+              shape: iconShape,
+              size: iconSize,
+              cacheKey: app.packageName,
+            ),
           if (badgeCount > 0)
             DotRenderer(
               count: badgeCount,

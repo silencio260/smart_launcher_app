@@ -10,7 +10,10 @@ class CalculatorService {
       if (result == null) return null;
       final display = result == result.truncateToDouble()
           ? result.toInt().toString()
-          : result.toStringAsFixed(6).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+          : result
+              .toStringAsFixed(6)
+              .replaceAll(RegExp(r'0+$'), '')
+              .replaceAll(RegExp(r'\.$'), '');
       return SearchResult(
         type: SearchResultType.calculator,
         title: '$query = $display',
@@ -39,7 +42,8 @@ class _Parser {
 
   double parse() {
     final result = _expr();
-    if (_pos != _input.replaceAll(' ', '').length) throw FormatException('leftover');
+    if (_pos != _input.replaceAll(' ', '').length)
+      throw FormatException('leftover');
     return result;
   }
 
@@ -47,9 +51,15 @@ class _Parser {
     var result = _term();
     while (_pos < _input.length) {
       final c = _input[_pos];
-      if (c == '+') { _pos++; result += _term(); }
-      else if (c == '-') { _pos++; result -= _term(); }
-      else { break; }
+      if (c == '+') {
+        _pos++;
+        result += _term();
+      } else if (c == '-') {
+        _pos++;
+        result -= _term();
+      } else {
+        break;
+      }
     }
     return result;
   }
@@ -58,19 +68,29 @@ class _Parser {
     var result = _factor();
     while (_pos < _input.length) {
       final c = _input[_pos];
-      if (c == '*') { _pos++; result *= _factor(); }
-      else if (c == '/') { _pos++; result /= _factor(); }
-      else { break; }
+      if (c == '*') {
+        _pos++;
+        result *= _factor();
+      } else if (c == '/') {
+        _pos++;
+        result /= _factor();
+      } else {
+        break;
+      }
     }
     return result;
   }
 
   double _factor() {
-    while (_pos < _input.length && _input[_pos] == ' ') { _pos++; }
+    while (_pos < _input.length && _input[_pos] == ' ') {
+      _pos++;
+    }
     if (_pos < _input.length && _input[_pos] == '(') {
       _pos++;
       final result = _expr();
-      if (_pos < _input.length && _input[_pos] == ')') { _pos++; }
+      if (_pos < _input.length && _input[_pos] == ')') {
+        _pos++;
+      }
       return result;
     }
     if (_pos < _input.length && _input[_pos] == '-') {
@@ -78,7 +98,9 @@ class _Parser {
       return -_factor();
     }
     final start = _pos;
-    while (_pos < _input.length && (_input[_pos].contains(RegExp(r'[\d\.]')))) { _pos++; }
+    while (_pos < _input.length && (_input[_pos].contains(RegExp(r'[\d\.]')))) {
+      _pos++;
+    }
     return double.parse(_input.substring(start, _pos));
   }
 }

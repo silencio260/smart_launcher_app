@@ -57,11 +57,14 @@ class _AppDrawerState extends State<AppDrawer> {
           Expanded(
             child: _filtered.isEmpty
                 ? const Center(
-                    child: Text('No apps found', style: TextStyle(color: Colors.white54)),
+                    child: Text('No apps found',
+                        style: TextStyle(color: Colors.white54)),
                   )
                 : GridView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 4,
                       mainAxisSpacing: 20,
                       crossAxisSpacing: 8,

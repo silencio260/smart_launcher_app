@@ -16,6 +16,7 @@ import 'recents_settings_screen.dart';
 import 'backup_restore_screen.dart';
 import 'about_screen.dart';
 import 'widget_picker_screen.dart';
+import '../features/launcher_features_settings_screen.dart';
 
 class SettingsRootScreen extends StatefulWidget {
   final void Function(LauncherWidgetInfo widget, int page)? onWidgetAdded;
@@ -108,6 +109,16 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                       c,
                       MaterialPageRoute(
                           builder: (_) => const DrawerSettingsScreen())),
+                ),
+            (c) => _Tile(
+                  icon: Icons.auto_awesome_outlined,
+                  title: 'Launcher Features',
+                  subtitle: 'Feature apps, overlays, after-call tools',
+                  onTap: () => Navigator.push(
+                      c,
+                      MaterialPageRoute(
+                          builder: (_) =>
+                              const LauncherFeaturesSettingsScreen())),
                 ),
             (c) => _Tile(
                   icon: Icons.search,

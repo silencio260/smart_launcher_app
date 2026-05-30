@@ -5,9 +5,23 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import '../models/app_info.dart';
+import '../models/launcher_feature.dart';
 import '../services/app_snapshot_cache.dart';
 import '../services/icons/decoded_icon_cache.dart';
 import '../services/launcher_service.dart';
+
+class AppInstallEvent {
+  final String packageName;
+  final String eventType;
+
+  const AppInstallEvent({
+    required this.packageName,
+    required this.eventType,
+  });
+
+  bool get isAdded => eventType == 'added';
+  bool get isRemoved => eventType == 'removed';
+}
 
 class AppsState extends Equatable {
   final List<AppInfo> apps;
@@ -112,6 +126,8 @@ class AppsCubit extends Cubit<AppsState> {
 
   StreamSubscription<dynamic>? _badgeSub;
   StreamSubscription<dynamic>? _appInstallSub;
+  final StreamController<AppInstallEvent> _installEventsController =
+      StreamController<AppInstallEvent>.broadcast();
   Timer? _installReloadDebounce;
   Map<String, int>? _pendingBadges;
   bool _badgeFlushScheduled = false;
@@ -129,6 +145,8 @@ class AppsCubit extends Cubit<AppsState> {
   final BadgeStore badges = BadgeStore();
 
   AppsCubit() : super(AppsState());
+
+  Stream<AppInstallEvent> get installEvents => _installEventsController.stream;
 
   void startBadgeListening() {
     _badgeSub ??= _badgeEvents.receiveBroadcastStream().listen(
@@ -165,6 +183,10 @@ class AppsCubit extends Cubit<AppsState> {
           final pkg = data['packageName']?.toString();
           if (pkg != null && pkg.isNotEmpty) {
             _pendingIconEvictions.add(pkg);
+            final eventType = data['eventType']?.toString() ?? 'changed';
+            _installEventsController.add(
+              AppInstallEvent(packageName: pkg, eventType: eventType),
+            );
           }
         }
         // Coalesce bursts (e.g. Play Store post-boot update flurry) into a
@@ -204,6 +226,7 @@ class AppsCubit extends Cubit<AppsState> {
     _badgeSub?.cancel();
     _appInstallSub?.cancel();
     _installReloadDebounce?.cancel();
+    _installEventsController.close();
     badges.dispose();
     return super.close();
   }
@@ -214,7 +237,10 @@ class AppsCubit extends Cubit<AppsState> {
       final snapshot = await AppSnapshotCache.instance.load();
       if (snapshot != null && state.apps.isEmpty) {
         _snapshotKey = snapshot.snapshotKey;
-        emit(state.copyWith(apps: snapshot.apps, loading: false));
+        emit(state.copyWith(
+          apps: _withInternalFeatures(snapshot.apps),
+          loading: false,
+        ));
       }
     }
     await loadApps();
@@ -241,7 +267,9 @@ class AppsCubit extends Cubit<AppsState> {
         return;
       }
 
-      final apps = refresh.apps ?? await LauncherService.getInstalledApps();
+      final nativeApps =
+          refresh.apps ?? await LauncherService.getInstalledApps();
+      final apps = _withInternalFeatures(nativeApps);
       _snapshotKey = snapshotKey;
       if (_drawerActive && state.apps.isNotEmpty) {
         _pendingApps = apps;
@@ -254,7 +282,7 @@ class AppsCubit extends Cubit<AppsState> {
         unawaited(
           AppSnapshotCache.instance.save(
             snapshotKey: snapshotKey,
-            apps: apps,
+            apps: nativeApps,
           ),
         );
       }
@@ -272,6 +300,17 @@ class AppsCubit extends Cubit<AppsState> {
     emit(state.copyWith(apps: apps, loading: false));
   }
 
+  List<AppInfo> _withInternalFeatures(List<AppInfo> nativeApps) {
+    final filteredNative = nativeApps
+        .where(
+            (app) => !LauncherFeatureCatalog.isFeaturePackage(app.packageName))
+        .toList(growable: false);
+    return [
+      ...LauncherFeatureCatalog.apps,
+      ...filteredNative,
+    ];
+  }
+
   void updateBadges(Map<String, int> counts) {
     badges.update(counts);
   }
@@ -279,8 +318,6 @@ class AppsCubit extends Cubit<AppsState> {
   List<AppInfo> searchApps(String query) {
     if (query.isEmpty) return state.apps;
     final q = query.toLowerCase();
-    return state.apps
-        .where((a) => a.name.toLowerCase().contains(q))
-        .toList();
+    return state.apps.where((a) => a.name.toLowerCase().contains(q)).toList();
   }
 }

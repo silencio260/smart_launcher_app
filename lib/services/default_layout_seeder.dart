@@ -1,6 +1,7 @@
 import '../models/app_info.dart';
 import '../models/folder_info.dart';
 import '../models/item_info.dart';
+import '../models/launcher_feature.dart';
 import '../models/workspace_item_info.dart';
 import '../state/settings_cubit.dart';
 import '../state/workspace_cubit.dart';
@@ -76,12 +77,19 @@ class DefaultLayoutSeeder {
         apps,
         const ['com.android.chrome', 'com.google.android.apps.chrome'],
         const ['chrome']);
-    final gmail = _resolveApp(
-        apps, const ['com.google.android.gm'], const ['gmail']);
+    final gmail =
+        _resolveApp(apps, const ['com.google.android.gm'], const ['gmail']);
     final calculator = _resolveApp(
         apps,
         const ['com.google.android.calculator', 'com.android.calculator2'],
         const ['calculator']);
+
+    var nextPage1Slot = columns * 2;
+    for (final feature in LauncherFeatureCatalog.homeFeatures) {
+      if (nextPage1Slot >= capacity) break;
+      page1Slots[nextPage1Slot] = AppSlot(feature.toWorkspaceItem(screenId: 0));
+      nextPage1Slot++;
+    }
 
     var folderSlotIndex = -1;
     if (googleApps.isNotEmpty) {
@@ -105,8 +113,9 @@ class DefaultLayoutSeeder {
         screenId: 0,
       );
       // Drop the folder just below the top 4×2 area reserved for the clock.
-      folderSlotIndex = columns * 2;
+      folderSlotIndex = nextPage1Slot;
       page1Slots[folderSlotIndex] = FolderSlot(id);
+      nextPage1Slot++;
     }
 
     // Pin loose icons on page 1: YouTube, Chrome, Mail, one calculator and two
@@ -123,7 +132,7 @@ class DefaultLayoutSeeder {
       if (calculator != null) calculator,
       ...productivity,
     ];
-    var pinSlot = folderSlotIndex >= 0 ? folderSlotIndex + 1 : columns * 2;
+    var pinSlot = nextPage1Slot;
     for (final app in pinned) {
       if (pinSlot >= capacity) break;
       page1Slots[pinSlot] = AppSlot(_toItem(app));
@@ -178,23 +187,35 @@ class DefaultLayoutSeeder {
         'com.google.android.dialer',
         'com.android.dialer',
         'com.samsung.android.dialer',
-      ], const ['dialer', 'phone']),
+      ], const [
+        'dialer',
+        'phone'
+      ]),
       _resolve(apps, const [
         'com.google.android.GoogleCamera',
         'com.android.camera2',
         'com.android.camera',
         'com.sec.android.app.camera',
-      ], const ['camera']),
+      ], const [
+        'camera'
+      ]),
       _resolve(apps, const [
         'com.google.android.deskclock',
         'com.android.deskclock',
         'com.sec.android.app.clockpackage',
-      ], const ['clock', 'deskclock']),
+      ], const [
+        'clock',
+        'deskclock'
+      ]),
       _resolve(apps, const [
         'com.google.android.apps.messaging',
         'com.android.messaging',
         'com.samsung.android.messaging',
-      ], const ['messag', '.mms', '.sms']),
+      ], const [
+        'messag',
+        '.mms',
+        '.sms'
+      ]),
     ];
 
     settings.update(settings.state.copyWith(
@@ -223,6 +244,7 @@ class DefaultLayoutSeeder {
         title: app.name,
         icon: app.icon,
         iconPath: app.iconPath,
+        launcherFeatureId: app.launcherFeatureId,
       );
 
   /// Like [_resolve] but returns the matching [AppInfo] (or null), so the

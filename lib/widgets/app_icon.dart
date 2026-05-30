@@ -2,7 +2,10 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import '../models/app_info.dart';
+import '../models/launcher_feature.dart';
+import '../services/feature_launch_dispatcher.dart';
 import '../services/launcher_service.dart';
+import 'icons/feature_icon.dart';
 
 class AppIcon extends StatelessWidget {
   final AppInfo app;
@@ -23,7 +26,7 @@ class AppIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => LauncherService.launchApp(app.packageName),
+      onTap: () => FeatureLaunchDispatcher.launch(context, app),
       onLongPress: onLongPress ?? () => _showAppMenu(context),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -49,6 +52,13 @@ class AppIcon extends StatelessWidget {
   }
 
   Widget _buildIcon() {
+    if (app.isInternalFeature) {
+      return FeatureIcon(
+        featureId: app.launcherFeatureId,
+        packageName: app.packageName,
+        size: iconSize,
+      );
+    }
     final iconPath = app.iconPath;
     if (iconPath != null && iconPath.isNotEmpty) {
       return Image.file(
@@ -137,12 +147,19 @@ class _AppMenu extends StatelessWidget {
           const Divider(color: Colors.white12),
           _menuItem(context, Icons.info_outline, 'App info', () {
             Navigator.pop(context);
-            LauncherService.openAppSettings(app.packageName);
+            final featureId = app.launcherFeatureId ??
+                LauncherFeatureCatalog.idForPackage(app.packageName);
+            if (featureId != null) {
+              FeatureLaunchDispatcher.openFeature(context, featureId);
+            } else {
+              LauncherService.openAppSettings(app.packageName);
+            }
           }),
-          _menuItem(context, Icons.delete_outline, 'Uninstall', () {
-            Navigator.pop(context);
-            LauncherService.uninstallApp(app.packageName);
-          }),
+          if (!app.isInternalFeature)
+            _menuItem(context, Icons.delete_outline, 'Uninstall', () {
+              Navigator.pop(context);
+              LauncherService.uninstallApp(app.packageName);
+            }),
           _menuItem(
               context, Icons.close, 'Cancel', () => Navigator.pop(context)),
           const SizedBox(height: 8),

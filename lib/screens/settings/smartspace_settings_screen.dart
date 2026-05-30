@@ -19,13 +19,17 @@ class SmartspaceSettingsScreen extends StatelessWidget {
               ListTile(
                 leading: const Icon(Icons.access_time),
                 title: const Text('Time Format'),
-                subtitle: Text(s.timeFormat == TimeFormat.h12 ? '12-hour (1:30 PM)' : '24-hour (13:30)'),
+                subtitle: Text(s.timeFormat == TimeFormat.h12
+                    ? '12-hour (1:30 PM)'
+                    : '24-hour (13:30)'),
                 onTap: () => _pickTimeFormat(context, cubit, s),
               ),
               ListTile(
                 leading: const Icon(Icons.font_download_outlined),
                 title: const Text('Font'),
-                subtitle: Text(s.workspaceFont.isEmpty ? 'System default' : s.workspaceFont),
+                subtitle: Text(s.workspaceFont.isEmpty
+                    ? 'System default'
+                    : s.workspaceFont),
                 onTap: () => _pickFont(context, cubit, s),
               ),
               _SectionHeader('Cards'),
@@ -48,7 +52,8 @@ class SmartspaceSettingsScreen extends StatelessWidget {
     );
   }
 
-  void _pickTimeFormat(BuildContext context, SettingsCubit cubit, LauncherSettings s) {
+  void _pickTimeFormat(
+      BuildContext context, SettingsCubit cubit, LauncherSettings s) {
     showDialog(
       context: context,
       builder: (_) => SimpleDialog(
@@ -77,7 +82,8 @@ class SmartspaceSettingsScreen extends StatelessWidget {
     );
   }
 
-  void _pickFont(BuildContext context, SettingsCubit cubit, LauncherSettings s) {
+  void _pickFont(
+      BuildContext context, SettingsCubit cubit, LauncherSettings s) {
     final fonts = ['', 'Roboto', 'Montserrat', 'Lato', 'Nunito', 'Poppins'];
     showDialog(
       context: context,

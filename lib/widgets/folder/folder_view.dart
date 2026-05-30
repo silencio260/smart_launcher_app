@@ -205,8 +205,7 @@ class _FolderViewState extends State<FolderView>
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
                 child: Container(
-                  color:
-                      Colors.black.withValues(alpha: _dragging ? 0.0 : 0.5),
+                  color: Colors.black.withValues(alpha: _dragging ? 0.0 : 0.5),
                   child: Center(
                     child: GestureDetector(
                       onTap: () {},
@@ -216,8 +215,7 @@ class _FolderViewState extends State<FolderView>
                           padding: EdgeInsets.only(
                             bottom: MediaQuery.of(context).viewInsets.bottom,
                           ),
-                          child:
-                              _buildFolderContent(folder.contents, liveApps),
+                          child: _buildFolderContent(folder.contents, liveApps),
                         ),
                       ),
                     ),
@@ -360,6 +358,8 @@ class _FolderViewState extends State<FolderView>
           title: item.title,
           icon: resolvedIcon,
           iconPath: resolvedIconPath,
+          launcherFeatureId:
+              item.launcherFeatureId ?? liveApp?.launcherFeatureId,
         );
         final payload = DragPayload(
           item: item,

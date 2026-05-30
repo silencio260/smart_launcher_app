@@ -7,7 +7,9 @@ class LauncherCubit extends Cubit<LauncherState> {
   void goToState(LauncherState s) => emit(s);
 
   void toggleAllApps() => emit(
-        state == LauncherState.allApps ? LauncherState.normal : LauncherState.allApps,
+        state == LauncherState.allApps
+            ? LauncherState.normal
+            : LauncherState.allApps,
       );
 
   void enterEditMode() => emit(LauncherState.editMode);

@@ -12,6 +12,9 @@
     <!-- Notification badges (runtime permission on API 33+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
+    <!-- After-call action center -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
+
     <!-- Wallpaper read/write -->
     <uses-permission android:name="android.permission.SET_WALLPAPER"/>
     <uses-permission android:name="android.permission.SET_WALLPAPER_HINTS"/>

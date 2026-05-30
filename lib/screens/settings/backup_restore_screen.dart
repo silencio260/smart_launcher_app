@@ -35,7 +35,8 @@ class BackupRestoreScreen extends StatelessWidget {
           const Divider(),
           ListTile(
             leading: const Icon(Icons.restore, color: Colors.red),
-            title: const Text('Reset to Defaults', style: TextStyle(color: Colors.red)),
+            title: const Text('Reset to Defaults',
+                style: TextStyle(color: Colors.red)),
             subtitle: const Text('Clear all settings and layout'),
             onTap: () => _confirmReset(context),
           ),

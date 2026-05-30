@@ -2,7 +2,9 @@ package com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app
 
 import android.app.Activity
 import android.app.AlarmManager
+import android.content.Intent
 import android.os.Build
+import android.provider.AlarmClock
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 
@@ -19,6 +21,10 @@ class AlarmChannel(private val activity: Activity) {
                             result.success(null)
                         }
                     }
+                    "openAlarmApp" -> result.success(launchAlarmIntent(AlarmClock.ACTION_SHOW_ALARMS))
+                    "createAlarm" -> result.success(launchAlarmIntent(AlarmClock.ACTION_SET_ALARM))
+                    "openTimer" -> result.success(launchAlarmIntent(AlarmClock.ACTION_SET_TIMER))
+                    "openStopwatch" -> result.success(launchAlarmIntent(AlarmClock.ACTION_SHOW_TIMERS))
                     else -> result.notImplemented()
                 }
             }
@@ -30,5 +36,34 @@ class AlarmChannel(private val activity: Activity) {
         return mapOf(
             "triggerTime" to clock.triggerTime,
         )
+    }
+
+    private fun launchAlarmIntent(action: String): Boolean {
+        return try {
+            val intent = Intent(action).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (action == AlarmClock.ACTION_SET_ALARM) {
+                    putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+                }
+                if (action == AlarmClock.ACTION_SET_TIMER) {
+                    putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+                }
+            }
+            activity.startActivity(intent)
+            true
+        } catch (e: Exception) {
+            try {
+                val fallback = activity.packageManager.getLaunchIntentForPackage("com.google.android.deskclock")
+                    ?: activity.packageManager.getLaunchIntentForPackage("com.android.deskclock")
+                if (fallback != null) {
+                    activity.startActivity(fallback)
+                    true
+                } else {
+                    false
+                }
+            } catch (e2: Exception) {
+                false
+            }
+        }
     }
 }

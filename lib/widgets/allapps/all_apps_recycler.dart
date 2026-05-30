@@ -180,6 +180,7 @@ class _DrawerAppIconState extends State<_DrawerAppIcon> {
       title: widget.app.name,
       icon: widget.app.icon,
       iconPath: widget.app.iconPath,
+      launcherFeatureId: widget.app.launcherFeatureId,
     );
     final payload = DragPayload(
       item: item,

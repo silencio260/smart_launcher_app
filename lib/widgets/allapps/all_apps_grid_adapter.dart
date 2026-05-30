@@ -1,5 +1,6 @@
 import 'package:characters/characters.dart';
 import '../../models/app_info.dart';
+import '../../models/launcher_feature.dart';
 
 final _asciiSectionLetter = RegExp(r'^[A-Z]$');
 
@@ -17,10 +18,25 @@ class AppRow extends DrawerItem {
 
 List<DrawerItem> buildSections(List<AppInfo> apps, int columns) {
   final items = <DrawerItem>[];
+  final favoriteApps = apps
+      .where((app) => LauncherFeatureCatalog.isFeaturePackage(app.packageName))
+      .toList(growable: false);
+  if (favoriteApps.isNotEmpty) {
+    items.add(SectionHeader('Favorites'));
+    for (var i = 0; i < favoriteApps.length; i += columns) {
+      items.add(AppRow(
+        favoriteApps.skip(i).take(columns).toList(growable: false),
+      ));
+    }
+  }
+
+  final sectionApps = apps
+      .where((app) => !LauncherFeatureCatalog.isFeaturePackage(app.packageName))
+      .toList(growable: false);
   String? currentLetter;
 
-  for (var i = 0; i < apps.length;) {
-    final app = apps[i];
+  for (var i = 0; i < sectionApps.length;) {
+    final app = sectionApps[i];
     final letter = _sectionLetter(app.name);
 
     if (letter != currentLetter) {
@@ -29,8 +45,8 @@ List<DrawerItem> buildSections(List<AppInfo> apps, int columns) {
     }
 
     final row = <AppInfo>[];
-    while (i < apps.length) {
-      final a = apps[i];
+    while (i < sectionApps.length) {
+      final a = sectionApps[i];
       final l = _sectionLetter(a.name);
       if (l != currentLetter || row.length >= columns) break;
       row.add(a);

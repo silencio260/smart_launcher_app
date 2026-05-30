@@ -92,6 +92,26 @@ class SystemChannel(private val activity: Activity) {
                         activity.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                         result.success(true)
                     }
+                    "canDrawOverlays" -> {
+                        result.success(
+                            Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+                                Settings.canDrawOverlays(activity)
+                        )
+                    }
+                    "requestOverlayPermission" -> {
+                        try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                val intent = Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:${activity.packageName}")
+                                )
+                                activity.startActivity(intent)
+                            }
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.success(false)
+                        }
+                    }
                     "isDefaultLauncher" -> {
                         result.success(isDefaultLauncher())
                     }

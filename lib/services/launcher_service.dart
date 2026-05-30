@@ -20,6 +20,11 @@ class LauncherService {
   static const _apps = MethodChannel('com.genrevibes.smartlauncher/apps');
   static const _system = MethodChannel('com.genrevibes.smartlauncher/system');
   static const _widgets = MethodChannel('com.genrevibes.smartlauncher/widgets');
+  static const _alarm = MethodChannel('com.genrevibes.smartlauncher/alarm');
+  static const _security =
+      MethodChannel('com.genrevibes.smartlauncher/security');
+  static const _fileLocker =
+      MethodChannel('com.genrevibes.smartlauncher/file_locker');
 
   static Future<List<AppInfo>> getInstalledApps() async {
     final List<dynamic> raw = await _apps.invokeMethod('getApps');
@@ -91,6 +96,58 @@ class LauncherService {
   static Future<void> uninstallApp(String packageName) async {
     await _apps.invokeMethod('uninstallApp', {'packageName': packageName});
   }
+
+  static Future<bool> authenticateDevice({
+    String title = 'Unlock',
+    String description = 'Confirm your device lock to continue',
+  }) async {
+    final result = await _security.invokeMethod<bool>('authenticate', {
+      'title': title,
+      'description': description,
+    });
+    return result ?? false;
+  }
+
+  static Future<Map<String, dynamic>?> getNextAlarm() async {
+    final raw =
+        await _alarm.invokeMethod<Map<dynamic, dynamic>>('getNextAlarm');
+    return raw?.cast<String, dynamic>();
+  }
+
+  static Future<bool> openAlarmApp() async =>
+      await _alarm.invokeMethod<bool>('openAlarmApp') ?? false;
+
+  static Future<bool> createAlarm() async =>
+      await _alarm.invokeMethod<bool>('createAlarm') ?? false;
+
+  static Future<bool> openTimer() async =>
+      await _alarm.invokeMethod<bool>('openTimer') ?? false;
+
+  static Future<bool> openStopwatch() async =>
+      await _alarm.invokeMethod<bool>('openStopwatch') ?? false;
+
+  static Future<bool> canDrawOverlays() async =>
+      await _system.invokeMethod<bool>('canDrawOverlays') ?? false;
+
+  static Future<bool> requestOverlayPermission() async =>
+      await _system.invokeMethod<bool>('requestOverlayPermission') ?? false;
+
+  static Future<List<Map<String, dynamic>>> listLockedFiles() async {
+    final raw = await _fileLocker.invokeMethod<List<dynamic>>('listFiles');
+    return (raw ?? const [])
+        .whereType<Map<dynamic, dynamic>>()
+        .map((item) => item.cast<String, dynamic>())
+        .toList(growable: false);
+  }
+
+  static Future<bool> importLockedFile() async =>
+      await _fileLocker.invokeMethod<bool>('importFile') ?? false;
+
+  static Future<bool> exportLockedFile(String id) async =>
+      await _fileLocker.invokeMethod<bool>('exportFile', {'id': id}) ?? false;
+
+  static Future<bool> deleteLockedFile(String id) async =>
+      await _fileLocker.invokeMethod<bool>('deleteFile', {'id': id}) ?? false;
 
   static Future<void> changeWallpaper() async {
     await _system.invokeMethod('changeWallpaper');

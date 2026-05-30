@@ -79,7 +79,8 @@ class DockSettingsScreen extends StatelessWidget {
     );
   }
 
-  void _pickColor(BuildContext context, SettingsCubit cubit, LauncherSettings s) {
+  void _pickColor(
+      BuildContext context, SettingsCubit cubit, LauncherSettings s) {
     final colors = [
       Colors.black,
       Colors.white,

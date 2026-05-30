@@ -430,83 +430,83 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         itemCount: packages.length,
         itemBuilder: (context, i) {
-        final pkg = packages[i];
-        final providers = grouped[pkg]!
-          ..sort(
-              (a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
-        final isExpanded = _expanded.contains(pkg);
-        final appIcon =
-            apps.where((a) => a.packageName == pkg).firstOrNull?.icon ??
-                providers.first.appIcon;
-        final appName = providers.first.appName.isNotEmpty
-            ? providers.first.appName
-            : pkg.split('.').last;
+          final pkg = packages[i];
+          final providers = grouped[pkg]!
+            ..sort((a, b) =>
+                a.label.toLowerCase().compareTo(b.label.toLowerCase()));
+          final isExpanded = _expanded.contains(pkg);
+          final appIcon =
+              apps.where((a) => a.packageName == pkg).firstOrNull?.icon ??
+                  providers.first.appIcon;
+          final appName = providers.first.appName.isNotEmpty
+              ? providers.first.appName
+              : pkg.split('.').last;
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // App header row
-            ListTile(
-              leading: _WidgetAppIcon(
-                iconBytes: appIcon,
-                shape: settings.iconShape,
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // App header row
+              ListTile(
+                leading: _WidgetAppIcon(
+                  iconBytes: appIcon,
+                  shape: settings.iconShape,
+                ),
+                title: Text(
+                  appName,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  '${providers.length} widget${providers.length == 1 ? '' : 's'}',
+                  style: const TextStyle(fontSize: 12, color: Colors.white54),
+                ),
+                trailing: Icon(
+                  isExpanded ? Icons.expand_less : Icons.expand_more,
+                  color: Colors.white54,
+                ),
+                onTap: () {
+                  setState(() {
+                    if (isExpanded) {
+                      _expanded.remove(pkg);
+                    } else {
+                      _expanded.add(pkg);
+                    }
+                  });
+                },
               ),
-              title: Text(
-                appName,
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: Text(
-                '${providers.length} widget${providers.length == 1 ? '' : 's'}',
-                style: const TextStyle(fontSize: 12, color: Colors.white54),
-              ),
-              trailing: Icon(
-                isExpanded ? Icons.expand_less : Icons.expand_more,
-                color: Colors.white54,
-              ),
-              onTap: () {
-                setState(() {
-                  if (isExpanded) {
-                    _expanded.remove(pkg);
-                  } else {
-                    _expanded.add(pkg);
-                  }
-                });
-              },
-            ),
-            // Expanded widget list
-            if (isExpanded)
-              ...providers.map((p) => _WidgetTile(
-                    provider: p,
-                    appIcon: appIcon,
-                    iconShape: settings.iconShape,
-                    gridColumns: settings.gridColumns,
-                    gridRows: settings.gridRows,
-                    cellWidth: (mediaQuery.size.width -
-                            16.0 -
-                            (settings.gridColumns - 1) * 8.0) /
-                        settings.gridColumns,
-                    cellHeight: ((mediaQuery.size.height -
-                                mediaQuery.padding.top -
-                                8.0 -
-                                (settings.showDock
-                                    ? (settings.iconSize +
-                                        (settings.showDockLabels
-                                            ? settings.iconSize * 0.6
-                                            : 16.0) +
-                                        24.0 +
-                                        mediaQuery.padding.bottom +
-                                        12.0)
-                                    : 0.0) -
-                                16.0) -
-                            (settings.gridRows - 1) * 8.0) /
-                        settings.gridRows,
-                    showDebugOverlay: settings.showWidgetPickerDebugInfo,
-                    onActivate: () => _activateWidget(p),
-                  )),
-            const Divider(height: 1, indent: 16, endIndent: 16),
-          ],
-        );
-      },
+              // Expanded widget list
+              if (isExpanded)
+                ...providers.map((p) => _WidgetTile(
+                      provider: p,
+                      appIcon: appIcon,
+                      iconShape: settings.iconShape,
+                      gridColumns: settings.gridColumns,
+                      gridRows: settings.gridRows,
+                      cellWidth: (mediaQuery.size.width -
+                              16.0 -
+                              (settings.gridColumns - 1) * 8.0) /
+                          settings.gridColumns,
+                      cellHeight: ((mediaQuery.size.height -
+                                  mediaQuery.padding.top -
+                                  8.0 -
+                                  (settings.showDock
+                                      ? (settings.iconSize +
+                                          (settings.showDockLabels
+                                              ? settings.iconSize * 0.6
+                                              : 16.0) +
+                                          24.0 +
+                                          mediaQuery.padding.bottom +
+                                          12.0)
+                                      : 0.0) -
+                                  16.0) -
+                              (settings.gridRows - 1) * 8.0) /
+                          settings.gridRows,
+                      showDebugOverlay: settings.showWidgetPickerDebugInfo,
+                      onActivate: () => _activateWidget(p),
+                    )),
+              const Divider(height: 1, indent: 16, endIndent: 16),
+            ],
+          );
+        },
       ),
     );
   }
@@ -732,8 +732,10 @@ class _WidgetTile extends StatelessWidget {
     final maxW = maxSpanX * cellWidth + (maxSpanX - 1) * gap;
     final maxH = maxSpanY * cellHeight + (maxSpanY - 1) * gap;
 
-    const labelStyle = TextStyle(fontSize: 10, color: Colors.amber, fontFamily: 'monospace');
-    const valueStyle = TextStyle(fontSize: 10, color: Colors.white70, fontFamily: 'monospace');
+    const labelStyle =
+        TextStyle(fontSize: 10, color: Colors.amber, fontFamily: 'monospace');
+    const valueStyle =
+        TextStyle(fontSize: 10, color: Colors.white70, fontFamily: 'monospace');
 
     Widget row(String label, String value) => Padding(
           padding: const EdgeInsets.symmetric(vertical: 1),
@@ -755,19 +757,27 @@ class _WidgetTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('── DEBUG ──', style: labelStyle.copyWith(color: Colors.amber.withValues(alpha: 0.6))),
+          Text('── DEBUG ──',
+              style: labelStyle.copyWith(
+                  color: Colors.amber.withValues(alpha: 0.6))),
           const SizedBox(height: 4),
           row('default span', '${spanX}c × ${spanY}r'),
-          row('default dp', '${defaultW.toStringAsFixed(1)} × ${defaultH.toStringAsFixed(1)} dp'),
-          row('minWidth/Height', '${provider.minWidth} × ${provider.minHeight} dp'),
+          row('default dp',
+              '${defaultW.toStringAsFixed(1)} × ${defaultH.toStringAsFixed(1)} dp'),
+          row('minWidth/Height',
+              '${provider.minWidth} × ${provider.minHeight} dp'),
           row('min span', '${minSpanX}c × ${minSpanY}r'),
-          row('min dp', '${minW.toStringAsFixed(1)} × ${minH.toStringAsFixed(1)} dp'),
+          row('min dp',
+              '${minW.toStringAsFixed(1)} × ${minH.toStringAsFixed(1)} dp'),
           row('max span', '${maxSpanX}c × ${maxSpanY}r'),
-          row('max dp', '${maxW.toStringAsFixed(1)} × ${maxH.toStringAsFixed(1)} dp'),
+          row('max dp',
+              '${maxW.toStringAsFixed(1)} × ${maxH.toStringAsFixed(1)} dp'),
           if (provider.targetCellWidth > 0 || provider.targetCellHeight > 0)
-            row('targetCell (API31)', '${provider.targetCellWidth}c × ${provider.targetCellHeight}r'),
+            row('targetCell (API31)',
+                '${provider.targetCellWidth}c × ${provider.targetCellHeight}r'),
           row('resizeMode', _resizeModeLabel(provider.resizeMode)),
-          row('cell size', '${cellWidth.toStringAsFixed(1)} × ${cellHeight.toStringAsFixed(1)} dp'),
+          row('cell size',
+              '${cellWidth.toStringAsFixed(1)} × ${cellHeight.toStringAsFixed(1)} dp'),
           row('grid', '${gridColumns}col × ${gridRows}row'),
         ],
       ),

@@ -37,13 +37,15 @@ class GestureSettingsScreen extends StatelessWidget {
                 icon: Icons.swipe_up_alt,
                 label: 'Two-Finger Swipe Up',
                 current: s.twoFingerSwipeUpAction,
-                onPick: (a) => cubit.update(s.copyWith(twoFingerSwipeUpAction: a)),
+                onPick: (a) =>
+                    cubit.update(s.copyWith(twoFingerSwipeUpAction: a)),
               ),
               _GestureTile(
                 icon: Icons.swipe_down_alt,
                 label: 'Two-Finger Swipe Down',
                 current: s.twoFingerSwipeDownAction,
-                onPick: (a) => cubit.update(s.copyWith(twoFingerSwipeDownAction: a)),
+                onPick: (a) =>
+                    cubit.update(s.copyWith(twoFingerSwipeDownAction: a)),
               ),
               _GestureTile(
                 icon: Icons.home_outlined,
@@ -110,8 +112,12 @@ class _GestureTile extends StatelessWidget {
         children: GestureAction.values
             .map((a) => ListTile(
                   leading: Icon(
-                    current == a ? Icons.radio_button_checked : Icons.radio_button_off,
-                    color: current == a ? Theme.of(context).colorScheme.primary : null,
+                    current == a
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_off,
+                    color: current == a
+                        ? Theme.of(context).colorScheme.primary
+                        : null,
                   ),
                   title: Text(_actionLabel(a)),
                   onTap: () {

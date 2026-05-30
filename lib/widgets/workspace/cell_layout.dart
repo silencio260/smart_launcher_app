@@ -12,6 +12,7 @@ import '../../models/launcher_settings.dart';
 import '../../models/launcher_widget_info.dart';
 import '../../models/workspace_item_info.dart';
 import '../../services/drag/drag_controller.dart';
+import '../../services/feature_launch_dispatcher.dart';
 import '../../services/gestures/widget_resize_gesture_guard.dart';
 import '../../services/launcher_service.dart';
 import '../../state/apps_cubit.dart';
@@ -3856,6 +3857,8 @@ class _CellLayoutViewState extends State<CellLayoutView>
             title: item.title ?? liveApp?.name,
             icon: liveApp?.icon ?? item.icon,
             iconPath: liveApp?.iconPath ?? item.iconPath,
+            launcherFeatureId:
+                item.launcherFeatureId ?? liveApp?.launcherFeatureId,
           );
           final payload = DragPayload(
               item: item, sourcePage: widget.pageIndex, sourceSlot: slot);
@@ -4044,6 +4047,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
         title: item.title ?? live.name,
         icon: live.icon,
         iconPath: live.iconPath,
+        launcherFeatureId: item.launcherFeatureId ?? live.launcherFeatureId,
       );
     }).toList();
     return FolderInfo(
@@ -4090,7 +4094,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
             }
             entry?.remove();
             entry = null;
-            LauncherService.launchApp(app.packageName);
+            FeatureLaunchDispatcher.launch(context, app);
           },
         ),
       ),

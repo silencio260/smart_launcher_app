@@ -21,7 +21,9 @@ class DrawerSettingsScreen extends StatelessWidget {
               ListTile(
                 leading: const Icon(Icons.view_module_outlined),
                 title: const Text('Layout'),
-                subtitle: Text(s.drawerLayout == DrawerLayout.standard ? 'Standard (A–Z)' : 'Caddy (by category)'),
+                subtitle: Text(s.drawerLayout == DrawerLayout.standard
+                    ? 'Standard (A–Z)'
+                    : 'Caddy (by category)'),
                 onTap: () => _pickLayout(context, cubit, s),
               ),
               ListTile(
@@ -45,7 +47,8 @@ class DrawerSettingsScreen extends StatelessWidget {
                 subtitle: const Text('Tint behind the app list'),
                 secondary: const Icon(Icons.color_lens_outlined),
                 value: s.drawerShowBackground,
-                onChanged: (v) => cubit.update(s.copyWith(drawerShowBackground: v)),
+                onChanged: (v) =>
+                    cubit.update(s.copyWith(drawerShowBackground: v)),
               ),
               if (s.drawerShowBackground) ...[
                 ListTile(
@@ -62,7 +65,8 @@ class DrawerSettingsScreen extends StatelessWidget {
                   max: 1.0,
                   divisions: 10,
                   label: '${(s.drawerBackgroundOpacity * 100).round()}%',
-                  onChanged: (v) => cubit.update(s.copyWith(drawerBackgroundOpacity: v)),
+                  onChanged: (v) =>
+                      cubit.update(s.copyWith(drawerBackgroundOpacity: v)),
                 ),
               ],
               _SectionHeader('Grid'),
@@ -74,7 +78,8 @@ class DrawerSettingsScreen extends StatelessWidget {
                 max: 6,
                 divisions: 3,
                 label: '${s.drawerColumns}',
-                onChanged: (v) => cubit.update(s.copyWith(drawerColumns: v.round())),
+                onChanged: (v) =>
+                    cubit.update(s.copyWith(drawerColumns: v.round())),
               ),
               _SliderTile(
                 icon: Icons.photo_size_select_large_outlined,
@@ -98,13 +103,15 @@ class DrawerSettingsScreen extends StatelessWidget {
                 title: const Text('Remember Scroll Position'),
                 secondary: const Icon(Icons.bookmark_outline),
                 value: s.drawerRememberScroll,
-                onChanged: (v) => cubit.update(s.copyWith(drawerRememberScroll: v)),
+                onChanged: (v) =>
+                    cubit.update(s.copyWith(drawerRememberScroll: v)),
               ),
               SwitchListTile(
                 title: const Text('Show Scrollbar'),
                 secondary: const Icon(Icons.linear_scale),
                 value: s.drawerShowScrollbar,
-                onChanged: (v) => cubit.update(s.copyWith(drawerShowScrollbar: v)),
+                onChanged: (v) =>
+                    cubit.update(s.copyWith(drawerShowScrollbar: v)),
               ),
             ],
           );
@@ -113,7 +120,8 @@ class DrawerSettingsScreen extends StatelessWidget {
     );
   }
 
-  void _pickLayout(BuildContext context, SettingsCubit cubit, LauncherSettings s) {
+  void _pickLayout(
+      BuildContext context, SettingsCubit cubit, LauncherSettings s) {
     showDialog(
       context: context,
       builder: (_) => SimpleDialog(
@@ -144,8 +152,13 @@ class DrawerSettingsScreen extends StatelessWidget {
     );
   }
 
-  void _pickColor(BuildContext context, SettingsCubit cubit, LauncherSettings s) {
-    final colors = [Colors.black, Colors.grey.shade900, Colors.blueGrey.shade900];
+  void _pickColor(
+      BuildContext context, SettingsCubit cubit, LauncherSettings s) {
+    final colors = [
+      Colors.black,
+      Colors.grey.shade900,
+      Colors.blueGrey.shade900
+    ];
     showDialog(
       context: context,
       builder: (_) => SimpleDialog(
@@ -153,7 +166,9 @@ class DrawerSettingsScreen extends StatelessWidget {
         children: colors
             .map((c) => ListTile(
                   leading: CircleAvatar(backgroundColor: c, radius: 14),
-                  title: Text(c == Colors.black ? 'Black' : 'Dark ${colors.indexOf(c)}'),
+                  title: Text(c == Colors.black
+                      ? 'Black'
+                      : 'Dark ${colors.indexOf(c)}'),
                   onTap: () {
                     cubit.update(s.copyWith(drawerBackgroundColor: c));
                     Navigator.pop(context);

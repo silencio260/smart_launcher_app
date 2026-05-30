@@ -53,7 +53,8 @@ class WidgetCacheKey {
 /// compact binary blob — JSON+base64 would roughly double the size of the
 /// payload bytes, which is the bulk of the file.
 class WidgetProviderCacheService {
-  WidgetProviderCacheService._({Directory? overrideDir}) : _overrideDir = overrideDir;
+  WidgetProviderCacheService._({Directory? overrideDir})
+      : _overrideDir = overrideDir;
 
   static final WidgetProviderCacheService instance =
       WidgetProviderCacheService._();
@@ -261,7 +262,8 @@ class _Reader {
   int _offset = 0;
 
   _Reader(Uint8List bytes)
-      : _data = ByteData.view(bytes.buffer, bytes.offsetInBytes, bytes.lengthInBytes);
+      : _data = ByteData.view(
+            bytes.buffer, bytes.offsetInBytes, bytes.lengthInBytes);
 
   int readU8() {
     final v = _data.getUint8(_offset);

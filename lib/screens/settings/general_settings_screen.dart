@@ -32,7 +32,8 @@ class GeneralSettingsScreen extends StatelessWidget {
                   final shape = await Navigator.push<String>(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => IconShapePickerScreen(current: s.iconShape),
+                      builder: (_) =>
+                          IconShapePickerScreen(current: s.iconShape),
                     ),
                   );
                   if (shape != null) cubit.update(s.copyWith(iconShape: shape));
@@ -43,14 +44,16 @@ class GeneralSettingsScreen extends StatelessWidget {
                 subtitle: const Text('Match icons to wallpaper colors'),
                 secondary: const Icon(Icons.palette_outlined),
                 value: s.themedIconsEnabled,
-                onChanged: (v) => cubit.update(s.copyWith(themedIconsEnabled: v)),
+                onChanged: (v) =>
+                    cubit.update(s.copyWith(themedIconsEnabled: v)),
               ),
               _SectionHeader('Notification Badges'),
               SwitchListTile(
                 title: const Text('Show Badges'),
                 secondary: const Icon(Icons.notifications_outlined),
                 value: s.notificationBadgesEnabled,
-                onChanged: (v) => cubit.update(s.copyWith(notificationBadgesEnabled: v)),
+                onChanged: (v) =>
+                    cubit.update(s.copyWith(notificationBadgesEnabled: v)),
               ),
               SwitchListTile(
                 title: const Text('Show Count'),
@@ -74,7 +77,8 @@ class GeneralSettingsScreen extends StatelessWidget {
         ThemeMode2.dark => 'Dark',
       };
 
-  void _pickTheme(BuildContext context, SettingsCubit cubit, LauncherSettings s) {
+  void _pickTheme(
+      BuildContext context, SettingsCubit cubit, LauncherSettings s) {
     showDialog(
       context: context,
       builder: (_) => SimpleDialog(

@@ -9,17 +9,20 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_info.dart';
 import '../models/folder_info.dart';
 import '../models/item_info.dart';
+import '../models/launcher_feature.dart';
 import '../models/launcher_widget_info.dart';
 import '../models/launcher_settings.dart';
 import '../models/launcher_state.dart' as ls;
 import '../models/workspace_item_info.dart';
 import '../services/default_layout_seeder.dart';
+import '../services/feature_launch_dispatcher.dart';
 import '../services/launcher_service.dart';
 import '../services/icons/decoded_icon_cache.dart';
 import '../utils/debug_flags.dart';
 import '../utils/drawer_perf.dart';
 import '../state/apps_cubit.dart';
 import '../state/launcher_cubit.dart';
+import '../state/launcher_feature_cubit.dart';
 import '../state/search_cubit.dart';
 import '../state/settings_cubit.dart';
 import '../state/workspace_cubit.dart';
@@ -50,16 +53,21 @@ class _HomeScreenState extends State<HomeScreen>
     with WidgetsBindingObserver, RouteAware {
   final _dragController = DragController();
   final _routeCovered = ValueNotifier<bool>(false);
+  static const _callEvents =
+      EventChannel('com.genrevibes.smartlauncher/call_events');
   OverlayEntry? _appInfoTooltip;
   bool _drawerOpen = false;
   bool _drawerDraggingToHome = false;
   bool _editMode = false;
   bool _didEnsureDefaultClock = false;
   bool _didSeedDefaultLayout = false;
+  bool _didSeedFeatureApps = false;
   bool _defaultSeedResolved = false;
   bool _normalizingDock = false;
   PageController? _pageController;
   Timer? _drawerPrewarmTimer;
+  StreamSubscription<AppInstallEvent>? _appInstallEventsSub;
+  StreamSubscription<dynamic>? _callEventsSub;
   bool _drawerPrewarmRunning = false;
   int _drawerPrewarmGeneration = 0;
   // Target slot for a pending "Create stack" / "Edit stack add" picker flow.
@@ -79,6 +87,12 @@ class _HomeScreenState extends State<HomeScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AppsCubit>().startBadgeListening();
       context.read<AppsCubit>().startAppInstallListening();
+      _appInstallEventsSub ??=
+          context.read<AppsCubit>().installEvents.listen(_handleInstallEvent);
+      _callEventsSub ??= _callEvents.receiveBroadcastStream().listen(
+            _handleCallEvent,
+            onError: (_) {},
+          );
       _maybePromptDefaultLauncher();
     });
     _dragController.addListener(_onDragChange);
@@ -129,6 +143,8 @@ class _HomeScreenState extends State<HomeScreen>
     homeRouteObserver.unsubscribe(this);
     _routeCovered.dispose();
     _drawerPrewarmTimer?.cancel();
+    _appInstallEventsSub?.cancel();
+    _callEventsSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _dragController.removeListener(_onDragChange);
     _dragController.dispose();
@@ -238,6 +254,8 @@ class _HomeScreenState extends State<HomeScreen>
         title: app.name,
         icon: app.icon,
         iconPath: app.iconPath,
+        launcherFeatureId: app.launcherFeatureId ??
+            LauncherFeatureCatalog.idForPackage(app.packageName),
         screenId: 0,
       ),
       settings.gridColumns,
@@ -289,6 +307,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   static const _seededFlagKey = 'default_layout_seeded_v1';
+  static const _featureSeededFlagKey = 'launcher_feature_icons_seeded_v1';
   static const _promptedDefaultLauncherKey = 'prompted_default_launcher_v1';
 
   // One-shot first-launch prompt to become the default home app. Skips if it's
@@ -360,6 +379,166 @@ class _HomeScreenState extends State<HomeScreen>
     await prefs.setBool(_seededFlagKey, true);
   }
 
+  Future<void> _maybeSeedFeatureApps() async {
+    if (_didSeedFeatureApps) return;
+    final workspace = context.read<WorkspaceCubit>();
+    if (workspace.state.pages.isEmpty) return;
+    _didSeedFeatureApps = true;
+
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    if (prefs.getBool(_featureSeededFlagKey) == true) return;
+    final settings = context.read<SettingsCubit>().state;
+    workspace.seedLauncherFeatureApps(settings.gridColumns, settings.gridRows);
+    await prefs.setBool(_featureSeededFlagKey, true);
+  }
+
+  void _handleInstallEvent(AppInstallEvent event) {
+    if (!mounted) return;
+    final featureSettings = context.read<LauncherFeatureSettingsCubit>().state;
+    if (!featureSettings.installAssistantEnabled) return;
+
+    if (event.isRemoved && featureSettings.cleanupOnUninstall) {
+      final workspaceChanged = context
+          .read<WorkspaceCubit>()
+          .removePackageArtifacts(event.packageName);
+      final settings = context.read<SettingsCubit>().state;
+      final nextDock = settings.dockPackages
+          .where((pkg) => pkg != event.packageName)
+          .toList();
+      final nextHidden =
+          settings.hiddenApps.where((pkg) => pkg != event.packageName).toList();
+      if (nextDock.length != settings.dockPackages.length ||
+          nextHidden.length != settings.hiddenApps.length) {
+        context.read<SettingsCubit>().update(
+              settings.copyWith(
+                dockPackages: nextDock,
+                hiddenApps: nextHidden,
+              ),
+            );
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(workspaceChanged
+              ? 'Removed stale launcher icons'
+              : 'App removed'),
+        ),
+      );
+      return;
+    }
+
+    if (event.isAdded && featureSettings.promptOnInstall) {
+      Future<void>.delayed(const Duration(milliseconds: 700), () {
+        if (!mounted) return;
+        final app =
+            context.read<AppsCubit>().state.appsByPackage[event.packageName];
+        if (app == null) return;
+        _showInstallAssistantSheet(app);
+      });
+    }
+  }
+
+  void _showInstallAssistantSheet(AppInfo app) {
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.system_update_alt_outlined),
+                title: Text('${app.name} installed'),
+                subtitle: const Text('Choose where it should go'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.open_in_new),
+                title: const Text('Open'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  FeatureLaunchDispatcher.launch(context, app);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.add_to_home_screen),
+                title: const Text('Add to Home'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _addAppToHomeScreen(app);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.visibility_off_outlined),
+                title: const Text('Hide from Drawer'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  final settings = context.read<SettingsCubit>().state;
+                  final hidden = settings.hiddenApps.toSet()
+                    ..add(app.packageName);
+                  context.read<SettingsCubit>().update(
+                        settings.copyWith(hiddenApps: hidden.toList()..sort()),
+                      );
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _handleCallEvent(dynamic event) {
+    if (!mounted || event is! Map) return;
+    if (event['eventType'] != 'callEnded') return;
+    final settings = context.read<LauncherFeatureSettingsCubit>().state;
+    if (!settings.afterCallEnabled) return;
+    _showAfterCallSheet();
+  }
+
+  void _showAfterCallSheet() {
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ListTile(
+                leading: Icon(Icons.call_end_outlined),
+                title: Text('Call ended'),
+                subtitle: Text('Quick actions'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.event_outlined),
+                title: const Text('Add calendar follow-up'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  const MethodChannel('com.genrevibes.smartlauncher/system')
+                      .invokeMethod('launchUrl', {
+                    'url': 'content://com.android.calendar/time',
+                  });
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.note_add_outlined),
+                title: const Text('Quick note'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _openSearch();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.close),
+                title: const Text('Dismiss'),
+                onTap: () => Navigator.pop(sheetContext),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   void _handleGesture(GestureAction action) {
     // Single choke point. WidgetResizeGestureGuard.isResizing is true if ANY
     // edit-like mode is active: per-widget resize selection, an active touch
@@ -391,7 +570,7 @@ class _HomeScreenState extends State<HomeScreen>
         const MethodChannel('com.genrevibes.smartlauncher/system')
             .invokeMethod('openAssistant');
       case GestureAction.openCamera:
-        LauncherService.launchApp('com.android.camera2');
+        FeatureLaunchDispatcher.launchPackage(context, 'com.android.camera2');
       case GestureAction.openSettings:
         _openSettings();
       case GestureAction.none:
@@ -408,6 +587,8 @@ class _HomeScreenState extends State<HomeScreen>
         pageBuilder: (_, __, ___) => MultiBlocProvider(
           providers: [
             BlocProvider.value(value: context.read<SearchCubit>()),
+            BlocProvider.value(
+                value: context.read<LauncherFeatureSettingsCubit>()),
             BlocProvider.value(value: context.read<AppsCubit>()),
           ],
           child: SearchOverlayScreen(iconShape: settings.iconShape),
@@ -423,6 +604,8 @@ class _HomeScreenState extends State<HomeScreen>
         builder: (_) => MultiBlocProvider(
           providers: [
             BlocProvider.value(value: context.read<SettingsCubit>()),
+            BlocProvider.value(
+                value: context.read<LauncherFeatureSettingsCubit>()),
             BlocProvider.value(value: context.read<AppsCubit>()),
             BlocProvider.value(value: context.read<WorkspaceCubit>()),
           ],
@@ -439,6 +622,8 @@ class _HomeScreenState extends State<HomeScreen>
         builder: (_) => MultiBlocProvider(
           providers: [
             BlocProvider.value(value: context.read<SettingsCubit>()),
+            BlocProvider.value(
+                value: context.read<LauncherFeatureSettingsCubit>()),
             BlocProvider.value(value: context.read<AppsCubit>()),
           ],
           child: const GeneralSettingsScreen(),
@@ -454,6 +639,8 @@ class _HomeScreenState extends State<HomeScreen>
         builder: (_) => MultiBlocProvider(
           providers: [
             BlocProvider.value(value: context.read<SettingsCubit>()),
+            BlocProvider.value(
+                value: context.read<LauncherFeatureSettingsCubit>()),
             BlocProvider.value(value: context.read<AppsCubit>()),
             BlocProvider.value(value: context.read<WorkspaceCubit>()),
           ],
@@ -503,7 +690,13 @@ class _HomeScreenState extends State<HomeScreen>
         onDismiss: _dismissAppInfoTooltip,
         onAppInfo: () {
           _dismissAppInfoTooltip();
-          LauncherService.openAppSettings(app.packageName);
+          final featureId = app.launcherFeatureId ??
+              LauncherFeatureCatalog.idForPackage(app.packageName);
+          if (featureId != null) {
+            FeatureLaunchDispatcher.openFeature(context, featureId);
+          } else {
+            LauncherService.openAppSettings(app.packageName);
+          }
         },
       ),
     );
@@ -537,6 +730,7 @@ class _HomeScreenState extends State<HomeScreen>
               context.read<SettingsCubit>().state,
             );
             _maybeSeedDefaultLayout();
+            _maybeSeedFeatureApps();
           },
         ),
         BlocListener<SettingsCubit, LauncherSettings>(
@@ -565,6 +759,7 @@ class _HomeScreenState extends State<HomeScreen>
           listenWhen: (prev, next) => prev.apps != next.apps,
           listener: (_, state) {
             _maybeSeedDefaultLayout();
+            _maybeSeedFeatureApps();
             _normalizeDockForCurrentState();
             _scheduleDrawerIconPrewarm(state.apps);
           },
@@ -628,8 +823,9 @@ class _HomeScreenState extends State<HomeScreen>
                                 child: WorkspaceView(
                                   dragController: _dragController,
                                   settings: settings,
-                                  onAppTap: (app) => LauncherService.launchApp(
-                                      app.packageName),
+                                  onAppTap: (app) =>
+                                      FeatureLaunchDispatcher.launch(
+                                          context, app),
                                   onAppLongPress: (app, page, slot, center) =>
                                       _showAppInfoTooltip(app, center),
                                   onBackgroundLongPress: _enterEditMode,
@@ -697,8 +893,8 @@ class _HomeScreenState extends State<HomeScreen>
                                             onSwipeUp: () => _handleGesture(
                                                 settings.swipeUpAction),
                                             onAppTap: (app) =>
-                                                LauncherService.launchApp(
-                                                    app.packageName),
+                                                FeatureLaunchDispatcher.launch(
+                                                    context, app),
                                             onAppLongPress: (app, center) =>
                                                 _showAppInfoTooltip(
                                                     app, center),
@@ -721,7 +917,7 @@ class _HomeScreenState extends State<HomeScreen>
                       onDismiss: _closeDrawer,
                       onAppTap: (app) {
                         _closeDrawer();
-                        LauncherService.launchApp(app.packageName);
+                        FeatureLaunchDispatcher.launch(context, app);
                       },
                       onAddToHome: _addAppToHomeScreen,
                       onDragToHome: () {
@@ -834,6 +1030,8 @@ class _HomeScreenState extends State<HomeScreen>
       title: app?.name ?? ref,
       icon: app?.icon,
       iconPath: app?.iconPath,
+      launcherFeatureId:
+          app?.launcherFeatureId ?? LauncherFeatureCatalog.idForPackage(ref),
     );
   }
 
@@ -1036,6 +1234,7 @@ class _HomeScreenState extends State<HomeScreen>
         title: item.title ?? live.name,
         icon: live.icon,
         iconPath: live.iconPath,
+        launcherFeatureId: item.launcherFeatureId ?? live.launcherFeatureId,
       );
     }).toList();
     return FolderInfo(
