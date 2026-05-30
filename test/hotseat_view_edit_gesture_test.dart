@@ -13,6 +13,54 @@ import 'package:smart_launcher_app/widgets/dock/hotseat_view.dart';
 void main() {
   tearDown(WidgetResizeGestureGuard.reset);
 
+  testWidgets('long pressing a dock app reports its icon center',
+      (tester) async {
+    Offset? iconCenter;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MultiBlocProvider(
+          providers: [
+            BlocProvider<WorkspaceCubit>(create: (_) => WorkspaceCubit()),
+            BlocProvider<AppsCubit>(create: (_) => AppsCubit()),
+            BlocProvider<SettingsCubit>(create: (_) => SettingsCubit()),
+          ],
+          child: SizedBox(
+            width: 320,
+            height: 160,
+            child: HotseatView(
+              apps: [
+                DockAppItem(
+                  AppInfo(
+                    id: 1,
+                    packageName: 'com.example.dock',
+                    appComponentName: 'com.example.dock/.MainActivity',
+                    title: 'Dock App',
+                  ),
+                ),
+              ],
+              settings: const LauncherSettings(
+                dockSize: 1,
+                showDockLabels: true,
+              ),
+              dragController: DragController(),
+              onSwipeUp: () {},
+              onAppTap: (_) {},
+              onAppLongPress: (_, center) => iconCenter = center,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.longPress(find.text('Dock App'));
+    await tester.pump();
+
+    expect(iconCenter, isNotNull);
+    expect(iconCenter!.dx, greaterThan(0));
+    expect(iconCenter!.dy, greaterThan(0));
+  });
+
   testWidgets(
     'tapping a dock app dismisses widget selection without launching',
     (tester) async {
@@ -54,7 +102,7 @@ void main() {
                 dragController: DragController(),
                 onSwipeUp: () {},
                 onAppTap: (_) => launchCount += 1,
-                onAppLongPress: (_) {},
+                onAppLongPress: (_, __) {},
               ),
             ),
           ),
@@ -100,7 +148,7 @@ void main() {
               dragController: DragController(),
               onSwipeUp: () {},
               onAppTap: (_) {},
-              onAppLongPress: (_) {},
+              onAppLongPress: (_, __) {},
             ),
           ),
         ),

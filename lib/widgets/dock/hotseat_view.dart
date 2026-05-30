@@ -45,7 +45,7 @@ class HotseatView extends StatefulWidget {
   final DragController dragController;
   final VoidCallback onSwipeUp;
   final void Function(AppInfo app) onAppTap;
-  final void Function(AppInfo app) onAppLongPress;
+  final void Function(AppInfo app, Offset iconCenter) onAppLongPress;
 
   const HotseatView({
     super.key,
@@ -152,6 +152,149 @@ class _HotseatViewState extends State<HotseatView> {
   }
 }
 
+class _DockAppDraggable extends StatefulWidget {
+  final AppInfo app;
+  final DragPayload payload;
+  final LauncherSettings settings;
+  final DragController dragController;
+  final VoidCallback onPrepareDrag;
+  final bool Function() onDismissEditSelection;
+  final void Function(AppInfo) onAppTap;
+  final void Function(AppInfo, Offset) onAppLongPress;
+
+  const _DockAppDraggable({
+    required this.app,
+    required this.payload,
+    required this.settings,
+    required this.dragController,
+    required this.onPrepareDrag,
+    required this.onDismissEditSelection,
+    required this.onAppTap,
+    required this.onAppLongPress,
+  });
+
+  @override
+  State<_DockAppDraggable> createState() => _DockAppDraggableState();
+}
+
+class _DockAppDraggableState extends State<_DockAppDraggable> {
+  static const double _dragActivationDistance = 24;
+
+  bool _armed = false;
+  bool _active = false;
+  double _distance = 0;
+  final ValueNotifier<bool> _feedbackActive = ValueNotifier<bool>(false);
+
+  @override
+  void dispose() {
+    _feedbackActive.dispose();
+    super.dispose();
+  }
+
+  Offset _globalCenter() {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return Offset.zero;
+    return box.localToGlobal(Offset(box.size.width / 2, box.size.height / 2));
+  }
+
+  void _arm() {
+    if (widget.onDismissEditSelection()) return;
+    _armed = true;
+    _active = false;
+    _distance = 0;
+    _feedbackActive.value = false;
+    widget.onAppLongPress(widget.app, _globalCenter());
+  }
+
+  void _maybeActivate(DragUpdateDetails details) {
+    if (!_armed) return;
+    if (_active) {
+      widget.dragController.updateDragPosition(details.globalPosition);
+      return;
+    }
+
+    _distance += details.delta.distance;
+    if (_distance < _dragActivationDistance) return;
+
+    _active = true;
+    _feedbackActive.value = true;
+    widget.onPrepareDrag();
+    widget.dragController.startDrag(
+      widget.payload.item,
+      widget.payload.sourcePage,
+      widget.payload.sourceSlot,
+      Offset.zero,
+    );
+    widget.dragController.updateDragPosition(details.globalPosition);
+  }
+
+  void _finish() {
+    final wasActive = _active;
+    _armed = false;
+    _active = false;
+    _distance = 0;
+    _feedbackActive.value = false;
+    if (wasActive) {
+      widget.dragController.cancelDrag();
+    }
+  }
+
+  Widget _icon({required bool dimmed}) {
+    final child = BadgeListener(
+      packageName: widget.app.packageName,
+      builder: (_, badge) => BubbleTextView(
+        app: widget.app,
+        iconSize: widget.settings.iconSize,
+        showLabel: widget.settings.showDockLabels,
+        iconShape: widget.settings.iconShape,
+        badgeCount: badge,
+        onTap: () {
+          if (widget.onDismissEditSelection()) return;
+          widget.onAppTap(widget.app);
+        },
+        onLongPress: () {
+          if (widget.onDismissEditSelection()) return;
+          if (_armed) return;
+          widget.onAppLongPress(widget.app, _globalCenter());
+        },
+      ),
+    );
+    return dimmed ? Opacity(opacity: 0.3, child: child) : child;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LongPressDraggable<DragPayload>(
+      data: widget.payload,
+      delay: const Duration(milliseconds: 350),
+      maxSimultaneousDrags: WidgetResizeGestureGuard.isResizing ? 0 : null,
+      onDragStarted: _arm,
+      onDragUpdate: _maybeActivate,
+      onDragEnd: (_) => _finish(),
+      onDraggableCanceled: (_, __) => _finish(),
+      feedback: ValueListenableBuilder<bool>(
+        valueListenable: _feedbackActive,
+        builder: (_, active, __) {
+          if (!active) return const SizedBox.shrink();
+          return PickupFeedback(
+            child: BubbleTextView(
+              app: widget.app,
+              iconSize: widget.settings.iconSize,
+              showLabel: false,
+              iconShape: widget.settings.iconShape,
+            ),
+          );
+        },
+      ),
+      childWhenDragging: ValueListenableBuilder<bool>(
+        valueListenable: _feedbackActive,
+        builder: (_, active, __) => _icon(dimmed: active),
+      ),
+      child: _icon(dimmed: false),
+    );
+  }
+}
+
 class _DockSlot extends StatelessWidget {
   final DockItem? item;
   final int slot;
@@ -159,7 +302,7 @@ class _DockSlot extends StatelessWidget {
   final LauncherSettings settings;
   final DragController dragController;
   final void Function(AppInfo) onAppTap;
-  final void Function(AppInfo) onAppLongPress;
+  final void Function(AppInfo, Offset) onAppLongPress;
   final bool Function() onDismissEditSelection;
 
   const _DockSlot({
@@ -346,60 +489,15 @@ class _DockSlot extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                 )
               : null,
-          child: LongPressDraggable<DragPayload>(
-            data: payload,
-            delay: const Duration(milliseconds: 350),
-            maxSimultaneousDrags:
-                WidgetResizeGestureGuard.isResizing ? 0 : null,
-            onDragStarted: () {
-              _initDockPackagesIfNeeded(context);
-              dragController.startDrag(payload.item, -1, slot, Offset.zero);
-            },
-            onDragUpdate: (details) {
-              dragController.updateDragPosition(details.globalPosition);
-            },
-            onDragEnd: (details) {
-              dragController.cancelDrag();
-            },
-            feedback: PickupFeedback(
-              child: BubbleTextView(
-                app: currentApp,
-                iconSize: dockIconSize,
-                showLabel: false,
-                iconShape: settings.iconShape,
-              ),
-            ),
-            childWhenDragging: Opacity(
-              opacity: 0.3,
-              child: BadgeListener(
-                packageName: currentApp.packageName,
-                builder: (_, badge) => BubbleTextView(
-                  app: currentApp,
-                  iconSize: dockIconSize,
-                  showLabel: settings.showDockLabels,
-                  iconShape: settings.iconShape,
-                  badgeCount: badge,
-                ),
-              ),
-            ),
-            child: BadgeListener(
-              packageName: currentApp.packageName,
-              builder: (_, badge) => BubbleTextView(
-                app: currentApp,
-                iconSize: dockIconSize,
-                showLabel: settings.showDockLabels,
-                iconShape: settings.iconShape,
-                badgeCount: badge,
-                onTap: () {
-                  if (onDismissEditSelection()) return;
-                  onAppTap(currentApp);
-                },
-                onLongPress: () {
-                  if (onDismissEditSelection()) return;
-                  onAppLongPress(currentApp);
-                },
-              ),
-            ),
+          child: _DockAppDraggable(
+            app: currentApp,
+            payload: payload,
+            settings: settings,
+            dragController: dragController,
+            onPrepareDrag: () => _initDockPackagesIfNeeded(context),
+            onDismissEditSelection: onDismissEditSelection,
+            onAppTap: onAppTap,
+            onAppLongPress: onAppLongPress,
           ),
         );
       },

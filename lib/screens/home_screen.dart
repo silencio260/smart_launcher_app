@@ -619,9 +619,9 @@ class _HomeScreenState extends State<HomeScreen>
                                             onAppTap: (app) =>
                                                 LauncherService.launchApp(
                                                     app.packageName),
-                                            onAppLongPress: (app) =>
+                                            onAppLongPress: (app, center) =>
                                                 _showAppInfoTooltip(
-                                                    app, Offset.zero),
+                                                    app, center),
                                           );
                                         },
                                       );

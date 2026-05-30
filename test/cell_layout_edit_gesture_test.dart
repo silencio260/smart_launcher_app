@@ -24,6 +24,143 @@ void main() {
   tearDown(WidgetResizeGestureGuard.reset);
 
   testWidgets(
+    'long pressing a home app opens app info without starting a drag',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final appItem = WorkspaceItemInfo(
+        id: 1,
+        itemType: ItemType.application,
+        packageName: 'com.example.app',
+        componentName: 'com.example.app/.MainActivity',
+        title: 'Example App',
+      );
+      final workspace = TestWorkspaceCubit(
+        WorkspaceState(
+          pages: [
+            WorkspacePage({0: AppSlot(appItem)}),
+          ],
+        ),
+      );
+      final dragController = DragController();
+      var infoCount = 0;
+      Offset? iconCenter;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MultiBlocProvider(
+            providers: [
+              BlocProvider<WorkspaceCubit>.value(value: workspace),
+              BlocProvider<AppsCubit>(create: (_) => AppsCubit()),
+              BlocProvider<SettingsCubit>(create: (_) => SettingsCubit()),
+            ],
+            child: SizedBox(
+              width: 600,
+              height: 600,
+              child: CellLayoutView(
+                page: workspace.state.pages.first,
+                pageIndex: 0,
+                settings: const LauncherSettings(
+                  gridColumns: 4,
+                  gridRows: 4,
+                ),
+                dragController: dragController,
+                onAppTap: (_) {},
+                onAppLongPress: (_, __, center) {
+                  infoCount += 1;
+                  iconCenter = center;
+                },
+                onBackgroundLongPress: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.longPress(find.text('Example App'));
+      await tester.pump();
+
+      expect(infoCount, 1);
+      expect(iconCenter, isNotNull);
+      expect(iconCenter!.dx, greaterThan(0));
+      expect(iconCenter!.dy, greaterThan(0));
+      expect(dragController.isDragging, isFalse);
+    },
+  );
+
+  testWidgets(
+    'dragging a home app starts after long press movement threshold',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final appItem = WorkspaceItemInfo(
+        id: 1,
+        itemType: ItemType.application,
+        packageName: 'com.example.app',
+        componentName: 'com.example.app/.MainActivity',
+        title: 'Example App',
+      );
+      final workspace = TestWorkspaceCubit(
+        WorkspaceState(
+          pages: [
+            WorkspacePage({0: AppSlot(appItem)}),
+          ],
+        ),
+      );
+      final dragController = DragController();
+      var infoCount = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MultiBlocProvider(
+            providers: [
+              BlocProvider<WorkspaceCubit>.value(value: workspace),
+              BlocProvider<AppsCubit>(create: (_) => AppsCubit()),
+              BlocProvider<SettingsCubit>(create: (_) => SettingsCubit()),
+            ],
+            child: SizedBox(
+              width: 600,
+              height: 600,
+              child: CellLayoutView(
+                page: workspace.state.pages.first,
+                pageIndex: 0,
+                settings: const LauncherSettings(
+                  gridColumns: 4,
+                  gridRows: 4,
+                ),
+                dragController: dragController,
+                onAppTap: (_) {},
+                onAppLongPress: (_, __, ___) => infoCount += 1,
+                onBackgroundLongPress: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('Example App')),
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(infoCount, 1);
+      expect(dragController.isDragging, isFalse);
+
+      await gesture.moveBy(const Offset(32, 0));
+      await tester.pump();
+
+      expect(dragController.isDragging, isTrue);
+
+      await gesture.up();
+      await tester.pump();
+
+      expect(dragController.isDragging, isFalse);
+    },
+  );
+
+  testWidgets(
     'long pressing empty space opens edit menu while widget is selected',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1200, 800));

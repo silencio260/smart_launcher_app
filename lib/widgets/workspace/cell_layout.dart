@@ -83,8 +83,12 @@ class _CellLayoutViewState extends State<CellLayoutView>
   static const Duration _widgetMetadataRefreshDelay =
       Duration(milliseconds: 1600);
 
+  static const double _appDragActivationDistance = 24;
   static const double _widgetDragActivationDistance = 8;
   int? _draggingSlot;
+  int? _armedAppDragSlot;
+  int? _activeAppDragSlot;
+  double _armedAppDragDistance = 0;
   int? _selectedWidgetSlot;
   // Tracks whether we've incremented WidgetResizeGestureGuard for the current
   // selection. While a widget is selected the workspace PageView switches to
@@ -100,6 +104,8 @@ class _CellLayoutViewState extends State<CellLayoutView>
   int? _armedWidgetDragSlot;
   double _armedWidgetDragDistance = 0;
   final ValueNotifier<int?> _activeWidgetDragFeedbackSlot =
+      ValueNotifier<int?>(null);
+  final ValueNotifier<int?> _activeAppDragFeedbackSlot =
       ValueNotifier<int?>(null);
 
   // Snapshot bitmap of the widget being dragged, captured at drag-arm while its
@@ -378,6 +384,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
       ctrl.dispose();
     }
     _displacementPreviewControllers.clear();
+    _activeAppDragFeedbackSlot.dispose();
     _activeWidgetDragFeedbackSlot.dispose();
     _dragSnapshotRevision.dispose();
     if (_selectionGuardActive) {
@@ -792,6 +799,74 @@ class _CellLayoutViewState extends State<CellLayoutView>
         .startDrag(payload.item, widget.pageIndex, slot, Offset.zero);
     _dragDropLog(
         'controller.startDrag active=${widget.dragController.isDragging}');
+  }
+
+  Offset _globalCenterOf(BuildContext context) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return Offset.zero;
+    return box.localToGlobal(Offset(box.size.width / 2, box.size.height / 2));
+  }
+
+  void _armAppDrag({
+    required BuildContext iconContext,
+    required AppInfo app,
+    required WorkspaceItemInfo item,
+    required int slot,
+  }) {
+    setState(() {
+      _draggingSlot = slot;
+      _armedAppDragSlot = slot;
+      _activeAppDragSlot = null;
+      _armedAppDragDistance = 0;
+      _selectedWidgetSlot = null;
+    });
+    _syncSelectionGuard();
+    _activeAppDragFeedbackSlot.value = null;
+    widget.onAppLongPress(app, slot, _globalCenterOf(iconContext));
+  }
+
+  void _maybeActivateAppDrag({
+    required DragUpdateDetails details,
+    required WorkspaceItemInfo item,
+    required int slot,
+  }) {
+    if (_armedAppDragSlot != slot) return;
+
+    if (_activeAppDragSlot == slot) {
+      widget.dragController.updateDragPosition(details.globalPosition);
+      return;
+    }
+
+    _armedAppDragDistance += details.delta.distance;
+    if (_armedAppDragDistance < _appDragActivationDistance) return;
+
+    setState(() => _activeAppDragSlot = slot);
+    _activeAppDragFeedbackSlot.value = slot;
+    widget.dragController.startDrag(item, widget.pageIndex, slot, Offset.zero);
+    widget.dragController.updateDragPosition(details.globalPosition);
+  }
+
+  void _finishAppDrag(int slot) {
+    final wasActive = _activeAppDragSlot == slot;
+    if (mounted) {
+      setState(() {
+        if (_draggingSlot == slot) _draggingSlot = null;
+        if (_armedAppDragSlot == slot) _armedAppDragSlot = null;
+        if (_activeAppDragSlot == slot) _activeAppDragSlot = null;
+        _armedAppDragDistance = 0;
+      });
+    } else {
+      _draggingSlot = null;
+      _armedAppDragSlot = null;
+      _activeAppDragSlot = null;
+      _armedAppDragDistance = 0;
+    }
+    if (_activeAppDragFeedbackSlot.value == slot) {
+      _activeAppDragFeedbackSlot.value = null;
+    }
+    if (wasActive) {
+      widget.dragController.cancelDrag();
+    }
   }
 
   // Renders the dragged widget to a bitmap (native renderLiveWidget) so the
@@ -3789,49 +3864,55 @@ class _CellLayoutViewState extends State<CellLayoutView>
             delay: const Duration(milliseconds: 350),
             maxSimultaneousDrags: _selectedWidgetSlot == null ? null : 0,
             onDragStarted: () {
-              setState(() {
-                _draggingSlot = slot;
-                _selectedWidgetSlot = null;
-              });
-              _syncSelectionGuard();
-              widget.dragController
-                  .startDrag(item, widget.pageIndex, slot, Offset.zero);
-            },
-            onDragCompleted: () {
-              if (mounted) setState(() => _draggingSlot = null);
-            },
-            onDragUpdate: (details) {
-              widget.dragController.updateDragPosition(details.globalPosition);
-            },
-            onDragEnd: (_) {
-              if (mounted) setState(() => _draggingSlot = null);
-              widget.dragController.cancelDrag();
-            },
-            onDraggableCanceled: (_, __) {
-              if (mounted) setState(() => _draggingSlot = null);
-              widget.dragController.cancelDrag();
-            },
-            feedback: PickupFeedback(
-              child: BubbleTextView(
+              _armAppDrag(
+                iconContext: context,
                 app: app,
-                iconSize: widget.settings.iconSize,
-                showLabel: false,
-                iconShape: widget.settings.iconShape,
-              ),
+                item: item,
+                slot: slot,
+              );
+            },
+            onDragCompleted: () => _finishAppDrag(slot),
+            onDragUpdate: (details) {
+              _maybeActivateAppDrag(
+                details: details,
+                item: item,
+                slot: slot,
+              );
+            },
+            onDragEnd: (_) => _finishAppDrag(slot),
+            onDraggableCanceled: (_, __) => _finishAppDrag(slot),
+            feedback: ValueListenableBuilder<int?>(
+              valueListenable: _activeAppDragFeedbackSlot,
+              builder: (_, activeSlot, __) {
+                if (activeSlot != slot) return const SizedBox.shrink();
+                return PickupFeedback(
+                  child: BubbleTextView(
+                    app: app,
+                    iconSize: widget.settings.iconSize,
+                    showLabel: false,
+                    iconShape: widget.settings.iconShape,
+                  ),
+                );
+              },
             ),
-            childWhenDragging: Opacity(
-              opacity: 0.3,
-              child: BadgeListener(
-                packageName: item.packageName,
-                builder: (_, badge) => BubbleTextView(
-                  app: app,
-                  iconSize: widget.settings.iconSize,
-                  showLabel: widget.settings.showLabels,
-                  labelSize: widget.settings.labelSize,
-                  iconShape: widget.settings.iconShape,
-                  badgeCount: badge,
-                ),
-              ),
+            childWhenDragging: ValueListenableBuilder<int?>(
+              valueListenable: _activeAppDragFeedbackSlot,
+              builder: (_, activeSlot, __) {
+                final child = BadgeListener(
+                  packageName: item.packageName,
+                  builder: (_, badge) => BubbleTextView(
+                    app: app,
+                    iconSize: widget.settings.iconSize,
+                    showLabel: widget.settings.showLabels,
+                    labelSize: widget.settings.labelSize,
+                    iconShape: widget.settings.iconShape,
+                    badgeCount: badge,
+                  ),
+                );
+                return activeSlot == slot
+                    ? Opacity(opacity: 0.3, child: child)
+                    : child;
+              },
             ),
             child: BadgeListener(
               packageName: item.packageName,
@@ -3850,6 +3931,7 @@ class _CellLayoutViewState extends State<CellLayoutView>
                     ? null
                     : () {
                         if (_dismissWidgetResizeSelectionIfActive()) return;
+                        if (_armedAppDragSlot == slot) return;
                         final box = context.findRenderObject() as RenderBox?;
                         final center = box == null
                             ? Offset.zero
