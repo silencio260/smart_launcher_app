@@ -39,9 +39,8 @@ class LauncherFeatureSettingsCubit extends Cubit<LauncherFeatureSettings> {
   Map<String, dynamic> _toJson(LauncherFeatureSettings settings) => {
         'overlayMenusEnabled': settings.overlayMenusEnabled,
         'afterCallEnabled': settings.afterCallEnabled,
-        'installAssistantEnabled': settings.installAssistantEnabled,
-        'promptOnInstall': settings.promptOnInstall,
-        'cleanupOnUninstall': settings.cleanupOnUninstall,
+        'installUninstallAssistantEnabled':
+            settings.installUninstallAssistantEnabled,
         'lockedApps': settings.lockedApps,
       };
 
@@ -49,9 +48,11 @@ class LauncherFeatureSettingsCubit extends Cubit<LauncherFeatureSettings> {
     return LauncherFeatureSettings(
       overlayMenusEnabled: json['overlayMenusEnabled'] as bool? ?? false,
       afterCallEnabled: json['afterCallEnabled'] as bool? ?? false,
-      installAssistantEnabled: json['installAssistantEnabled'] as bool? ?? true,
-      promptOnInstall: json['promptOnInstall'] as bool? ?? true,
-      cleanupOnUninstall: json['cleanupOnUninstall'] as bool? ?? true,
+      // Fall back to the legacy key for anyone who persisted the old field name.
+      installUninstallAssistantEnabled:
+          json['installUninstallAssistantEnabled'] as bool? ??
+              json['installAssistantEnabled'] as bool? ??
+              false,
       lockedApps: (json['lockedApps'] as List?)?.cast<String>() ?? const [],
     );
   }

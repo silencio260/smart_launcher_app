@@ -21,6 +21,9 @@ class AppInstallEvent {
 
   bool get isAdded => eventType == 'added';
   bool get isRemoved => eventType == 'removed';
+  // Fired on app updates (REMOVED/ADDED with EXTRA_REPLACING). Intentionally not
+  // treated as add/remove so the assistant never mutates layout on a routine update.
+  bool get isUpdated => eventType == 'updated';
 }
 
 class AppsState extends Equatable {

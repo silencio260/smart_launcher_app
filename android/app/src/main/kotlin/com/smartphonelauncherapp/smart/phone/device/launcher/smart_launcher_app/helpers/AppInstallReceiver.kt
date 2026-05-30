@@ -10,9 +10,13 @@ class AppInstallReceiver(
 
     override fun onReceive(context: Context, intent: Intent) {
         val pkg = intent.data?.schemeSpecificPart ?: return
+        // An app update arrives as REMOVED -> ADDED, both with EXTRA_REPLACING=true.
+        // Emit a distinct "updated" event so listeners can refresh the icon without
+        // treating it as a real install/uninstall (which would wipe the user's layout).
+        val replacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
         when (intent.action) {
-            Intent.ACTION_PACKAGE_ADDED -> onChanged(pkg, "added")
-            Intent.ACTION_PACKAGE_REMOVED -> onChanged(pkg, "removed")
+            Intent.ACTION_PACKAGE_ADDED -> onChanged(pkg, if (replacing) "updated" else "added")
+            Intent.ACTION_PACKAGE_REMOVED -> onChanged(pkg, if (replacing) "updated" else "removed")
             Intent.ACTION_PACKAGE_CHANGED -> onChanged(pkg, "changed")
         }
     }

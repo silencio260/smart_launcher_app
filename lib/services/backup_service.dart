@@ -55,10 +55,8 @@ class BackupService {
           'overlayMenusEnabled':
               featureSettingsCubit!.state.overlayMenusEnabled,
           'afterCallEnabled': featureSettingsCubit!.state.afterCallEnabled,
-          'installAssistantEnabled':
-              featureSettingsCubit!.state.installAssistantEnabled,
-          'promptOnInstall': featureSettingsCubit!.state.promptOnInstall,
-          'cleanupOnUninstall': featureSettingsCubit!.state.cleanupOnUninstall,
+          'installUninstallAssistantEnabled':
+              featureSettingsCubit!.state.installUninstallAssistantEnabled,
           'lockedApps': featureSettingsCubit!.state.lockedApps,
         },
       'workspace': _serializeWorkspace(ws),
@@ -82,11 +80,10 @@ class BackupService {
             overlayMenusEnabled:
                 featureData['overlayMenusEnabled'] as bool? ?? false,
             afterCallEnabled: featureData['afterCallEnabled'] as bool? ?? false,
-            installAssistantEnabled:
-                featureData['installAssistantEnabled'] as bool? ?? true,
-            promptOnInstall: featureData['promptOnInstall'] as bool? ?? true,
-            cleanupOnUninstall:
-                featureData['cleanupOnUninstall'] as bool? ?? true,
+            installUninstallAssistantEnabled:
+                featureData['installUninstallAssistantEnabled'] as bool? ??
+                    featureData['installAssistantEnabled'] as bool? ??
+                    false,
             lockedApps: (featureData['lockedApps'] as List?)?.cast<String>() ??
                 const [],
           ),

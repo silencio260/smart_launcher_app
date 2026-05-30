@@ -396,9 +396,9 @@ class _HomeScreenState extends State<HomeScreen>
   void _handleInstallEvent(AppInstallEvent event) {
     if (!mounted) return;
     final featureSettings = context.read<LauncherFeatureSettingsCubit>().state;
-    if (!featureSettings.installAssistantEnabled) return;
+    if (!featureSettings.installUninstallAssistantEnabled) return;
 
-    if (event.isRemoved && featureSettings.cleanupOnUninstall) {
+    if (event.isRemoved) {
       final workspaceChanged = context
           .read<WorkspaceCubit>()
           .removePackageArtifacts(event.packageName);
@@ -427,7 +427,7 @@ class _HomeScreenState extends State<HomeScreen>
       return;
     }
 
-    if (event.isAdded && featureSettings.promptOnInstall) {
+    if (event.isAdded) {
       Future<void>.delayed(const Duration(milliseconds: 700), () {
         if (!mounted) return;
         final app =

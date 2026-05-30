@@ -18,35 +18,15 @@ class InstallUninstallAssistantScreen extends StatelessWidget {
             children: [
               SwitchListTile(
                 secondary: const Icon(Icons.system_update_alt_outlined),
-                title: const Text('Assistant enabled'),
-                subtitle: const Text('React to app installs and removals'),
-                value: state.installAssistantEnabled,
-                onChanged: (value) => cubit.update(
-                  state.copyWith(installAssistantEnabled: value),
+                title: const Text('Install & Uninstall Assistant'),
+                subtitle: const Text(
+                  'Prompt where to place new apps and clean up icons of '
+                  'removed apps',
                 ),
-              ),
-              SwitchListTile(
-                secondary: const Icon(Icons.add_to_home_screen_outlined),
-                title: const Text('Prompt on new installs'),
-                subtitle: const Text('Offer open, add to home, or hide'),
-                value: state.promptOnInstall,
-                onChanged: state.installAssistantEnabled
-                    ? (value) => cubit.update(
-                          state.copyWith(promptOnInstall: value),
-                        )
-                    : null,
-              ),
-              SwitchListTile(
-                secondary: const Icon(Icons.cleaning_services_outlined),
-                title: const Text('Clean up removed apps'),
-                subtitle:
-                    const Text('Remove stale icons from home and folders'),
-                value: state.cleanupOnUninstall,
-                onChanged: state.installAssistantEnabled
-                    ? (value) => cubit.update(
-                          state.copyWith(cleanupOnUninstall: value),
-                        )
-                    : null,
+                value: state.installUninstallAssistantEnabled,
+                onChanged: (value) => cubit.update(
+                  state.copyWith(installUninstallAssistantEnabled: value),
+                ),
               ),
             ],
           );

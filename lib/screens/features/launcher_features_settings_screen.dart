@@ -50,8 +50,8 @@ class LauncherFeaturesSettingsScreen extends StatelessWidget {
               ListTile(
                 leading: const Icon(Icons.system_update_alt_outlined),
                 title: const Text('Install & Uninstall Assistant'),
-                subtitle:
-                    Text(state.installAssistantEnabled ? 'Enabled' : 'Off'),
+                subtitle: Text(
+                    state.installUninstallAssistantEnabled ? 'Enabled' : 'Off'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => Navigator.push(
                   context,
