@@ -8,12 +8,13 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.android.RenderMode
 import io.flutter.embedding.android.TransparencyMode
 import io.flutter.embedding.engine.FlutterEngine
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.AfterCallChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.AlarmChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.AppInstallEventChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.AppsChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.CalendarChannel
-import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.CallStateChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.ContactsChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.overlay.AfterCallOverlay
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.FileLockerChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.NotificationChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.SecurityChannel
@@ -41,6 +42,20 @@ class MainActivity : FlutterActivity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
         appWidgetHost.startListening()
+        handleAfterCallIntent(intent)
+    }
+
+    // singleTask: a tap on the after-call overlay re-enters this activity here.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleAfterCallIntent(intent)
+    }
+
+    private fun handleAfterCallIntent(intent: Intent?) {
+        val action = intent?.getStringExtra(AfterCallOverlay.EXTRA_ACTION) ?: return
+        intent.removeExtra(AfterCallOverlay.EXTRA_ACTION)
+        AfterCallChannel.deliver(action)
     }
 
     override fun onDestroy() {
@@ -62,7 +77,7 @@ class MainActivity : FlutterActivity() {
         notificationChannel = NotificationChannel(this).also { it.register(messenger) }
         ContactsChannel(this).register(messenger)
         CalendarChannel(this).register(messenger)
-        CallStateChannel(this).register(messenger)
+        AfterCallChannel(this).register(messenger)
         AlarmChannel(this).register(messenger)
         securityChannel = SecurityChannel(this).also { it.register(messenger) }
         fileLockerChannel = FileLockerChannel(this).also { it.register(messenger) }

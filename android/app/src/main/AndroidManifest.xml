@@ -12,8 +12,11 @@
     <!-- Notification badges (runtime permission on API 33+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
-    <!-- After-call action center -->
-    <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
+    <!-- After-call action center: draw the post-call card over the dialer.
+         Call-END detection reads only EXTRA_STATE from the PHONE_STATE
+         broadcast, which is delivered without READ_PHONE_STATE; we never read
+         the caller number/identity, so that sensitive permission is not needed. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
 
     <!-- Wallpaper read/write -->
     <uses-permission android:name="android.permission.SET_WALLPAPER"/>
@@ -91,6 +94,19 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config"/>
         </service>
+
+        <!-- After-call detector. Listens only to call-state changes (no caller
+             identity) to fire the post-call overlay. Declared disabled and
+             enabled at runtime only when the user turns the feature on, so it
+             costs nothing — and broadcasts nothing — while off. -->
+        <receiver
+            android:name=".receivers.AfterCallReceiver"
+            android:exported="true"
+            android:enabled="false">
+            <intent-filter>
+                <action android:name="android.intent.action.PHONE_STATE"/>
+            </intent-filter>
+        </receiver>
 
         <meta-data
             android:name="flutterEmbedding"

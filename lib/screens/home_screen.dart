@@ -14,6 +14,7 @@ import '../models/launcher_widget_info.dart';
 import '../models/launcher_settings.dart';
 import '../models/launcher_state.dart' as ls;
 import '../models/workspace_item_info.dart';
+import '../services/after_call_service.dart';
 import '../services/default_layout_seeder.dart';
 import '../services/feature_launch_dispatcher.dart';
 import '../services/launcher_service.dart';
@@ -53,8 +54,6 @@ class _HomeScreenState extends State<HomeScreen>
     with WidgetsBindingObserver, RouteAware {
   final _dragController = DragController();
   final _routeCovered = ValueNotifier<bool>(false);
-  static const _callEvents =
-      EventChannel('com.genrevibes.smartlauncher/call_events');
   OverlayEntry? _appInfoTooltip;
   bool _drawerOpen = false;
   bool _drawerDraggingToHome = false;
@@ -67,7 +66,6 @@ class _HomeScreenState extends State<HomeScreen>
   PageController? _pageController;
   Timer? _drawerPrewarmTimer;
   StreamSubscription<AppInstallEvent>? _appInstallEventsSub;
-  StreamSubscription<dynamic>? _callEventsSub;
   bool _drawerPrewarmRunning = false;
   int _drawerPrewarmGeneration = 0;
   // Target slot for a pending "Create stack" / "Edit stack add" picker flow.
@@ -89,10 +87,8 @@ class _HomeScreenState extends State<HomeScreen>
       context.read<AppsCubit>().startAppInstallListening();
       _appInstallEventsSub ??=
           context.read<AppsCubit>().installEvents.listen(_handleInstallEvent);
-      _callEventsSub ??= _callEvents.receiveBroadcastStream().listen(
-            _handleCallEvent,
-            onError: (_) {},
-          );
+      // An after-call overlay tap (cold start) leaves an action waiting natively.
+      _consumeAfterCallAction();
       _maybePromptDefaultLauncher();
     });
     _dragController.addListener(_onDragChange);
@@ -144,7 +140,6 @@ class _HomeScreenState extends State<HomeScreen>
     _routeCovered.dispose();
     _drawerPrewarmTimer?.cancel();
     _appInstallEventsSub?.cancel();
-    _callEventsSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _dragController.removeListener(_onDragChange);
     _dragController.dispose();
@@ -158,6 +153,8 @@ class _HomeScreenState extends State<HomeScreen>
     if (state != AppLifecycleState.resumed) return;
     // Always refresh badges — cheap, and notification counts go stale fast.
     context.read<AppsCubit>().refreshBadges();
+    // A warm resume can be an after-call overlay tap; drain any pending action.
+    _consumeAfterCallAction();
     // Full app list reload is expensive (icon decode for every package). The
     // Android side fires PACKAGE_ADDED/REMOVED intents into the launcher
     // service, so a periodic resume-reload is only a fallback. Cap it to
@@ -487,56 +484,18 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  void _handleCallEvent(dynamic event) {
-    if (!mounted || event is! Map) return;
-    if (event['eventType'] != 'callEnded') return;
-    final settings = context.read<LauncherFeatureSettingsCubit>().state;
-    if (!settings.afterCallEnabled) return;
-    _showAfterCallSheet();
-  }
-
-  void _showAfterCallSheet() {
-    showModalBottomSheet(
-      context: context,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const ListTile(
-                leading: Icon(Icons.call_end_outlined),
-                title: Text('Call ended'),
-                subtitle: Text('Quick actions'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.event_outlined),
-                title: const Text('Add calendar follow-up'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  const MethodChannel('com.genrevibes.smartlauncher/system')
-                      .invokeMethod('launchUrl', {
-                    'url': 'content://com.android.calendar/time',
-                  });
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.note_add_outlined),
-                title: const Text('Quick note'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _openSearch();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.close),
-                title: const Text('Dismiss'),
-                onTap: () => Navigator.pop(sheetContext),
-              ),
-            ],
-          ),
-        );
-      },
-    );
+  // The after-call card is a native system overlay drawn over the dialer. Its
+  // app-specific actions (vault, note) re-enter the launcher with the action
+  // stashed natively; we drain it here on launch and on resume.
+  Future<void> _consumeAfterCallAction() async {
+    final action = await AfterCallService.consumePendingAction();
+    if (!mounted || action == null) return;
+    switch (action) {
+      case 'vault':
+        FeatureLaunchDispatcher.openFeature(context, 'file_locker');
+      case 'note':
+        _openSearch();
+    }
   }
 
   void _handleGesture(GestureAction action) {

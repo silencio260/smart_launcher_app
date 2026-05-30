@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import '../../models/launcher_feature_settings.dart';
+import '../../services/after_call_service.dart';
+import '../../services/launcher_service.dart';
 import '../../state/launcher_feature_cubit.dart';
 
 class AfterCallSettingsScreen extends StatelessWidget {
@@ -21,31 +22,29 @@ class AfterCallSettingsScreen extends StatelessWidget {
                 secondary: const Icon(Icons.call_end_outlined),
                 title: const Text('Post-call action center'),
                 subtitle: const Text(
-                  'Shows quick actions after calls when the launcher is visible',
+                  'Shows quick actions over the screen right after a call ends',
                 ),
                 value: state.afterCallEnabled,
                 onChanged: (value) async {
                   if (value) {
-                    final status = await Permission.phone.request();
-                    if (!status.isGranted) return;
+                    // The card is a system overlay drawn over the dialer, so it
+                    // needs the "draw over other apps" grant — NOT a phone
+                    // permission. Detection reads call state only.
+                    if (!await LauncherService.canDrawOverlays()) {
+                      await LauncherService.requestOverlayPermission();
+                      if (!await LauncherService.canDrawOverlays()) return;
+                    }
                   }
+                  await AfterCallService.setEnabled(value);
                   cubit.update(state.copyWith(afterCallEnabled: value));
                 },
-              ),
-              SwitchListTile(
-                secondary: const Icon(Icons.layers_outlined),
-                title: const Text('Use overlay when available'),
-                subtitle: const Text(
-                  'Requires the floating menu permission from Launcher Features',
-                ),
-                value: state.overlayMenusEnabled,
-                onChanged: (value) =>
-                    cubit.update(state.copyWith(overlayMenusEnabled: value)),
               ),
               const Padding(
                 padding: EdgeInsets.all(16),
                 child: Text(
-                  'This version avoids call-log access and does not show caller names or numbers.',
+                  'The after-call card needs the "draw over other apps" '
+                  'permission to appear on top of the call screen. It does not '
+                  'use call-log access and never shows caller names or numbers.',
                 ),
               ),
             ],

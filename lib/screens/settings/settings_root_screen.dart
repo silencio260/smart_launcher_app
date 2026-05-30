@@ -1,7 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/launcher_settings.dart';
 import '../../models/launcher_widget_info.dart';
+import '../../services/after_call_service.dart';
+import '../../services/launcher_service.dart';
 import '../../state/settings_cubit.dart';
 import '../../utils/debug_flags.dart';
 import 'general_settings_screen.dart';
@@ -178,6 +181,10 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                   icon: Icons.science_outlined,
                   title: 'Developer Options',
                 ),
+            (_) => const _SubSectionHeader(
+                  icon: Icons.visibility_outlined,
+                  title: 'Dev View',
+                ),
             (c) => BlocBuilder<SettingsCubit, LauncherSettings>(
                   bloc: c.read<SettingsCubit>(),
                   builder: (context, state) {
@@ -195,6 +202,32 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                             state.copyWith(showGridDebugOverlay: value),
                           ),
                         ),
+                        SwitchListTile(
+                          secondary: const Icon(Icons.info_outline),
+                          title: const Text('Widget Picker Debug Info'),
+                          subtitle: const Text(
+                            'Show min/max spans, dp sizes, and resize mode under each widget in the picker',
+                          ),
+                          value: state.showWidgetPickerDebugInfo,
+                          onChanged: (value) => cubit.update(
+                            state.copyWith(showWidgetPickerDebugInfo: value),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+            if (kDebugMode) (_) => const _AfterCallDebugPanel(),
+            (_) => const _SubSectionHeader(
+                  icon: Icons.article_outlined,
+                  title: 'Logs',
+                ),
+            (c) => BlocBuilder<SettingsCubit, LauncherSettings>(
+                  bloc: c.read<SettingsCubit>(),
+                  builder: (context, state) {
+                    final cubit = context.read<SettingsCubit>();
+                    return Column(
+                      children: [
                         SwitchListTile(
                           secondary: const Icon(Icons.article_outlined),
                           title: const Text('Widget Debug Logs'),
@@ -215,17 +248,6 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                           value: state.showWidgetDragDebugLogs,
                           onChanged: (value) => cubit.update(
                             state.copyWith(showWidgetDragDebugLogs: value),
-                          ),
-                        ),
-                        SwitchListTile(
-                          secondary: const Icon(Icons.info_outline),
-                          title: const Text('Widget Picker Debug Info'),
-                          subtitle: const Text(
-                            'Show min/max spans, dp sizes, and resize mode under each widget in the picker',
-                          ),
-                          value: state.showWidgetPickerDebugInfo,
-                          onChanged: (value) => cubit.update(
-                            state.copyWith(showWidgetPickerDebugInfo: value),
                           ),
                         ),
                         SwitchListTile(
@@ -304,6 +326,37 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
+/// A nested header that reads as a child of the [_SectionHeader] above it:
+/// indented past the parent, smaller, and muted.
+class _SubSectionHeader extends StatelessWidget {
+  final IconData icon;
+  final String title;
+
+  const _SubSectionHeader({required this.icon, required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(32, 12, 16, 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 12),
+          Text(
+            title,
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Tile extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -325,6 +378,144 @@ class _Tile extends StatelessWidget {
       subtitle: Text(subtitle),
       trailing: const Icon(Icons.chevron_right),
       onTap: onTap,
+    );
+  }
+}
+
+/// Debug-only controls for exercising the after-call feature without placing a
+/// real call: show the overlay on demand, and arm/disarm ("install"/"uninstall")
+/// the call-state receiver while watching its live status. Lives in the Dev View
+/// section; compiled out of release builds via the `kDebugMode` guard at its
+/// call site.
+class _AfterCallDebugPanel extends StatefulWidget {
+  const _AfterCallDebugPanel();
+
+  @override
+  State<_AfterCallDebugPanel> createState() => _AfterCallDebugPanelState();
+}
+
+class _AfterCallDebugPanelState extends State<_AfterCallDebugPanel> {
+  // null = not read yet / channel error, so the row never silently goes blank.
+  bool? _receiverEnabled;
+  bool? _canDrawOverlays;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    try {
+      final enabled = await AfterCallService.isEnabled();
+      final canDraw = await LauncherService.canDrawOverlays();
+      if (!mounted) return;
+      setState(() {
+        _receiverEnabled = enabled;
+        _canDrawOverlays = canDraw;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = '$e');
+    }
+  }
+
+  String _statusLabel(bool? value) =>
+      value == null ? '—' : (value ? 'YES' : 'no');
+
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..removeCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _showCardNow() async {
+    if (!await LauncherService.canDrawOverlays()) {
+      await LauncherService.requestOverlayPermission();
+      if (!await LauncherService.canDrawOverlays()) {
+        _toast('Overlay permission needed to show the card');
+        await _refresh();
+        return;
+      }
+    }
+    await AfterCallService.showOverlayNow();
+    _toast('Card shown — tap ✕, tap outside, or press Back to close');
+    await _refresh();
+  }
+
+  Future<void> _setReceiver(bool enabled) async {
+    await AfterCallService.setEnabled(enabled);
+    _toast(enabled
+        ? 'Receiver armed (installed)'
+        : 'Receiver disarmed (uninstalled)');
+    await _refresh();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Text(
+            'AFTER-CALL TESTER',
+            style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
+          child: Text(
+            'The card is permission-free: it has no call-log/phone access, so it '
+            'shows quick actions only — no caller number or duration.',
+            style: TextStyle(fontSize: 12),
+          ),
+        ),
+        if (_error != null)
+          ListTile(
+            dense: true,
+            title: const Text('Channel error'),
+            subtitle: Text(_error!),
+          ),
+        ListTile(
+          dense: true,
+          title: const Text('Receiver armed'),
+          trailing: Text(_statusLabel(_receiverEnabled)),
+        ),
+        ListTile(
+          dense: true,
+          title: const Text('Can draw overlays'),
+          trailing: Text(_statusLabel(_canDrawOverlays)),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilledButton.tonal(
+                onPressed: _showCardNow,
+                child: const Text('Show card now'),
+              ),
+              OutlinedButton(
+                onPressed: () => _setReceiver(true),
+                child: const Text('Arm receiver'),
+              ),
+              OutlinedButton(
+                onPressed: () => _setReceiver(false),
+                child: const Text('Disarm receiver'),
+              ),
+              TextButton(
+                onPressed: _refresh,
+                child: const Text('Refresh status'),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
