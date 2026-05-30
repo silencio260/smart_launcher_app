@@ -14,6 +14,7 @@ import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.AppsChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.CalendarChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.ContactsChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.InstallAssistantChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.overlay.AfterCallOverlay
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.FileLockerChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.NotificationChannel
@@ -78,6 +79,7 @@ class MainActivity : FlutterActivity() {
         ContactsChannel(this).register(messenger)
         CalendarChannel(this).register(messenger)
         AfterCallChannel(this).register(messenger)
+        InstallAssistantChannel(this).register(messenger)
         AlarmChannel(this).register(messenger)
         securityChannel = SecurityChannel(this).also { it.register(messenger) }
         fileLockerChannel = FileLockerChannel(this).also { it.register(messenger) }

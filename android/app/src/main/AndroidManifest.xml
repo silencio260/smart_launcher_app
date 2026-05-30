@@ -48,7 +48,7 @@
 
     <application
         android:label="Smart Launcher"
-        android:name="${applicationName}"
+        android:name=".SmartLauncherApplication"
         android:icon="@mipmap/ic_launcher">
 
         <activity

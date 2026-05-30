@@ -15,6 +15,7 @@ import '../models/launcher_settings.dart';
 import '../models/launcher_state.dart' as ls;
 import '../models/workspace_item_info.dart';
 import '../services/after_call_service.dart';
+import '../services/install_assistant_service.dart';
 import '../services/default_layout_seeder.dart';
 import '../services/feature_launch_dispatcher.dart';
 import '../services/launcher_service.dart';
@@ -65,7 +66,6 @@ class _HomeScreenState extends State<HomeScreen>
   bool _normalizingDock = false;
   PageController? _pageController;
   Timer? _drawerPrewarmTimer;
-  StreamSubscription<AppInstallEvent>? _appInstallEventsSub;
   bool _drawerPrewarmRunning = false;
   int _drawerPrewarmGeneration = 0;
   // Target slot for a pending "Create stack" / "Edit stack add" picker flow.
@@ -85,10 +85,19 @@ class _HomeScreenState extends State<HomeScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AppsCubit>().startBadgeListening();
       context.read<AppsCubit>().startAppInstallListening();
-      _appInstallEventsSub ??=
-          context.read<AppsCubit>().installEvents.listen(_handleInstallEvent);
+      // Keep the native package detector's flag in lockstep with the Dart toggle,
+      // so the Application's startup registration can't drift after a reinstall.
+      InstallAssistantService.setEnabled(
+        context
+            .read<LauncherFeatureSettingsCubit>()
+            .state
+            .installUninstallAssistantEnabled,
+      );
       // An after-call overlay tap (cold start) leaves an action waiting natively.
       _consumeAfterCallAction();
+      // An install/uninstall overlay tap (add-to-home, hide, cleanup, disable)
+      // is stashed natively; drain it the same way.
+      _consumeInstallAssistantAction();
       _maybePromptDefaultLauncher();
     });
     _dragController.addListener(_onDragChange);
@@ -139,7 +148,6 @@ class _HomeScreenState extends State<HomeScreen>
     homeRouteObserver.unsubscribe(this);
     _routeCovered.dispose();
     _drawerPrewarmTimer?.cancel();
-    _appInstallEventsSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _dragController.removeListener(_onDragChange);
     _dragController.dispose();
@@ -155,6 +163,8 @@ class _HomeScreenState extends State<HomeScreen>
     context.read<AppsCubit>().refreshBadges();
     // A warm resume can be an after-call overlay tap; drain any pending action.
     _consumeAfterCallAction();
+    // …or an install/uninstall overlay tap chosen while we were backgrounded.
+    _consumeInstallAssistantAction();
     // Full app list reload is expensive (icon decode for every package). The
     // Android side fires PACKAGE_ADDED/REMOVED intents into the launcher
     // service, so a periodic resume-reload is only a fallback. Cap it to
@@ -390,97 +400,32 @@ class _HomeScreenState extends State<HomeScreen>
     await prefs.setBool(_featureSeededFlagKey, true);
   }
 
-  void _handleInstallEvent(AppInstallEvent event) {
+  // Strip a removed package's leftovers from the launcher: workspace icons,
+  // dock entry, and hidden-apps entry. Invoked when the user taps "Clean up" on
+  // the native uninstall card (delivered as a pending `cleanup:<pkg>` action).
+  void _cleanupRemovedPackage(String packageName) {
     if (!mounted) return;
-    final featureSettings = context.read<LauncherFeatureSettingsCubit>().state;
-    if (!featureSettings.installUninstallAssistantEnabled) return;
-
-    if (event.isRemoved) {
-      final workspaceChanged = context
-          .read<WorkspaceCubit>()
-          .removePackageArtifacts(event.packageName);
-      final settings = context.read<SettingsCubit>().state;
-      final nextDock = settings.dockPackages
-          .where((pkg) => pkg != event.packageName)
-          .toList();
-      final nextHidden =
-          settings.hiddenApps.where((pkg) => pkg != event.packageName).toList();
-      if (nextDock.length != settings.dockPackages.length ||
-          nextHidden.length != settings.hiddenApps.length) {
-        context.read<SettingsCubit>().update(
-              settings.copyWith(
-                dockPackages: nextDock,
-                hiddenApps: nextHidden,
-              ),
-            );
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(workspaceChanged
-              ? 'Removed stale launcher icons'
-              : 'App removed'),
-        ),
-      );
-      return;
+    final workspaceChanged =
+        context.read<WorkspaceCubit>().removePackageArtifacts(packageName);
+    final settings = context.read<SettingsCubit>().state;
+    final nextDock =
+        settings.dockPackages.where((pkg) => pkg != packageName).toList();
+    final nextHidden =
+        settings.hiddenApps.where((pkg) => pkg != packageName).toList();
+    if (nextDock.length != settings.dockPackages.length ||
+        nextHidden.length != settings.hiddenApps.length) {
+      context.read<SettingsCubit>().update(
+            settings.copyWith(
+              dockPackages: nextDock,
+              hiddenApps: nextHidden,
+            ),
+          );
     }
-
-    if (event.isAdded) {
-      Future<void>.delayed(const Duration(milliseconds: 700), () {
-        if (!mounted) return;
-        final app =
-            context.read<AppsCubit>().state.appsByPackage[event.packageName];
-        if (app == null) return;
-        _showInstallAssistantSheet(app);
-      });
-    }
-  }
-
-  void _showInstallAssistantSheet(AppInfo app) {
-    showModalBottomSheet(
-      context: context,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.system_update_alt_outlined),
-                title: Text('${app.name} installed'),
-                subtitle: const Text('Choose where it should go'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.open_in_new),
-                title: const Text('Open'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  FeatureLaunchDispatcher.launch(context, app);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.add_to_home_screen),
-                title: const Text('Add to Home'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _addAppToHomeScreen(app);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.visibility_off_outlined),
-                title: const Text('Hide from Drawer'),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  final settings = context.read<SettingsCubit>().state;
-                  final hidden = settings.hiddenApps.toSet()
-                    ..add(app.packageName);
-                  context.read<SettingsCubit>().update(
-                        settings.copyWith(hiddenApps: hidden.toList()..sort()),
-                      );
-                },
-              ),
-            ],
-          ),
-        );
-      },
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+            workspaceChanged ? 'Removed stale launcher icons' : 'Cleaned up'),
+      ),
     );
   }
 
@@ -496,6 +441,54 @@ class _HomeScreenState extends State<HomeScreen>
       case 'note':
         _openSearch();
     }
+  }
+
+  // The install/uninstall card is a native system overlay. Actions that mutate
+  // launcher state are stashed natively and applied here once Flutter is alive.
+  Future<void> _consumeInstallAssistantAction() async {
+    final action = await InstallAssistantService.consumePendingAction();
+    if (!mounted || action == null || action.isEmpty) return;
+
+    if (action == 'disable') {
+      final cubit = context.read<LauncherFeatureSettingsCubit>();
+      await InstallAssistantService.setEnabled(false);
+      if (!mounted) return;
+      cubit.update(
+        cubit.state.copyWith(installUninstallAssistantEnabled: false),
+      );
+      return;
+    }
+
+    final separator = action.indexOf(':');
+    if (separator <= 0 || separator == action.length - 1) return;
+    final verb = action.substring(0, separator);
+    final packageName = action.substring(separator + 1);
+
+    switch (verb) {
+      case 'add_home':
+        final app = await _resolveInstalledApp(packageName);
+        if (!mounted || app == null) return;
+        _addAppToHomeScreen(app);
+      case 'hide':
+        final settings = context.read<SettingsCubit>().state;
+        final hidden = settings.hiddenApps.toSet()..add(packageName);
+        context.read<SettingsCubit>().update(
+              settings.copyWith(hiddenApps: hidden.toList()..sort()),
+            );
+      case 'cleanup':
+        _cleanupRemovedPackage(packageName);
+    }
+  }
+
+  Future<AppInfo?> _resolveInstalledApp(String packageName) async {
+    final appsCubit = context.read<AppsCubit>();
+    var app = appsCubit.state.appsByPackage[packageName];
+    if (app != null) return app;
+
+    await appsCubit.loadApps(forceFull: true);
+    if (!mounted) return null;
+    app = appsCubit.state.appsByPackage[packageName];
+    return app;
   }
 
   void _handleGesture(GestureAction action) {

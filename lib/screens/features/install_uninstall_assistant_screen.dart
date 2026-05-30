@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../models/launcher_feature_settings.dart';
+import '../../services/install_assistant_service.dart';
+import '../../services/launcher_service.dart';
 import '../../state/launcher_feature_cubit.dart';
 
 class InstallUninstallAssistantScreen extends StatelessWidget {
@@ -24,8 +26,28 @@ class InstallUninstallAssistantScreen extends StatelessWidget {
                   'removed apps',
                 ),
                 value: state.installUninstallAssistantEnabled,
-                onChanged: (value) => cubit.update(
-                  state.copyWith(installUninstallAssistantEnabled: value),
+                onChanged: (value) async {
+                  if (value) {
+                    // The card is a system overlay drawn over whatever is on
+                    // screen when an app is installed/removed, so it needs the
+                    // "draw over other apps" grant — not a package permission.
+                    if (!await LauncherService.canDrawOverlays()) {
+                      await LauncherService.requestOverlayPermission();
+                      if (!await LauncherService.canDrawOverlays()) return;
+                    }
+                  }
+                  await InstallAssistantService.setEnabled(value);
+                  cubit.update(
+                    state.copyWith(installUninstallAssistantEnabled: value),
+                  );
+                },
+              ),
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'The assistant card needs the "draw over other apps" '
+                  'permission so it can appear on top of the Play Store or '
+                  'Settings — wherever you are when an app is added or removed.',
                 ),
               ),
             ],

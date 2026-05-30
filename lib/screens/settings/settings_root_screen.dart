@@ -4,7 +4,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/launcher_settings.dart';
 import '../../models/launcher_widget_info.dart';
 import '../../services/after_call_service.dart';
+import '../../services/install_assistant_service.dart';
 import '../../services/launcher_service.dart';
+import '../../state/apps_cubit.dart';
 import '../../state/settings_cubit.dart';
 import '../../utils/debug_flags.dart';
 import 'general_settings_screen.dart';
@@ -218,6 +220,7 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                   },
                 ),
             if (kDebugMode) (_) => const _AfterCallDebugPanel(),
+            if (kDebugMode) (_) => const _InstallAssistantDebugPanel(),
             (_) => const _SubSectionHeader(
                   icon: Icons.article_outlined,
                   title: 'Logs',
@@ -382,9 +385,10 @@ class _Tile extends StatelessWidget {
   }
 }
 
-/// Debug-only controls for exercising the after-call feature without placing a
-/// real call: show the overlay on demand, and arm/disarm ("install"/"uninstall")
-/// the call-state receiver while watching its live status. Lives in the Dev View
+/// Debug-only control for exercising the after-call feature without placing a
+/// real call: show the overlay on demand and watch the live status. Arming the
+/// call listener is automatic (driven by the "Post-call action center" toggle),
+/// so this panel only mirrors that state read-only. Lives in the Dev View
 /// section; compiled out of release builds via the `kDebugMode` guard at its
 /// call site.
 class _AfterCallDebugPanel extends StatefulWidget {
@@ -448,9 +452,7 @@ class _AfterCallDebugPanelState extends State<_AfterCallDebugPanel> {
 
   Future<void> _setReceiver(bool enabled) async {
     await AfterCallService.setEnabled(enabled);
-    _toast(enabled
-        ? 'Receiver armed (installed)'
-        : 'Receiver disarmed (uninstalled)');
+    _toast(enabled ? 'Call listener installed' : 'Call listener uninstalled');
     await _refresh();
   }
 
@@ -480,10 +482,16 @@ class _AfterCallDebugPanelState extends State<_AfterCallDebugPanel> {
             title: const Text('Channel error'),
             subtitle: Text(_error!),
           ),
-        ListTile(
+        SwitchListTile(
           dense: true,
-          title: const Text('Receiver armed'),
-          trailing: Text(_statusLabel(_receiverEnabled)),
+          title: const Text('Call listener (install / uninstall)'),
+          subtitle: Text(
+            _receiverEnabled == null
+                ? 'Reading…'
+                : 'Mirrors the Post-call action center toggle — flip to test',
+          ),
+          value: _receiverEnabled ?? false,
+          onChanged: _receiverEnabled == null ? null : _setReceiver,
         ),
         ListTile(
           dense: true,
@@ -500,14 +508,6 @@ class _AfterCallDebugPanelState extends State<_AfterCallDebugPanel> {
                 onPressed: _showCardNow,
                 child: const Text('Show card now'),
               ),
-              OutlinedButton(
-                onPressed: () => _setReceiver(true),
-                child: const Text('Arm receiver'),
-              ),
-              OutlinedButton(
-                onPressed: () => _setReceiver(false),
-                child: const Text('Disarm receiver'),
-              ),
               TextButton(
                 onPressed: _refresh,
                 child: const Text('Refresh status'),
@@ -516,6 +516,103 @@ class _AfterCallDebugPanelState extends State<_AfterCallDebugPanel> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Debug-only controls for previewing install/uninstall assistant overlays.
+/// The real feature setting remains under Launcher Features; these buttons live
+/// in Dev View because they synthesize package events for visual testing.
+class _InstallAssistantDebugPanel extends StatefulWidget {
+  const _InstallAssistantDebugPanel();
+
+  @override
+  State<_InstallAssistantDebugPanel> createState() =>
+      _InstallAssistantDebugPanelState();
+}
+
+class _InstallAssistantDebugPanelState
+    extends State<_InstallAssistantDebugPanel> {
+  bool _busy = false;
+
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..removeCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _showAssistantOverlay({required bool removed}) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      if (!await LauncherService.canDrawOverlays()) {
+        await LauncherService.requestOverlayPermission();
+        if (!await LauncherService.canDrawOverlays()) {
+          _toast('Overlay permission needed to show the modal');
+          return;
+        }
+      }
+      if (!mounted) return;
+      final appsCubit = context.read<AppsCubit>();
+      var apps = appsCubit.state.apps.where((app) => !app.isInternalFeature);
+      if (apps.isEmpty) {
+        await appsCubit.loadApps(forceFull: true);
+        apps = appsCubit.state.apps.where((app) => !app.isInternalFeature);
+      }
+      if (apps.isEmpty) {
+        _toast('No installed apps available for preview');
+        return;
+      }
+      await InstallAssistantService.showOverlayNow(
+        apps.first.packageName,
+        removed: removed,
+      );
+      _toast(removed ? 'Uninstall modal shown' : 'Install modal shown');
+    } catch (e) {
+      _toast('Could not show assistant modal: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'INSTALL ASSISTANT TESTER',
+            style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Preview the native install/uninstall overlays without changing installed apps.',
+            style: TextStyle(fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilledButton.tonalIcon(
+                onPressed:
+                    _busy ? null : () => _showAssistantOverlay(removed: false),
+                icon: const Icon(Icons.add_circle_outline),
+                label: const Text('Show install modal'),
+              ),
+              FilledButton.tonalIcon(
+                onPressed:
+                    _busy ? null : () => _showAssistantOverlay(removed: true),
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('Show uninstall modal'),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

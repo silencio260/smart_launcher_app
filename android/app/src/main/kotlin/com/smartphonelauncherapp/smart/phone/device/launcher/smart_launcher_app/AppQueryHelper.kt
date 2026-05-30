@@ -17,6 +17,13 @@ object AppQueryHelper {
     private const val ICON_CACHE_VERSION = 2
     private const val ICON_CACHE_DIR = "launcher_icon_cache"
 
+    // Last-known display label + icon path, keyed by package. Kept fresh on
+    // every app enumeration so the Install/Uninstall Assistant can title and
+    // illustrate its "removed" card after PackageManager data is gone.
+    private const val ASSISTANT_INDEX_PREFS = "install_assistant_index"
+    private const val LEGACY_LABEL_PREFS = "install_assistant_labels"
+    private const val INDEX_DELIMITER = "\u0001"
+
     // Process-wide cache of rasterized launcher icons. Keyed by package, valued
     // by (lastUpdateTime, bytes) so we re-rasterize only when the OS reports
     // the package has actually changed. This avoids paying Samsung's
@@ -48,6 +55,11 @@ object AppQueryHelper {
         val pm = context.packageManager
         val launcherApps = queryLauncherActivities(context)
         val result = ArrayList<Map<String, Any?>>(launcherApps.size)
+        val indexEdit = try {
+            context.getSharedPreferences(ASSISTANT_INDEX_PREFS, Context.MODE_PRIVATE).edit()
+        } catch (_: Exception) {
+            null
+        }
 
         for (entry in launcherApps) {
             val pkg = entry.packageName
@@ -63,6 +75,7 @@ object AppQueryHelper {
                 entry.lastUpdateTime,
             )
             val iconPath = iconFile?.takeIf { it.isFile }?.absolutePath
+            indexEdit?.putString(pkg, encodeAssistantIndexValue(entry.label, iconPath))
 
             result.add(
                 mapOf(
@@ -75,6 +88,7 @@ object AppQueryHelper {
                 )
             )
         }
+        indexEdit?.apply()
         return result
     }
 
@@ -276,6 +290,64 @@ object AppQueryHelper {
         } catch (e: Exception) {
             // Ignore cache cleanup failures; stale misses are handled by lastUpdateTime.
         }
+    }
+
+    // --- last-known data for the uninstall card -------------------------------
+
+    /** The display label last seen for [pkg], even after it's uninstalled. */
+    fun lastKnownLabel(context: Context, pkg: String): String? =
+        try {
+            decodeAssistantIndexValue(
+                context.getSharedPreferences(ASSISTANT_INDEX_PREFS, Context.MODE_PRIVATE)
+                    .getString(pkg, null),
+            )?.label
+                ?: context.getSharedPreferences(LEGACY_LABEL_PREFS, Context.MODE_PRIVATE)
+                    .getString(pkg, null)
+        } catch (_: Exception) {
+            null
+        }
+
+    /**
+     * The most recent on-disk rasterized icon for [pkg], if one survives. Matched by
+     * the package's cache-file prefix so the caller doesn't need its lastUpdateTime —
+     * useful for an uninstalled package whose PackageManager entry is gone.
+     */
+    fun lastKnownIconFile(context: Context, pkg: String): File? {
+        try {
+            val indexedPath = decodeAssistantIndexValue(
+                context.getSharedPreferences(ASSISTANT_INDEX_PREFS, Context.MODE_PRIVATE)
+                    .getString(pkg, null),
+            )?.iconPath
+            if (!indexedPath.isNullOrEmpty()) {
+                File(indexedPath).takeIf { it.isFile }?.let { return it }
+            }
+        } catch (_: Exception) {
+        }
+
+        val dir = iconCacheDir(context.cacheDir) ?: return null
+        val prefix = "${cachePrefix(pkg)}_"
+        return try {
+            dir.listFiles()
+                ?.filter { it.isFile && it.name.startsWith(prefix) && !it.name.endsWith(".tmp") }
+                ?.maxByOrNull { it.lastModified() }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private data class AssistantIndexEntry(val label: String, val iconPath: String?)
+
+    private fun encodeAssistantIndexValue(label: String, iconPath: String?): String =
+        "$label$INDEX_DELIMITER${iconPath.orEmpty()}"
+
+    private fun decodeAssistantIndexValue(value: String?): AssistantIndexEntry? {
+        if (value.isNullOrEmpty()) return null
+        val separator = value.indexOf(INDEX_DELIMITER)
+        if (separator < 0) return AssistantIndexEntry(value, null)
+        return AssistantIndexEntry(
+            label = value.substring(0, separator),
+            iconPath = value.substring(separator + INDEX_DELIMITER.length).ifEmpty { null },
+        )
     }
 
     private fun Drawable.toLauncherIconBytes(): ByteArray {
