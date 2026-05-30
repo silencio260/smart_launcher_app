@@ -11,8 +11,10 @@ import 'app_categories.dart';
 /// whenever the user taps "Reset to default layout".
 ///
 /// Layout produced (4 columns × 5 rows):
-///  - Page 1: clock widget (added by [WorkspaceCubit.ensureDefaultClockWidget])
-///            plus a "google" folder of Chrome + the Google suite.
+///  - Page 1: clock widget (added by [WorkspaceCubit.ensureDefaultClockWidget]),
+///            a "Google" folder (YouTube, Chrome, Mail + the rest of the Google
+///            suite), and a pinned row of YouTube, Chrome, Mail, one calculator
+///            and two productivity apps.
 ///  - Page 2: social-media apps, filling the grid.
 ///  - Page 3: utility apps, filling the grid.
 ///  - Page 4: one folder per non-empty category (Social, Google, Utility, …).
@@ -24,7 +26,7 @@ class DefaultLayoutSeeder {
   static const int columns = 4;
   static const int rows = 5;
   static const int dockSize = 4;
-  static const String googleFolderTitle = 'google';
+  static const String googleFolderTitle = 'Google';
 
   /// Order in which category folders are laid out on page 4.
   static const List<AppCategory> _page4Order = [
@@ -61,21 +63,71 @@ class DefaultLayoutSeeder {
     String newFolderId() =>
         'folder_${DateTime.now().millisecondsSinceEpoch}_${folderSeq++}';
 
-    // ---- Page 1: "google" folder (clock is added separately, see below) ----
+    // ---- Page 1: "Google" folder + a pinned row of key apps ----
+    // (the clock is added separately, see below).
     final page1Slots = <int, SlotContent>{};
     final googleApps = buckets[AppCategory.google] ?? const <AppInfo>[];
+
+    // Resolve the specific apps we pin on page 1. YouTube/Chrome/Gmail are also
+    // front-loaded into the Google folder.
+    final youtube = _resolveApp(
+        apps, const ['com.google.android.youtube'], const ['youtube']);
+    final chrome = _resolveApp(
+        apps,
+        const ['com.android.chrome', 'com.google.android.apps.chrome'],
+        const ['chrome']);
+    final gmail = _resolveApp(
+        apps, const ['com.google.android.gm'], const ['gmail']);
+    final calculator = _resolveApp(
+        apps,
+        const ['com.google.android.calculator', 'com.android.calculator2'],
+        const ['calculator']);
+
+    var folderSlotIndex = -1;
     if (googleApps.isNotEmpty) {
       final id = newFolderId();
+      // Lead the folder with YouTube, Chrome and Mail, then the rest of the
+      // Google suite (deduped, original order preserved).
+      final ordered = <AppInfo>[];
+      final seen = <String>{};
+      for (final app in [youtube, chrome, gmail]) {
+        if (app != null && seen.add(app.packageName)) ordered.add(app);
+      }
+      for (final app in googleApps) {
+        if (seen.add(app.packageName)) ordered.add(app);
+      }
       folders[id] = FolderInfo(
         id: id.hashCode,
         folderTitle: googleFolderTitle,
-        contents: googleApps.map(_toItem).toList(),
+        contents: ordered.map(_toItem).toList(),
         cellX: 0,
         cellY: 2,
         screenId: 0,
       );
       // Drop the folder just below the top 4×2 area reserved for the clock.
-      page1Slots[columns * 2] = FolderSlot(id);
+      folderSlotIndex = columns * 2;
+      page1Slots[folderSlotIndex] = FolderSlot(id);
+    }
+
+    // Pin loose icons on page 1: YouTube, Chrome, Mail, one calculator and two
+    // productivity apps, laid out left-to-right just after the Google folder.
+    final used = <String>{
+      for (final app in [youtube, chrome, gmail, calculator])
+        if (app != null) app.packageName,
+    };
+    final productivity = _resolveProductivityApps(apps, 2, used);
+    final pinned = <AppInfo>[
+      if (youtube != null) youtube,
+      if (chrome != null) chrome,
+      if (gmail != null) gmail,
+      if (calculator != null) calculator,
+      ...productivity,
+    ];
+    var pinSlot = folderSlotIndex >= 0 ? folderSlotIndex + 1 : columns * 2;
+    for (final app in pinned) {
+      if (pinSlot >= capacity) break;
+      page1Slots[pinSlot] = AppSlot(_toItem(app));
+      pinSlot++;
     }
 
     // ---- Pages 2 & 3: loose apps ----
@@ -172,6 +224,64 @@ class DefaultLayoutSeeder {
         icon: app.icon,
         iconPath: app.iconPath,
       );
+
+  /// Like [_resolve] but returns the matching [AppInfo] (or null), so the
+  /// caller can build a workspace slot rather than just a dock package string.
+  static AppInfo? _resolveApp(
+    List<AppInfo> apps,
+    List<String> known,
+    List<String> keywords,
+  ) {
+    for (final pkg in known) {
+      for (final app in apps) {
+        if (app.packageName == pkg) return app;
+      }
+    }
+    for (final app in apps) {
+      final pkg = app.packageName.toLowerCase();
+      final title = app.name.toLowerCase();
+      for (final kw in keywords) {
+        if (pkg.contains(kw) || title.contains(kw)) return app;
+      }
+    }
+    return null;
+  }
+
+  /// Picks up to [count] common productivity apps from the installed list,
+  /// skipping any package already in [exclude] (which it also extends so the
+  /// same app is never pinned twice).
+  static List<AppInfo> _resolveProductivityApps(
+    List<AppInfo> apps,
+    int count,
+    Set<String> exclude,
+  ) {
+    const known = <String>[
+      'com.google.android.apps.docs', // Drive
+      'com.google.android.keep', // Keep
+      'com.google.android.apps.docs.editors.docs',
+      'com.google.android.apps.docs.editors.sheets',
+      'com.google.android.apps.docs.editors.slides',
+      'com.google.android.calendar',
+      'com.google.android.apps.tasks',
+      'com.microsoft.office.outlook',
+      'com.microsoft.office.word',
+      'com.microsoft.office.excel',
+      'com.microsoft.office.onenote',
+      'com.notion.id',
+      'com.evernote',
+      'com.todoist',
+      'com.dropbox.android',
+      'com.adobe.reader',
+    ];
+    final installed = {for (final app in apps) app.packageName: app};
+    final result = <AppInfo>[];
+    for (final pkg in known) {
+      if (result.length >= count) break;
+      final app = installed[pkg];
+      if (app != null && exclude.add(pkg)) result.add(app);
+    }
+    return result;
+  }
 
   /// First installed package matching [known], else the first whose package or
   /// title contains a [keywords] entry, else '' (an empty dock slot).
