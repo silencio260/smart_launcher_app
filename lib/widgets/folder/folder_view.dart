@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/app_info.dart';
@@ -53,6 +54,10 @@ class _FolderViewState extends State<FolderView>
   // Key for the folder content container so we can read its screen rect.
   final GlobalKey _containerKey = GlobalKey();
 
+  // Global position where the most recent pointer went down on the backdrop,
+  // used to measure a swipe-to-dismiss gesture outside the folder panel.
+  Offset? _backdropPointerDown;
+
   @override
   void initState() {
     super.initState();
@@ -81,6 +86,26 @@ class _FolderViewState extends State<FolderView>
     _animController.reverse().then((_) {
       if (mounted) widget.onClose();
     });
+  }
+
+  // Closes the folder when the user swipes on the dimmed backdrop, i.e.
+  // anywhere outside the folder panel's bounds. Swipes that start inside the
+  // panel are ignored here so the scrollable grid keeps them.
+  void _maybeCloseOnBackdropSwipe(PointerMoveEvent event) {
+    if (_dragging || _closing) return;
+    final down = _backdropPointerDown;
+    if (down == null) return;
+    final renderBox =
+        _containerKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox != null) {
+      final localPos = renderBox.globalToLocal(event.position);
+      final insidePanel = (Offset.zero & renderBox.size).contains(localPos);
+      if (insidePanel) return;
+    }
+    if ((event.position - down).distance > kTouchSlop) {
+      _backdropPointerDown = null;
+      _close();
+    }
   }
 
   bool _sameFolderItem(WorkspaceItemInfo a, WorkspaceItemInfo b) {
@@ -167,22 +192,33 @@ class _FolderViewState extends State<FolderView>
           //   • dim the backdrop to 0 so the workspace shows through
           //   • disable the tap-to-close gesture on the backdrop
           //   • keep folder content fully interactive for reorder DragTargets
-          return GestureDetector(
-            onTap: _dragging ? null : _close,
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-              child: Container(
-                color: Colors.black.withValues(alpha: _dragging ? 0.0 : 0.5),
-                child: Center(
-                  child: GestureDetector(
-                    onTap: () {},
-                    child: ScaleTransition(
-                      scale: _scaleAnim,
-                      child: Padding(
-                        padding: EdgeInsets.only(
-                          bottom: MediaQuery.of(context).viewInsets.bottom,
+          return Listener(
+            // A swipe anywhere on the dimmed backdrop (outside the folder
+            // panel) dismisses the folder. We use a raw Listener — instead of
+            // a pan GestureDetector — so it never competes in the gesture
+            // arena with the scrollable grid: swipes that land inside the
+            // panel scroll the apps, swipes outside it close the folder.
+            onPointerDown: (e) => _backdropPointerDown = e.position,
+            onPointerMove: _maybeCloseOnBackdropSwipe,
+            child: GestureDetector(
+              onTap: _dragging ? null : _close,
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                child: Container(
+                  color:
+                      Colors.black.withValues(alpha: _dragging ? 0.0 : 0.5),
+                  child: Center(
+                    child: GestureDetector(
+                      onTap: () {},
+                      child: ScaleTransition(
+                        scale: _scaleAnim,
+                        child: Padding(
+                          padding: EdgeInsets.only(
+                            bottom: MediaQuery.of(context).viewInsets.bottom,
+                          ),
+                          child:
+                              _buildFolderContent(folder.contents, liveApps),
                         ),
-                        child: _buildFolderContent(folder.contents, liveApps),
                       ),
                     ),
                   ),
@@ -197,30 +233,47 @@ class _FolderViewState extends State<FolderView>
 
   Widget _buildFolderContent(
       List<WorkspaceItemInfo> apps, List<AppInfo> liveApps) {
-    return Container(
-      key: _containerKey,
-      width: MediaQuery.of(context).size.width * 0.82,
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.6,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.grey[850]!.withValues(alpha: 0.92),
+    // Material(transparency) supplies a DefaultTextStyle so the labels/title
+    // render normally instead of with Flutter's yellow "missing style"
+    // underline — the folder lives in a bare OverlayEntry with no Material
+    // ancestor of its own. ClipRRect + BackdropFilter make the panel itself a
+    // frosted-glass surface over a translucent black fill.
+    return Material(
+      type: MaterialType.transparency,
+      child: ClipRRect(
         borderRadius: BorderRadius.circular(28),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 16),
-          Flexible(child: _buildGrid(apps, liveApps)),
-          const SizedBox(height: 12),
-          _buildTitle(context
-                  .read<WorkspaceCubit>()
-                  .state
-                  .folders[widget.folderId]
-                  ?.folderTitle ??
-              ''),
-          const SizedBox(height: 16),
-        ],
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: Container(
+            key: _containerKey,
+            width: MediaQuery.of(context).size.width * 0.82,
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.6,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.08),
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 16),
+                Flexible(child: _buildGrid(apps, liveApps)),
+                const SizedBox(height: 12),
+                _buildTitle(context
+                        .read<WorkspaceCubit>()
+                        .state
+                        .folders[widget.folderId]
+                        ?.folderTitle ??
+                    ''),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -277,9 +330,12 @@ class _FolderViewState extends State<FolderView>
 
   Widget _buildGrid(List<WorkspaceItemInfo> apps, List<AppInfo> liveApps) {
     return GridView.builder(
+      // shrinkWrap lets the folder size to its content when there are only a
+      // few apps; once the content exceeds maxHeight (0.6 of the screen) the
+      // grid is capped by that constraint and these physics let it scroll.
       shrinkWrap: true,
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      physics: const NeverScrollableScrollPhysics(),
+      physics: const ClampingScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: widget.settings.folderMaxColumns,
         childAspectRatio: widget.settings.iconSize /
