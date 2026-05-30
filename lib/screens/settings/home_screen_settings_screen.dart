@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/launcher_settings.dart';
+import '../../services/default_layout_seeder.dart';
+import '../../state/apps_cubit.dart';
 import '../../state/settings_cubit.dart';
+import '../../state/workspace_cubit.dart';
 
 class HomeScreenSettingsScreen extends StatelessWidget {
   const HomeScreenSettingsScreen({super.key});
@@ -143,10 +146,60 @@ class HomeScreenSettingsScreen extends StatelessWidget {
                     ? (v) => cubit.update(s.copyWith(wallpaperBlurIntensity: v))
                     : null,
               ),
+              _SectionHeader('Layout'),
+              ListTile(
+                leading: const Icon(Icons.restart_alt),
+                title: const Text('Reset to Default Layout'),
+                subtitle: const Text(
+                  'Rebuild the dock and pages from installed apps',
+                ),
+                onTap: () => _resetToDefaultLayout(context),
+              ),
             ],
           );
         },
       ),
+    );
+  }
+
+  Future<void> _resetToDefaultLayout(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reset to Default Layout?'),
+        content: const Text(
+          'This rebuilds the dock and home pages from your installed apps and '
+          'replaces your current layout. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    final apps = context.read<AppsCubit>().state.apps;
+    final messenger = ScaffoldMessenger.of(context);
+    if (apps.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Apps are still loading — try again.')),
+      );
+      return;
+    }
+    DefaultLayoutSeeder.seed(
+      apps: apps,
+      workspace: context.read<WorkspaceCubit>(),
+      settings: context.read<SettingsCubit>(),
+    );
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Layout reset to default.')),
     );
   }
 

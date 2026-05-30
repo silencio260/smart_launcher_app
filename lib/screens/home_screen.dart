@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_info.dart';
 import '../models/folder_info.dart';
 import '../models/item_info.dart';
@@ -12,6 +13,7 @@ import '../models/launcher_widget_info.dart';
 import '../models/launcher_settings.dart';
 import '../models/launcher_state.dart' as ls;
 import '../models/workspace_item_info.dart';
+import '../services/default_layout_seeder.dart';
 import '../services/launcher_service.dart';
 import '../services/icons/decoded_icon_cache.dart';
 import '../utils/debug_flags.dart';
@@ -53,6 +55,8 @@ class _HomeScreenState extends State<HomeScreen>
   bool _drawerDraggingToHome = false;
   bool _editMode = false;
   bool _didEnsureDefaultClock = false;
+  bool _didSeedDefaultLayout = false;
+  bool _defaultSeedResolved = false;
   bool _normalizingDock = false;
   PageController? _pageController;
   Timer? _drawerPrewarmTimer;
@@ -75,6 +79,7 @@ class _HomeScreenState extends State<HomeScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AppsCubit>().startBadgeListening();
       context.read<AppsCubit>().startAppInstallListening();
+      _maybePromptDefaultLauncher();
     });
     _dragController.addListener(_onDragChange);
     _dragController.onRevertDisplacements = (displacements) {
@@ -283,6 +288,78 @@ class _HomeScreenState extends State<HomeScreen>
     });
   }
 
+  static const _seededFlagKey = 'default_layout_seeded_v1';
+  static const _promptedDefaultLauncherKey = 'prompted_default_launcher_v1';
+
+  // One-shot first-launch prompt to become the default home app. Skips if it's
+  // already the default or the user has already been asked once.
+  Future<void> _maybePromptDefaultLauncher() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(_promptedDefaultLauncherKey) == true) return;
+    if (await LauncherService.isDefaultLauncher()) {
+      await prefs.setBool(_promptedDefaultLauncherKey, true);
+      return;
+    }
+    if (!mounted) return;
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Set as default home app?'),
+        content: const Text(
+          'Make Smart Launcher your home screen so it opens when you press '
+          'the home button.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Not now'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Set default'),
+          ),
+        ],
+      ),
+    );
+    await prefs.setBool(_promptedDefaultLauncherKey, true);
+    if (accepted == true) {
+      await LauncherService.requestHomeRole();
+    }
+  }
+
+  // One-shot first-run seeding. Both the installed-apps list and the saved
+  // workspace layout load asynchronously at startup, so this is invoked from
+  // both the AppsCubit and WorkspaceCubit listeners and only commits once both
+  // are ready. Existing users (who already had a saved layout before this
+  // feature shipped) are detected via WorkspaceCubit.wasFreshInstall and left
+  // untouched.
+  Future<void> _maybeSeedDefaultLayout() async {
+    if (_didSeedDefaultLayout) return;
+    final workspace = context.read<WorkspaceCubit>();
+    final apps = context.read<AppsCubit>().state.apps;
+    if (workspace.state.pages.isEmpty || apps.isEmpty) return;
+    _didSeedDefaultLayout = true;
+
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool(_seededFlagKey) == true) {
+      _defaultSeedResolved = true;
+      return;
+    }
+    if (!workspace.wasFreshInstall) {
+      _defaultSeedResolved = true;
+      await prefs.setBool(_seededFlagKey, true);
+      return;
+    }
+    if (!mounted) return;
+    DefaultLayoutSeeder.seed(
+      apps: apps,
+      workspace: workspace,
+      settings: context.read<SettingsCubit>(),
+    );
+    _defaultSeedResolved = true;
+    await prefs.setBool(_seededFlagKey, true);
+  }
+
   void _handleGesture(GestureAction action) {
     // Single choke point. WidgetResizeGestureGuard.isResizing is true if ANY
     // edit-like mode is active: per-widget resize selection, an active touch
@@ -452,12 +529,14 @@ class _HomeScreenState extends State<HomeScreen>
         // rebuild on every WorkspaceCubit emit.
         BlocListener<WorkspaceCubit, WorkspaceState>(
           listenWhen: (_, curr) =>
-              !_didEnsureDefaultClock && curr.pages.isNotEmpty,
+              (!_didEnsureDefaultClock || !_didSeedDefaultLayout) &&
+              curr.pages.isNotEmpty,
           listener: (context, state) {
             _ensureDefaultClockWidget(
               state,
               context.read<SettingsCubit>().state,
             );
+            _maybeSeedDefaultLayout();
           },
         ),
         BlocListener<SettingsCubit, LauncherSettings>(
@@ -485,6 +564,7 @@ class _HomeScreenState extends State<HomeScreen>
         BlocListener<AppsCubit, AppsState>(
           listenWhen: (prev, next) => prev.apps != next.apps,
           listener: (_, state) {
+            _maybeSeedDefaultLayout();
             _normalizeDockForCurrentState();
             _scheduleDrawerIconPrewarm(state.apps);
           },
@@ -759,6 +839,13 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _normalizeDockForCurrentState() {
     if (!mounted || _normalizingDock) return;
+    // On a fresh install, hold off normalizing until the default-layout seed has
+    // committed — otherwise we'd resolve the legacy hardcoded dock defaults and
+    // create a throwaway overflow folder that the seed then discards.
+    if (context.read<WorkspaceCubit>().wasFreshInstall &&
+        !_defaultSeedResolved) {
+      return;
+    }
     final settings = context.read<SettingsCubit>().state;
     final appsState = context.read<AppsCubit>().state;
     if (appsState.apps.isEmpty) return;

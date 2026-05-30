@@ -101,6 +101,12 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
 
   WorkspaceCubit() : super(const WorkspaceState());
 
+  /// True when [loadLayout] found no persisted layout (a fresh install).
+  /// Captured at load time, before the default-clock save can write the key,
+  /// so the first-run seeder can reliably tell a clean install apart from an
+  /// existing user. Stays valid until the next [loadLayout].
+  bool wasFreshInstall = false;
+
   // saveLayout coalescing: a single drag-with-displacement drop can fire 3+
   // emits per frame; without this each one triggers a synchronous jsonEncode
   // + SharedPreferences.setString platform-channel hop on the UI isolate.
@@ -122,15 +128,36 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     final prefs = await SharedPreferences.getInstance();
     final json = prefs.getString(_key);
     if (json == null) {
+      wasFreshInstall = true;
       emit(state.copyWith(pages: [_pageWithDefaultClock()]));
       return;
     }
+    wasFreshInstall = false;
     try {
       final data = jsonDecode(json) as Map<String, dynamic>;
       emit(_withDefaultClock(_deserialize(data)));
     } catch (_) {
       emit(state.copyWith(pages: [_pageWithDefaultClock()]));
     }
+  }
+
+  /// Replace the entire workspace with a freshly-built default layout.
+  /// Used by [DefaultLayoutSeeder] on first run and by "Reset to default
+  /// layout". The default clock is NOT added here — the home screen's one-shot
+  /// clock listener fills the first free top slot of page 1 after this emits.
+  void seedDefaultLayout({
+    required List<WorkspacePage> pages,
+    required Map<String, FolderInfo> folders,
+    int clockPage = 0,
+  }) {
+    final safePages = pages.isEmpty ? <WorkspacePage>[_emptyPage()] : pages;
+    emit(WorkspaceState(
+      pages: safePages,
+      currentPage: 0,
+      clockPage: clockPage.clamp(0, safePages.length - 1),
+      folders: folders,
+    ));
+    saveLayout();
   }
 
   // Public entry point used by ~30 emit sites. Coalesces back-to-back writes

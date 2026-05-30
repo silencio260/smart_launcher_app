@@ -121,8 +121,8 @@ class SettingsCubit extends Cubit<LauncherSettings> {
       notificationBadgesEnabled:
           j['notificationBadgesEnabled'] as bool? ?? true,
       badgeShowCount: j['badgeShowCount'] as bool? ?? true,
-      gridColumns: j['gridColumns'] as int? ?? 5,
-      gridRows: j['gridRows'] as int? ?? 6,
+      gridColumns: j['gridColumns'] as int? ?? 4,
+      gridRows: j['gridRows'] as int? ?? 5,
       lockHomeScreen: j['lockHomeScreen'] as bool? ?? false,
       autoAddShortcuts: j['autoAddShortcuts'] as bool? ?? true,
       infiniteScrolling: j['infiniteScrolling'] as bool? ?? false,
@@ -147,7 +147,7 @@ class SettingsCubit extends Cubit<LauncherSettings> {
       wallpaperBlurIntensity:
           (j['wallpaperBlurIntensity'] as num?)?.toDouble() ?? 0.3,
       showDock: j['showDock'] as bool? ?? true,
-      dockSize: j['dockSize'] as int? ?? 5,
+      dockSize: j['dockSize'] as int? ?? 4,
       dockShowBackground: j['dockShowBackground'] as bool? ?? true,
       dockBackgroundColor: j['dockBackgroundColor'] != null
           ? Color(j['dockBackgroundColor'] as int)

@@ -67,6 +67,27 @@ class LauncherService {
     await _apps.invokeMethod('openAppSettings', {'packageName': packageName});
   }
 
+  /// Whether this app is currently the system's default home launcher.
+  static Future<bool> isDefaultLauncher() async {
+    try {
+      final result = await _system.invokeMethod<bool>('isDefaultLauncher');
+      return result ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Prompts the user to set this app as the default home launcher. Uses the
+  /// RoleManager home-role dialog on Android 10+, otherwise opens Home settings.
+  static Future<bool> requestHomeRole() async {
+    try {
+      final result = await _system.invokeMethod<bool>('requestHomeRole');
+      return result ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Future<void> uninstallApp(String packageName) async {
     await _apps.invokeMethod('uninstallApp', {'packageName': packageName});
   }

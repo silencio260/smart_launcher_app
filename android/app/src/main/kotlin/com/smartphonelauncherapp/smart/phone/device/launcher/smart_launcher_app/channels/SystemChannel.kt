@@ -1,8 +1,10 @@
 package com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels
 
 import android.app.Activity
+import android.app.role.RoleManager
 import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -12,6 +14,10 @@ import io.flutter.plugin.common.MethodChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.services.LauncherAccessibilityService
 
 class SystemChannel(private val activity: Activity) {
+
+    companion object {
+        private const val REQUEST_CODE_HOME_ROLE = 4011
+    }
 
     fun register(messenger: BinaryMessenger) {
         MethodChannel(messenger, "com.genrevibes.smartlauncher/system")
@@ -86,6 +92,12 @@ class SystemChannel(private val activity: Activity) {
                         activity.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                         result.success(true)
                     }
+                    "isDefaultLauncher" -> {
+                        result.success(isDefaultLauncher())
+                    }
+                    "requestHomeRole" -> {
+                        result.success(requestHomeRole())
+                    }
                     "launchUrl" -> {
                         val url = call.argument<String>("url")
                         if (url != null) {
@@ -104,6 +116,45 @@ class SystemChannel(private val activity: Activity) {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    private fun isDefaultLauncher(): Boolean {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val resolved = activity.packageManager.resolveActivity(
+            intent,
+            PackageManager.MATCH_DEFAULT_ONLY
+        )
+        return resolved?.activityInfo?.packageName == activity.packageName
+    }
+
+    // Prompts the user to make this app the default home launcher. On Android 10+
+    // this uses RoleManager.ROLE_HOME (a single system dialog); on older versions
+    // (or if the role is unavailable / already held) it opens Home settings so the
+    // user can pick a launcher manually. Returns false only if nothing could be
+    // launched. The Dart side re-checks isDefaultLauncher on resume.
+    private fun requestHomeRole(): Boolean {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val roleManager = activity.getSystemService(RoleManager::class.java)
+                if (roleManager != null &&
+                    roleManager.isRoleAvailable(RoleManager.ROLE_HOME) &&
+                    !roleManager.isRoleHeld(RoleManager.ROLE_HOME)
+                ) {
+                    val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_HOME)
+                    activity.startActivityForResult(intent, REQUEST_CODE_HOME_ROLE)
+                    return true
+                }
+            }
+            activity.startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
+            return true
+        } catch (e: Exception) {
+            return try {
+                activity.startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
+                true
+            } catch (e2: Exception) {
+                false
+            }
+        }
     }
 
     private fun isNotificationAccessGranted(): Boolean {
