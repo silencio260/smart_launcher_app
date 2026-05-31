@@ -10,6 +10,8 @@ class FeatureHiveBoxes {
   static const featureSettings = 'feature_settings_box';
   static const clockAlarms = 'clock_alarms_box';
   static const clockTimerPresets = 'clock_timer_presets_box';
+  static const clockTimerState = 'clock_timer_state_box';
+  static const clockStopwatchState = 'clock_stopwatch_state_box';
   static const clockWorldCities = 'clock_world_cities_box';
   static const vaultAlbums = 'vault_albums_box';
   static const vaultItems = 'vault_items_box';
@@ -43,6 +45,8 @@ class FeatureHiveStore {
       _open(FeatureHiveBoxes.featureSettings),
       _open(FeatureHiveBoxes.clockAlarms),
       _open(FeatureHiveBoxes.clockTimerPresets),
+      _open(FeatureHiveBoxes.clockTimerState),
+      _open(FeatureHiveBoxes.clockStopwatchState),
       _open(FeatureHiveBoxes.clockWorldCities),
       _open(FeatureHiveBoxes.vaultAlbums),
       _open(FeatureHiveBoxes.vaultItems),

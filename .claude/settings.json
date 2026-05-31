@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(adb logcat *)"
+      "Bash(adb logcat *)",
+      "WebFetch(domain:pub.dev)",
+      "Bash(ls -la .fvm/flutter_sdk/bin/flutter)",
+      "Bash(ls .fvm/versions)",
+      "Bash(command -v flutter fvm dart)"
     ]
   }
 }

@@ -131,26 +131,108 @@ class LauncherService {
   static Future<bool> createAlarm() async =>
       await _alarm.invokeMethod<bool>('createAlarm') ?? false;
 
+  /// Schedules a launcher-owned alarm/timer with the native AlarmManager.
+  /// The full spec is mirrored natively so the ring service, repeat logic and
+  /// reboot recovery work without the Dart engine running.
   static Future<bool> scheduleSmartAlarm({
     required String id,
     required int triggerAtMillis,
     required String label,
+    int? hour,
+    int? minute,
+    List<int> repeatDays = const [],
+    String? ringtoneUri,
+    String ringtoneTitle = 'Default',
+    bool vibrate = true,
+    bool graduallyIncreaseVolume = false,
+    int autoSilenceMinutes = 10,
+    int snoozeMinutes = 5,
+    String kind = 'alarm',
   }) async =>
       await _alarm.invokeMethod<bool>('scheduleSmartAlarm', {
         'id': id,
         'triggerAtMillis': triggerAtMillis,
         'label': label,
+        'hour': hour,
+        'minute': minute,
+        'repeatDays': repeatDays,
+        'ringtoneUri': ringtoneUri,
+        'ringtoneTitle': ringtoneTitle,
+        'vibrate': vibrate,
+        'graduallyIncreaseVolume': graduallyIncreaseVolume,
+        'autoSilenceMinutes': autoSilenceMinutes,
+        'snoozeMinutes': snoozeMinutes,
+        'kind': kind,
       }) ??
       false;
 
   static Future<bool> cancelSmartAlarm(String id) async =>
       await _alarm.invokeMethod<bool>('cancelSmartAlarm', {'id': id}) ?? false;
 
+  /// Ids of one-shot alarms that fired while the app was closed, so the Dart
+  /// model can switch them off. Clears the native list as a side effect.
+  static Future<List<String>> consumeFiredAlarms() async {
+    final raw = await _alarm.invokeMethod<List<dynamic>>('consumeFiredAlarms');
+    return (raw ?? const []).map((e) => e.toString()).toList();
+  }
+
   static Future<bool> canScheduleExactAlarms() async =>
       await _alarm.invokeMethod<bool>('canScheduleExactAlarms') ?? true;
 
   static Future<void> requestExactAlarmAccess() async {
     await _alarm.invokeMethod<void>('requestExactAlarmAccess');
+  }
+
+  /// Opens the system ringtone picker (alarm sounds). Returns the chosen
+  /// `{uri, title}` or null if the user cancelled.
+  static Future<Map<String, String>?> pickSystemRingtone({
+    String? currentUri,
+  }) async {
+    final raw = await _alarm.invokeMethod<Map<dynamic, dynamic>>(
+      'pickSystemRingtone',
+      {'currentUri': currentUri},
+    );
+    if (raw == null) return null;
+    return {
+      'uri': raw['uri']?.toString() ?? '',
+      'title': raw['title']?.toString() ?? 'Alarm sound',
+    };
+  }
+
+  /// Opens the document picker for a custom audio file, persisting read access.
+  /// Returns the chosen `{uri, title}` or null if cancelled.
+  static Future<Map<String, String>?> pickCustomAudio() async {
+    final raw = await _alarm
+        .invokeMethod<Map<dynamic, dynamic>>('pickCustomAudio');
+    if (raw == null) return null;
+    return {
+      'uri': raw['uri']?.toString() ?? '',
+      'title': raw['title']?.toString() ?? 'Custom sound',
+    };
+  }
+
+  /// Previews a tone (uri null = device default alarm) on the alarm stream.
+  static Future<void> previewTone(String? uri) async {
+    await _alarm.invokeMethod<void>('previewTone', {'uri': uri});
+  }
+
+  static Future<void> stopPreview() async {
+    await _alarm.invokeMethod<void>('stopPreview');
+  }
+
+  /// Whether full-screen-intent alarms are permitted (always true < Android 14).
+  static Future<bool> canUseFullScreenIntent() async =>
+      await _alarm.invokeMethod<bool>('canUseFullScreenIntent') ?? true;
+
+  static Future<void> requestFullScreenIntentAccess() async {
+    await _alarm.invokeMethod<void>('requestFullScreenIntentAccess');
+  }
+
+  static Future<bool> isIgnoringBatteryOptimizations() async =>
+      await _alarm.invokeMethod<bool>('isIgnoringBatteryOptimizations') ?? true;
+
+  static Future<void> requestIgnoreBatteryOptimizations() async {
+    await _alarm.invokeMethod<void>('requestIgnoreBatteryOptimizations');
   }
 
   static Future<bool> openTimer() async =>

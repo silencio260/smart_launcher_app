@@ -3,9 +3,13 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../data/mini_app_repositories.dart';
+import '../../services/clock_service.dart';
 import '../../services/launcher_service.dart';
+import 'clock/alarm_edit_screen.dart';
+import 'clock/world_clock_picker_screen.dart';
 import 'mini_app_chrome.dart';
 
 class AlarmClockScreen extends StatefulWidget {
@@ -15,53 +19,91 @@ class AlarmClockScreen extends StatefulWidget {
   State<AlarmClockScreen> createState() => _AlarmClockScreenState();
 }
 
-class _AlarmClockScreenState extends State<AlarmClockScreen> {
-  final _repo = ClockRepository();
-  var _tab = 1;
+class _AlarmClockScreenState extends State<AlarmClockScreen>
+    with WidgetsBindingObserver {
+  final _clock = ClockRepository();
+  final _timerRepo = TimerRepository();
+  final _stopRepo = StopwatchRepository();
+
+  var _tab = 0;
   Timer? _ticker;
-  Duration _stopwatch = Duration.zero;
-  bool _running = false;
-  DateTime? _lastTick;
-  var _timerDuration = const Duration(minutes: 5);
-  var _timerRemaining = const Duration(minutes: 5);
-  bool _timerRunning = false;
+
+  // Timer picker state (the not-yet-started duration + label).
+  Duration _pickerDuration = const Duration(minutes: 5);
+  final _timerLabel = TextEditingController(text: 'Timer');
+
+  // Permission setup state.
+  bool _exactAlarm = true;
+  bool _notifications = true;
+  bool _fullScreen = true;
+  bool _battery = true;
 
   @override
   void initState() {
     super.initState();
-    _ticker = Timer.periodic(const Duration(milliseconds: 250), (_) => _tick());
+    WidgetsBinding.instance.addObserver(this);
+    _pickerDuration =
+        Duration(seconds: _timerRepo.state().durationSeconds);
+    _ticker = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      if (mounted) setState(() {});
+    });
+    _clock.syncFiredAlarms().then((_) {
+      if (mounted) setState(() {});
+    });
+    _loadPermissions();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _ticker?.cancel();
+    _timerLabel.dispose();
     super.dispose();
   }
 
-  void _tick() {
-    final now = DateTime.now();
-    if (_running && _lastTick != null) {
-      _stopwatch += now.difference(_lastTick!);
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadPermissions();
+      _clock.syncFiredAlarms().then((_) {
+        if (mounted) setState(() {});
+      });
     }
-    if (_timerRunning && _lastTick != null) {
-      final next = _timerRemaining - now.difference(_lastTick!);
-      _timerRemaining = next.isNegative ? Duration.zero : next;
-      if (_timerRemaining == Duration.zero) _timerRunning = false;
-    }
-    _lastTick = now;
-    if (mounted) setState(() {});
   }
+
+  Future<void> _loadPermissions() async {
+    final exact = await LauncherService.canScheduleExactAlarms();
+    final fullScreen = await LauncherService.canUseFullScreenIntent();
+    final battery = await LauncherService.isIgnoringBatteryOptimizations();
+    final notifications = await Permission.notification.isGranted;
+    if (!mounted) return;
+    setState(() {
+      _exactAlarm = exact;
+      _fullScreen = fullScreen;
+      _battery = battery;
+      _notifications = notifications;
+    });
+  }
+
+  bool get _needsSetup =>
+      !_exactAlarm || !_notifications || !_fullScreen || !_battery;
 
   @override
   Widget build(BuildContext context) {
-    final titles = ['World Clock', 'Alarms', 'Stopwatch', 'Timers'];
+    final titles = ['Alarms', 'World Clock', 'Stopwatch', 'Timers'];
     return MiniAppScaffold(
       title: titles[_tab],
       actions: [
-        if (_tab == 1)
+        if (_tab == 0)
           IconButton(
             icon: const Icon(Icons.add, color: miniAppAccent),
-            onPressed: _addAlarm,
+            onPressed: () => _openEditor(null),
+          ),
+        if (_tab == 1)
+          IconButton(
+            icon: const Icon(Icons.add_location_alt_outlined,
+                color: miniAppAccent),
+            onPressed: _addCity,
           ),
       ],
       bottomNavigationBar: BottomNavigationBar(
@@ -72,354 +114,560 @@ class _AlarmClockScreenState extends State<AlarmClockScreen> {
         currentIndex: _tab,
         onTap: (index) => setState(() => _tab = index),
         items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.alarm), label: 'Alarms'),
+          BottomNavigationBarItem(icon: Icon(Icons.public), label: 'World'),
           BottomNavigationBarItem(
-            icon: Icon(Icons.public),
-            label: 'World Clock',
-          ),
+              icon: Icon(Icons.timer_outlined), label: 'Stopwatch'),
           BottomNavigationBarItem(
-            icon: Icon(Icons.alarm),
-            label: 'Alarms',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.timer_outlined),
-            label: 'Stopwatch',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.timelapse),
-            label: 'Timers',
-          ),
+              icon: Icon(Icons.hourglass_bottom), label: 'Timer'),
         ],
       ),
       child: IndexedStack(
         index: _tab,
         children: [
-          _WorldClockTab(repo: _repo),
-          _AlarmsTab(repo: _repo, onChanged: () => setState(() {})),
+          _buildAlarms(),
+          _buildWorldClock(),
           _buildStopwatch(),
-          _buildTimers(),
+          _buildTimer(),
         ],
       ),
     );
   }
 
-  Widget _buildStopwatch() {
-    final minutes =
-        _stopwatch.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds =
-        _stopwatch.inSeconds.remainder(60).toString().padLeft(2, '0');
-    final hundredths = (_stopwatch.inMilliseconds.remainder(1000) ~/ 10)
-        .toString()
-        .padLeft(2, '0');
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 42, 24, 0),
-      child: Column(
-        children: [
-          Text(
-            '${_stopwatch.inHours.toString().padLeft(2, '0')}:$minutes,$seconds',
-            style: const TextStyle(fontSize: 74, fontWeight: FontWeight.w300),
-          ),
-          Text(hundredths, style: const TextStyle(color: miniAppMuted)),
-          const SizedBox(height: 70),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _RoundClockButton(
-                label: _running ? 'Lap' : 'Reset',
-                color: miniAppSurface,
-                onTap: () {
-                  if (!_running) setState(() => _stopwatch = Duration.zero);
-                },
-              ),
-              _RoundClockButton(
-                label: _running ? 'Stop' : 'Start',
-                color: _running
-                    ? const Color(0xFF4A1E1E)
-                    : const Color(0xFF0B3D1B),
-                textColor: _running ? Colors.redAccent : Colors.greenAccent,
-                onTap: () => setState(() {
-                  _running = !_running;
-                  _lastTick = DateTime.now();
-                }),
-              ),
-            ],
-          ),
-          const SizedBox(height: 26),
-          const Divider(color: miniAppSurface2),
-        ],
+  // ---- Alarms --------------------------------------------------------------
+
+  Future<void> _openEditor(ClockAlarmRecord? existing) async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AlarmEditScreen(repo: _clock, existing: existing),
       ),
     );
+    if (changed == true) {
+      await _loadPermissions();
+      if (mounted) setState(() {});
+    }
   }
 
-  Widget _buildTimers() {
-    final hours = _timerDuration.inHours;
-    final minutes = _timerDuration.inMinutes.remainder(60);
-    final seconds = _timerDuration.inSeconds.remainder(60);
+  Future<void> _toggleAlarm(ClockAlarmRecord alarm, bool value) async {
+    await _clock.saveAndSchedule(alarm.copyWith(enabled: value));
+    if (mounted) setState(() {});
+  }
+
+  Widget _buildAlarms() {
+    final alarms = _clock.alarms();
     return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 44, 24, 120),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
       children: [
-        CupertinoTheme(
-          data: const CupertinoThemeData(brightness: Brightness.dark),
-          child: SizedBox(
-            height: 150,
-            child: CupertinoTimerPicker(
-              mode: CupertinoTimerPickerMode.hms,
-              initialTimerDuration: _timerDuration,
-              onTimerDurationChanged: (value) => setState(() {
-                _timerDuration = value;
-                if (!_timerRunning) _timerRemaining = value;
-              }),
-            ),
+        if (_needsSetup) ...[
+          _SetupCard(
+            exactAlarm: _exactAlarm,
+            notifications: _notifications,
+            fullScreen: _fullScreen,
+            battery: _battery,
+            onFixExact: () async {
+              await LauncherService.requestExactAlarmAccess();
+            },
+            onFixNotifications: () async {
+              await Permission.notification.request();
+              await _loadPermissions();
+            },
+            onFixFullScreen: () async {
+              await LauncherService.requestFullScreenIntentAccess();
+            },
+            onFixBattery: () async {
+              await LauncherService.requestIgnoreBatteryOptimizations();
+            },
           ),
-        ),
-        const SizedBox(height: 28),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            _RoundClockButton(
-              label: 'Cancel',
-              color: miniAppSurface,
-              onTap: () => setState(() {
-                _timerRunning = false;
-                _timerRemaining = _timerDuration;
-              }),
+          const SizedBox(height: 18),
+        ],
+        if (alarms.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 60),
+            child: EmptyMiniState(
+              icon: Icons.alarm_add_outlined,
+              title: 'No alarms yet',
+              subtitle: 'Tap + to create a reliable launcher alarm.',
             ),
-            _RoundClockButton(
-              label: _timerRunning ? 'Pause' : 'Start',
-              color: const Color(0xFF0B3D1B),
-              textColor: Colors.greenAccent,
-              onTap: () => setState(() {
-                if (_timerDuration == Duration.zero) return;
-                _timerRunning = !_timerRunning;
-                _lastTick = DateTime.now();
-              }),
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        MiniCard(
-          child: Column(
-            children: [
-              _SettingsRow('Label', 'Timer'),
-              _SettingsRow('When Timer Ends', 'Default'),
-              _SettingsRow(
-                'Remaining',
-                '${_timerRemaining.inHours.toString().padLeft(2, '0')}:'
-                    '${_timerRemaining.inMinutes.remainder(60).toString().padLeft(2, '0')}:'
-                    '${_timerRemaining.inSeconds.remainder(60).toString().padLeft(2, '0')}',
+          )
+        else
+          for (final alarm in alarms) _alarmTile(alarm),
+      ],
+    );
+  }
+
+  Widget _alarmTile(ClockAlarmRecord alarm) {
+    final color = alarm.enabled ? Colors.white : miniAppMuted;
+    final repeat = ClockService.repeatLabel(alarm.repeatDays);
+    final subtitle = alarm.enabled
+        ? '$repeat · ${ClockService.humanizeUntil(_clock.nextRing(alarm))}'
+        : repeat;
+    return Dismissible(
+      key: ValueKey(alarm.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 24),
+        color: Colors.red.shade900,
+        child: const Icon(Icons.delete, color: Colors.white),
+      ),
+      confirmDismiss: (_) async {
+        return await showDialog<bool>(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('Delete alarm?'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancel'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Delete'),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ) ??
+            false;
+      },
+      onDismissed: (_) async {
+        await _clock.deleteAlarm(alarm.id);
+        if (mounted) setState(() {});
+      },
+      child: ListTile(
+        contentPadding: EdgeInsets.zero,
+        onTap: () => _openEditor(alarm),
+        title: Text(
+          alarm.timeLabel,
+          style: TextStyle(
+              fontSize: 52, fontWeight: FontWeight.w300, color: color),
         ),
-        const SizedBox(height: 18),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: [
-            for (final preset in _repo.timerPresets())
-              ActionChip(
-                backgroundColor: miniAppSurface,
-                label: Text(preset['label'].toString()),
-                onPressed: () => setState(() {
-                  final seconds = preset['seconds'] as int? ?? 60;
-                  _timerDuration = Duration(seconds: seconds);
-                  _timerRemaining = _timerDuration;
-                }),
-              ),
-          ],
+        subtitle: Text(
+          '${alarm.label} · $subtitle',
+          style: const TextStyle(color: miniAppMuted),
         ),
-        Offstage(
-          child: Text('$hours$minutes$seconds'),
+        trailing: Switch(
+          value: alarm.enabled,
+          onChanged: (value) => _toggleAlarm(alarm, value),
+        ),
+      ),
+    );
+  }
+
+  // ---- World clock ---------------------------------------------------------
+
+  Future<void> _addCity() async {
+    final added = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => WorldClockPickerScreen(repo: _clock),
+      ),
+    );
+    if (added == true && mounted) setState(() {});
+  }
+
+  Widget _buildWorldClock() {
+    final now = DateTime.now();
+    final localName = _localCityName();
+    final cities = _clock.worldCities();
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
+      children: [
+        Text(DateFormat.Hm().format(now),
+            style:
+                const TextStyle(fontSize: 72, fontWeight: FontWeight.w200)),
+        Text('${DateFormat('EEEE, d MMM').format(now)} · $localName',
+            style: const TextStyle(color: miniAppMuted, fontSize: 15)),
+        const SizedBox(height: 8),
+        const Divider(color: miniAppSurface2),
+        for (final city in cities) _cityRow(city),
+        const SizedBox(height: 8),
+        TextButton.icon(
+          onPressed: _addCity,
+          icon: const Icon(Icons.add, color: miniAppAccent),
+          label: const Text('Add city'),
         ),
       ],
     );
   }
 
-  Future<void> _addAlarm() async {
-    var selected = TimeOfDay.now();
-    final label = TextEditingController(text: 'Alarm');
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: miniAppSurface,
-      showDragHandle: true,
-      builder: (context) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          8,
-          20,
-          MediaQuery.of(context).viewInsets.bottom + 24,
-        ),
-        child: StatefulBuilder(
-          builder: (context, setSheetState) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  height: 180,
-                  child: CupertinoTheme(
-                    data: const CupertinoThemeData(brightness: Brightness.dark),
-                    child: CupertinoDatePicker(
-                      mode: CupertinoDatePickerMode.time,
-                      initialDateTime:
-                          DateTime(2024, 1, 1, selected.hour, selected.minute),
-                      onDateTimeChanged: (value) =>
-                          selected = TimeOfDay.fromDateTime(value),
-                    ),
-                  ),
-                ),
-                TextField(
-                  controller: label,
-                  decoration: const InputDecoration(labelText: 'Label'),
-                ),
-                const SizedBox(height: 18),
-                FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Save Alarm'),
-                ),
-              ],
-            );
-          },
-        ),
+  String _localCityName() {
+    final id = ClockService.localLocation.name;
+    final part = id.contains('/') ? id.split('/').last : id;
+    return part.replaceAll('_', ' ');
+  }
+
+  Widget _cityRow(Map<String, Object?> city) {
+    final zoneId = city['zoneId']?.toString() ?? 'UTC';
+    final name = city['name']?.toString() ?? zoneId;
+    final time = ClockService.nowIn(zoneId);
+    final offsetMin = ClockService.offsetMinutesFromLocal(zoneId);
+    return Dismissible(
+      key: ValueKey('city_$zoneId'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 24),
+        color: Colors.red.shade900,
+        child: const Icon(Icons.delete, color: Colors.white),
       ),
-    );
-    if (saved != true || !mounted) return;
-    final alarm = await _repo.addAlarm(
-      hour: selected.hour,
-      minute: selected.minute,
-      label: label.text.trim().isEmpty ? 'Alarm' : label.text.trim(),
-    );
-    await _schedule(alarm);
-    setState(() {});
-  }
-
-  Future<void> _schedule(ClockAlarmRecord alarm) async {
-    final now = DateTime.now();
-    var trigger =
-        DateTime(now.year, now.month, now.day, alarm.hour, alarm.minute);
-    if (!trigger.isAfter(now)) trigger = trigger.add(const Duration(days: 1));
-    if (!await LauncherService.canScheduleExactAlarms()) {
-      await LauncherService.requestExactAlarmAccess();
-      return;
-    }
-    await LauncherService.scheduleSmartAlarm(
-      id: alarm.id,
-      triggerAtMillis: trigger.millisecondsSinceEpoch,
-      label: alarm.label,
-    );
-  }
-}
-
-class _WorldClockTab extends StatelessWidget {
-  final ClockRepository repo;
-
-  const _WorldClockTab({required this.repo});
-
-  @override
-  Widget build(BuildContext context) {
-    final now = DateTime.now().toUtc();
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(24, 28, 24, 120),
-      itemCount: repo.worldCities().length,
-      separatorBuilder: (_, __) => const Divider(color: miniAppSurface),
-      itemBuilder: (context, index) {
-        final city = repo.worldCities()[index];
-        final offset = city['offset'] as int? ?? 0;
-        final local = now.add(Duration(hours: offset));
-        return Row(
+      onDismissed: (_) async {
+        await _clock.removeCity(zoneId);
+        if (mounted) setState(() {});
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
           children: [
+            Icon(
+              ClockService.isDayTime(time)
+                  ? Icons.wb_sunny_outlined
+                  : Icons.nightlight_outlined,
+              color: miniAppMuted,
+              size: 20,
+            ),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Today, ${offset >= 0 ? '+' : ''}${offset}HRS',
-                      style: const TextStyle(color: miniAppMuted)),
-                  const SizedBox(height: 8),
-                  Text(city['city'].toString(),
-                      style: const TextStyle(fontSize: 30)),
+                  Text(ClockService.offsetLabel(offsetMin),
+                      style:
+                          const TextStyle(color: miniAppMuted, fontSize: 13)),
+                  Text(name, style: const TextStyle(fontSize: 26)),
                 ],
               ),
             ),
-            Text(DateFormat.Hm().format(local),
+            Text(DateFormat.Hm().format(time),
                 style:
-                    const TextStyle(fontSize: 54, fontWeight: FontWeight.w300)),
+                    const TextStyle(fontSize: 44, fontWeight: FontWeight.w200)),
           ],
-        );
-      },
+        ),
+      ),
+    );
+  }
+
+  // ---- Stopwatch -----------------------------------------------------------
+
+  Widget _buildStopwatch() {
+    final state = _stopRepo.state();
+    final elapsed = state.elapsedMs();
+    final laps = state.laps;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(24, 42, 24, 120),
+      children: [
+        Center(
+          child: Column(
+            children: [
+              Text(_fmtStopwatchMain(elapsed),
+                  style: const TextStyle(
+                      fontSize: 70, fontWeight: FontWeight.w200)),
+              Text(_fmtStopwatchCentis(elapsed),
+                  style: const TextStyle(color: miniAppMuted, fontSize: 18)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 40),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _RoundClockButton(
+              label: state.running ? 'Lap' : 'Reset',
+              color: miniAppSurface,
+              onTap: () async {
+                if (state.running) {
+                  await _stopRepo.lap();
+                } else {
+                  await _stopRepo.reset();
+                }
+                if (mounted) setState(() {});
+              },
+            ),
+            _RoundClockButton(
+              label: state.running ? 'Stop' : 'Start',
+              color: state.running
+                  ? const Color(0xFF4A1E1E)
+                  : const Color(0xFF0B3D1B),
+              textColor:
+                  state.running ? Colors.redAccent : Colors.greenAccent,
+              onTap: () async {
+                if (state.running) {
+                  await _stopRepo.pause();
+                } else {
+                  await _stopRepo.startOrResume();
+                }
+                if (mounted) setState(() {});
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 26),
+        const Divider(color: miniAppSurface2),
+        for (var i = laps.length - 1; i >= 0; i--) _lapRow(i, laps),
+      ],
+    );
+  }
+
+  Widget _lapRow(int index, List<int> laps) {
+    final total = laps[index];
+    final split = index == 0 ? total : total - laps[index - 1];
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Text('Lap ${index + 1}',
+              style: const TextStyle(color: miniAppMuted)),
+          const Spacer(),
+          Text(_fmtClock(split, withCentis: true)),
+          const SizedBox(width: 18),
+          Text(_fmtClock(total, withCentis: true),
+              style: const TextStyle(color: miniAppMuted)),
+        ],
+      ),
+    );
+  }
+
+  // ---- Timer ---------------------------------------------------------------
+
+  Widget _buildTimer() {
+    final state = _timerRepo.state();
+    if (state.isActive) {
+      return _buildTimerRunning(state);
+    }
+    return _buildTimerSetup();
+  }
+
+  Widget _buildTimerSetup() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(24, 30, 24, 120),
+      children: [
+        SizedBox(
+          height: 180,
+          child: CupertinoTheme(
+            data: const CupertinoThemeData(brightness: Brightness.dark),
+            child: CupertinoTimerPicker(
+              mode: CupertinoTimerPickerMode.hms,
+              initialTimerDuration: _pickerDuration,
+              onTimerDurationChanged: (value) =>
+                  setState(() => _pickerDuration = value),
+            ),
+          ),
+        ),
+        const SizedBox(height: 18),
+        TextField(
+          controller: _timerLabel,
+          decoration: const InputDecoration(
+            labelText: 'Label',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 20),
+        Center(
+          child: _RoundClockButton(
+            label: 'Start',
+            color: const Color(0xFF0B3D1B),
+            textColor: Colors.greenAccent,
+            onTap: () async {
+              if (_pickerDuration.inSeconds <= 0) return;
+              if (!await LauncherService.canScheduleExactAlarms()) {
+                await LauncherService.requestExactAlarmAccess();
+              }
+              await _timerRepo.start(_pickerDuration, _timerLabel.text);
+              if (mounted) setState(() {});
+            },
+          ),
+        ),
+        const SizedBox(height: 28),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            for (final preset in _clock.timerPresets())
+              ActionChip(
+                backgroundColor: miniAppSurface,
+                label: Text(preset['label'].toString()),
+                onPressed: () => setState(() {
+                  final seconds = preset['seconds'] as int? ?? 60;
+                  _pickerDuration = Duration(seconds: seconds);
+                }),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTimerRunning(CountdownTimerState state) {
+    final remaining = state.remainingSeconds();
+    final done = remaining <= 0;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(24, 60, 24, 120),
+      children: [
+        Center(
+          child: Text(state.label,
+              style: const TextStyle(color: miniAppMuted, fontSize: 18)),
+        ),
+        const SizedBox(height: 16),
+        Center(
+          child: Text(
+            done ? "Time's up" : _fmtTimer(remaining),
+            style: TextStyle(
+              fontSize: done ? 44 : 76,
+              fontWeight: FontWeight.w200,
+              color: done ? miniAppAccent : Colors.white,
+            ),
+          ),
+        ),
+        const SizedBox(height: 50),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _RoundClockButton(
+              label: done ? 'Done' : 'Cancel',
+              color: miniAppSurface,
+              onTap: () async {
+                await _timerRepo.cancel();
+                if (mounted) setState(() {});
+              },
+            ),
+            if (!done)
+              _RoundClockButton(
+                label: state.running ? 'Pause' : 'Resume',
+                color: const Color(0xFF0B3D1B),
+                textColor: Colors.greenAccent,
+                onTap: () async {
+                  if (state.running) {
+                    await _timerRepo.pause();
+                  } else {
+                    await _timerRepo.resume();
+                  }
+                  if (mounted) setState(() {});
+                },
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // ---- Formatting ----------------------------------------------------------
+
+  String _fmtStopwatchMain(int ms) {
+    final h = ms ~/ 3600000;
+    final m = (ms ~/ 60000) % 60;
+    final s = (ms ~/ 1000) % 60;
+    final mm = m.toString().padLeft(2, '0');
+    final ss = s.toString().padLeft(2, '0');
+    return h > 0 ? '${h.toString().padLeft(2, '0')}:$mm:$ss' : '$mm:$ss';
+  }
+
+  String _fmtStopwatchCentis(int ms) =>
+      ((ms ~/ 10) % 100).toString().padLeft(2, '0');
+
+  String _fmtClock(int ms, {bool withCentis = false}) {
+    final h = ms ~/ 3600000;
+    final m = (ms ~/ 60000) % 60;
+    final s = (ms ~/ 1000) % 60;
+    final cs = (ms ~/ 10) % 100;
+    final mm = m.toString().padLeft(2, '0');
+    final ss = s.toString().padLeft(2, '0');
+    final base = h > 0 ? '${h.toString().padLeft(2, '0')}:$mm:$ss' : '$mm:$ss';
+    return withCentis ? '$base.${cs.toString().padLeft(2, '0')}' : base;
+  }
+
+  String _fmtTimer(int totalSeconds) {
+    final h = totalSeconds ~/ 3600;
+    final m = (totalSeconds ~/ 60) % 60;
+    final s = totalSeconds % 60;
+    final mm = m.toString().padLeft(2, '0');
+    final ss = s.toString().padLeft(2, '0');
+    return h > 0 ? '$h:$mm:$ss' : '$mm:$ss';
+  }
+}
+
+// ---- Setup card ------------------------------------------------------------
+
+class _SetupCard extends StatelessWidget {
+  final bool exactAlarm;
+  final bool notifications;
+  final bool fullScreen;
+  final bool battery;
+  final VoidCallback onFixExact;
+  final VoidCallback onFixNotifications;
+  final VoidCallback onFixFullScreen;
+  final VoidCallback onFixBattery;
+
+  const _SetupCard({
+    required this.exactAlarm,
+    required this.notifications,
+    required this.fullScreen,
+    required this.battery,
+    required this.onFixExact,
+    required this.onFixNotifications,
+    required this.onFixFullScreen,
+    required this.onFixBattery,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: miniAppSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: miniAppAccent.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.shield_outlined, color: miniAppAccent),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text('Make alarms reliable',
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Grant these so alarms ring on time, over the lockscreen, even '
+            'after a reboot.',
+            style: TextStyle(color: miniAppMuted, height: 1.3),
+          ),
+          const SizedBox(height: 8),
+          if (!exactAlarm)
+            _SetupRow('Exact alarms', 'Fix', onFixExact),
+          if (!notifications)
+            _SetupRow('Notifications', 'Allow', onFixNotifications),
+          if (!fullScreen)
+            _SetupRow('Full-screen alarms', 'Allow', onFixFullScreen),
+          if (!battery)
+            _SetupRow('Ignore battery saver', 'Open', onFixBattery),
+        ],
+      ),
     );
   }
 }
 
-class _AlarmsTab extends StatelessWidget {
-  final ClockRepository repo;
-  final VoidCallback onChanged;
+class _SetupRow extends StatelessWidget {
+  final String label;
+  final String action;
+  final VoidCallback onTap;
 
-  const _AlarmsTab({required this.repo, required this.onChanged});
+  const _SetupRow(this.label, this.action, this.onTap);
 
   @override
   Widget build(BuildContext context) {
-    final alarms = repo.alarms();
-    if (alarms.isEmpty) {
-      return const EmptyMiniState(
-        icon: Icons.alarm_add_outlined,
-        title: 'No alarms yet',
-        subtitle: 'Tap + to create a proper launcher alarm.',
-      );
-    }
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 120),
-      itemCount: alarms.length + 1,
-      separatorBuilder: (_, __) => const Divider(color: miniAppSurface2),
-      itemBuilder: (context, index) {
-        if (index == 0) {
-          return MiniCard(
-            child: Row(
-              children: [
-                const Icon(Icons.info, color: miniAppAccent),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Text('Optimize Alarms',
-                      style: TextStyle(fontWeight: FontWeight.w700)),
-                ),
-                TextButton(
-                  onPressed: LauncherService.requestExactAlarmAccess,
-                  child: const Text('Optimize'),
-                ),
-              ],
-            ),
-          );
-        }
-        final alarm = alarms[index - 1];
-        return ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text(
-            alarm.timeLabel,
-            style: TextStyle(
-              fontSize: 58,
-              fontWeight: FontWeight.w300,
-              color: alarm.enabled ? Colors.white : miniAppMuted,
-            ),
-          ),
-          subtitle:
-              Text(alarm.label, style: const TextStyle(color: miniAppMuted)),
-          trailing: Switch(
-            value: alarm.enabled,
-            onChanged: (value) async {
-              await repo.saveAlarm(ClockAlarmRecord(
-                id: alarm.id,
-                hour: alarm.hour,
-                minute: alarm.minute,
-                label: alarm.label,
-                enabled: value,
-                repeatDays: alarm.repeatDays,
-                vibrate: alarm.vibrate,
-                snoozeMinutes: alarm.snoozeMinutes,
-                createdAt: alarm.createdAt,
-              ));
-              if (!value) await LauncherService.cancelSmartAlarm(alarm.id);
-              onChanged();
-            },
-          ),
-        );
-      },
+    return Row(
+      children: [
+        const Icon(Icons.error_outline, color: miniAppAccent, size: 18),
+        const SizedBox(width: 8),
+        Expanded(child: Text(label)),
+        TextButton(onPressed: onTap, child: Text(action)),
+      ],
     );
   }
 }
@@ -448,37 +696,6 @@ class _RoundClockButton extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         child: Text(label, style: TextStyle(color: textColor, fontSize: 20)),
-      ),
-    );
-  }
-}
-
-class _SettingsRow extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _SettingsRow(this.label, this.value);
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(label,
-                style:
-                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-          ),
-          Flexible(
-            child: Text(
-              value,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: miniAppMuted, fontSize: 18),
-            ),
-          ),
-          const Icon(Icons.chevron_right, color: miniAppMuted),
-        ],
       ),
     );
   }

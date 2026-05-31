@@ -35,6 +35,7 @@ class MainActivity : FlutterActivity() {
     private var notificationChannel: NotificationChannel? = null
     private var securityChannel: SecurityChannel? = null
     private var fileLockerChannel: FileLockerChannel? = null
+    private var alarmChannel: AlarmChannel? = null
 
     override fun getRenderMode(): RenderMode = RenderMode.texture
     override fun getTransparencyMode(): TransparencyMode = TransparencyMode.transparent
@@ -98,7 +99,7 @@ class MainActivity : FlutterActivity() {
         CalendarChannel(this).register(messenger)
         AfterCallChannel(this).register(messenger)
         InstallAssistantChannel(this).register(messenger)
-        AlarmChannel(this).register(messenger)
+        alarmChannel = AlarmChannel(this).also { it.register(messenger) }
         securityChannel = SecurityChannel(this).also { it.register(messenger) }
         fileLockerChannel = FileLockerChannel(this).also { it.register(messenger) }
         AppInstallEventChannel(this).register(messenger)
@@ -123,6 +124,10 @@ class MainActivity : FlutterActivity() {
             return
         }
         if (fileLockerChannel?.onActivityResult(requestCode, resultCode, data) == true) {
+            super.onActivityResult(requestCode, resultCode, data)
+            return
+        }
+        if (alarmChannel?.onActivityResult(requestCode, resultCode, data) == true) {
             super.onActivityResult(requestCode, resultCode, data)
             return
         }

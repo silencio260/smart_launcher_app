@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'data/feature_hive_store.dart';
 import 'models/launcher_settings.dart';
+import 'services/clock_service.dart';
 import 'state/apps_cubit.dart';
 import 'state/launcher_cubit.dart';
 import 'state/launcher_feature_cubit.dart';
@@ -15,6 +16,7 @@ import 'widgets/workspace/route_coverage_scope.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await FeatureHiveStore.init();
+  await ClockService.init();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,

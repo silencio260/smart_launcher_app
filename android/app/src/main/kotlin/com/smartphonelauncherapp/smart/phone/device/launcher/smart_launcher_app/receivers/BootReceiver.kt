@@ -3,12 +3,21 @@ package com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.alarm.AlarmScheduler
 
+/**
+ * AlarmManager alarms do not survive a reboot or an app update, so we re-arm
+ * every stored alarm from [AlarmScheduler.rescheduleAll]. This runs
+ * independently of the launcher process / default-launcher status, so alarms
+ * fire reliably after the device restarts.
+ */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
-        if (intent?.action != Intent.ACTION_BOOT_COMPLETED) return
-        // Flutter/Hive owns the durable alarm model. The native mirror is kept
-        // only so scheduled alarms can be cancelled by id; Dart reschedules
-        // enabled alarms when the launcher process starts after boot.
+        when (intent?.action) {
+            Intent.ACTION_BOOT_COMPLETED,
+            Intent.ACTION_MY_PACKAGE_REPLACED,
+            "android.intent.action.QUICKBOOT_POWERON",
+            -> AlarmScheduler.rescheduleAll(context)
+        }
     }
 }

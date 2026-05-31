@@ -13,7 +13,17 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
+    <!-- Alarm scheduling + reliable ringing. SCHEDULE_EXACT_ALARM is user-
+         grantable; USE_EXACT_ALARM (Android 13+) is install-time and exempts
+         the alarm-clock use case. WAKE_LOCK keeps the CPU up while ringing and
+         USE_FULL_SCREEN_INTENT lets the alarm surface over the lockscreen. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"/>
@@ -185,9 +195,17 @@
             android:name=".features.AlarmRingActivity"
             android:exported="false"
             android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:taskAffinity=""
             android:showWhenLocked="true"
             android:turnScreenOn="true"
-            android:theme="@style/LauncherTheme"/>
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"/>
+
+        <!-- Foreground service that owns the ringing sound/vibration/wakelock. -->
+        <service
+            android:name=".services.AlarmRingService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback"/>
 
         <activity
             android:name=".features.AppLockGateActivity"
@@ -242,6 +260,8 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
             </intent-filter>
         </receiver>
 
