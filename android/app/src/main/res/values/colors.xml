@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="feature_clock_background">#0B0B0D</color>
+    <color name="feature_file_locker_background">#101014</color>
+    <color name="feature_app_locker_background">#111114</color>
+    <color name="feature_app_hider_background">#101014</color>
+    <color name="feature_calculator_background">#171719</color>
+    <color name="feature_notes_background">#312E81</color>
+    <color name="feature_weather_background">#075985</color>
+    <color name="feature_browser_background">#172554</color>
+</resources>

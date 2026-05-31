@@ -18,9 +18,11 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.MainActivity
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.R
 
 /**
  * The post-call card. A single floating window drawn over whatever is on screen
@@ -29,7 +31,7 @@ import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.
  * is plain Android views, so it is cheap and instant.
  *
  * Dismissal is deliberately easy and covers every way out:
- *  - the card's own ✕ button,
+ *  - the card's own close button,
  *  - a tap anywhere outside the card (the dimmed scrim),
  *  - the Back button/gesture (the window is focusable, so it receives the key),
  *  - Home / Recents / any "close system dialogs" event,
@@ -241,19 +243,19 @@ object AfterCallOverlay {
         )
 
         val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-        row.addView(actionItem(ctx, "⏰", "Alarm", "#F5A623") {
+        row.addView(actionItem(ctx, R.drawable.ic_after_call_alarm, "Alarm", "#F5A623") {
             launchFeature(ctx, "features.ClockActivity")
             dismiss()
         })
-        row.addView(actionItem(ctx, "＋", "Calendar", "#3B82F6") {
+        row.addView(actionItem(ctx, R.drawable.ic_after_call_calendar, "Calendar", "#3B82F6") {
             openCalendar(ctx)
             dismiss()
         })
-        row.addView(actionItem(ctx, "⌁", "Vault", "#14B8A6") {
+        row.addView(actionItem(ctx, R.drawable.ic_after_call_vault, "Vault", "#14B8A6") {
             launchApp(ctx, ACTION_VAULT)
             dismiss()
         })
-        row.addView(actionItem(ctx, "✎", "Note", "#8B5CF6") {
+        row.addView(actionItem(ctx, R.drawable.ic_after_call_note, "Note", "#8B5CF6") {
             launchApp(ctx, ACTION_NOTE)
             dismiss()
         })
@@ -264,11 +266,9 @@ object AfterCallOverlay {
 
     private fun closeButton(ctx: Context): View {
         val size = dp(ctx, 36f)
-        return TextView(ctx).apply {
-            text = "✕"
-            gravity = Gravity.CENTER
-            setTextColor(Color.parseColor("#8E8E93"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+        return ImageView(ctx).apply {
+            setImageResource(R.drawable.ic_after_call_close)
+            scaleType = ImageView.ScaleType.CENTER
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(Color.parseColor("#2A2A2D"))
@@ -282,16 +282,16 @@ object AfterCallOverlay {
 
     private fun actionItem(
         ctx: Context,
-        emoji: String,
+        iconRes: Int,
         label: String,
         circleColor: String,
         onTap: () -> Unit,
     ): View {
         val circleSize = dp(ctx, 52f)
-        val circle = TextView(ctx).apply {
-            text = emoji
-            gravity = Gravity.CENTER
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+        val circle = ImageView(ctx).apply {
+            setImageResource(iconRes)
+            scaleType = ImageView.ScaleType.CENTER
+            setPadding(dp(ctx, 13f), dp(ctx, 13f), dp(ctx, 13f), dp(ctx, 13f))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(Color.parseColor(circleColor))

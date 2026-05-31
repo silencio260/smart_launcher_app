@@ -20,7 +20,7 @@
         android:id="@+id/widget_subtitle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Alarm Clock"
+        android:text="Clock"
         android:textColor="#F5A623"
         android:textSize="13sp"/>
 </LinearLayout>

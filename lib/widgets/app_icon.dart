@@ -52,13 +52,8 @@ class AppIcon extends StatelessWidget {
   }
 
   Widget _buildIcon() {
-    if (app.isInternalFeature) {
-      return FeatureIcon(
-        featureId: app.launcherFeatureId,
-        packageName: app.packageName,
-        size: iconSize,
-      );
-    }
+    final fallback =
+        app.isInternalFeature ? _featureFallbackIcon() : _fallbackIcon();
     final iconPath = app.iconPath;
     if (iconPath != null && iconPath.isNotEmpty) {
       return Image.file(
@@ -73,10 +68,10 @@ class AppIcon extends StatelessWidget {
               width: iconSize,
               height: iconSize,
               fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => _fallbackIcon(),
+              errorBuilder: (_, __, ___) => fallback,
             );
           }
-          return _fallbackIcon();
+          return fallback;
         },
       );
     }
@@ -86,10 +81,19 @@ class AppIcon extends StatelessWidget {
         width: iconSize,
         height: iconSize,
         fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => _fallbackIcon(),
+        errorBuilder: (_, __, ___) => fallback,
       );
     }
-    return _fallbackIcon();
+    return fallback;
+  }
+
+  Widget _featureFallbackIcon() {
+    return FeatureIcon(
+      featureId: app.launcherFeatureId,
+      packageName: app.packageName,
+      componentName: app.appComponentName,
+      size: iconSize,
+    );
   }
 
   Widget _fallbackIcon() {

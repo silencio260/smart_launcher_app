@@ -74,13 +74,6 @@ class _HiddenAppIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final iconPath = app.iconPath;
-    if (app.isInternalFeature) {
-      return FeatureIcon(
-        featureId: app.launcherFeatureId,
-        packageName: app.packageName,
-        size: 40,
-      );
-    }
     if (iconPath != null && iconPath.isNotEmpty) {
       return Image.file(
         File(iconPath),
@@ -95,6 +88,14 @@ class _HiddenAppIcon extends StatelessWidget {
   Widget _bytesOrFallback() {
     if (app.icon != null) {
       return Image.memory(app.icon!, width: 40, height: 40);
+    }
+    if (app.isInternalFeature) {
+      return FeatureIcon(
+        featureId: app.launcherFeatureId,
+        packageName: app.packageName,
+        componentName: app.appComponentName,
+        size: 40,
+      );
     }
     return const Icon(Icons.android);
   }

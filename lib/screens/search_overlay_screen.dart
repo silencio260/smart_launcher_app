@@ -151,7 +151,20 @@ class _SearchOverlayScreenState extends State<SearchOverlayScreen> {
   Widget _buildLeading(SearchResult r) {
     final featureId = LauncherFeatureCatalog.idForComponent(r.componentName);
     if (featureId != null) {
-      return FeatureIcon(featureId: featureId, size: 40);
+      if (r.icon != null || (r.iconPath?.isNotEmpty ?? false)) {
+        return ShapedIcon(
+          iconBytes: r.icon,
+          iconPath: r.iconPath,
+          shape: widget.iconShape,
+          size: 40,
+          cacheKey: r.componentName ?? r.packageName,
+        );
+      }
+      return FeatureIcon(
+        featureId: featureId,
+        componentName: r.componentName,
+        size: 40,
+      );
     }
     if (r.icon != null || (r.iconPath?.isNotEmpty ?? false)) {
       return ShapedIcon(

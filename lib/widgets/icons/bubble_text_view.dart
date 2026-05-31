@@ -30,16 +30,19 @@ class BubbleTextView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasNativeIcon =
+        app.icon != null || (app.iconPath?.isNotEmpty ?? false);
     final iconStack = SizedBox(
       width: iconSize,
       height: iconSize,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          if (app.isInternalFeature)
+          if (app.isInternalFeature && !hasNativeIcon)
             FeatureIcon(
               featureId: app.launcherFeatureId,
               packageName: app.packageName,
+              componentName: app.appComponentName,
               size: iconSize,
             )
           else
@@ -48,7 +51,9 @@ class BubbleTextView extends StatelessWidget {
               iconPath: app.iconPath,
               shape: iconShape,
               size: iconSize,
-              cacheKey: app.packageName,
+              cacheKey: app.isInternalFeature
+                  ? app.appComponentName
+                  : app.packageName,
             ),
           if (badgeCount > 0)
             DotRenderer(

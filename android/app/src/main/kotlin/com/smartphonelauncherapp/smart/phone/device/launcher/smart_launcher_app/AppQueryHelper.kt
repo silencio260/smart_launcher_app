@@ -14,7 +14,7 @@ import java.security.MessageDigest
 object AppQueryHelper {
 
     private const val TARGET_ICON_PX = 192
-    private const val ICON_CACHE_VERSION = 2
+    private const val ICON_CACHE_VERSION = 3
     private const val ICON_CACHE_DIR = "launcher_icon_cache"
     private const val FEATURE_CLOCK =
         "com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.ClockActivity"
@@ -51,15 +51,20 @@ object AppQueryHelper {
     private const val LEGACY_LABEL_PREFS = "install_assistant_labels"
     private const val INDEX_DELIMITER = "\u0001"
 
-    // Process-wide cache of rasterized launcher icons. Keyed by package, valued
-    // by (lastUpdateTime, bytes) so we re-rasterize only when the OS reports
-    // the package has actually changed. This avoids paying Samsung's
+    // Process-wide cache of rasterized launcher icons. Keyed by package for
+    // normal apps and component for internal aliases, valued by
+    // (lastUpdateTime, bytes) so we re-rasterize only when the OS reports the
+    // package has actually changed. This avoids paying Samsung's
     // LiveIconLoader / AppIconSolution cost on every drawer cold-open.
     private data class CachedIcon(val lastUpdateTime: Long, val bytes: ByteArray)
     private val iconCache = HashMap<String, CachedIcon>(256)
 
     fun invalidatePackage(pkg: String, context: Context? = null) {
-        synchronized(iconCache) { iconCache.remove(pkg) }
+        synchronized(iconCache) {
+            iconCache.keys
+                .filter { it == pkg || it.startsWith("$pkg/") }
+                .forEach { iconCache.remove(it) }
+        }
         context?.let { deleteDiskCacheForPackage(it, pkg) }
     }
 
@@ -80,7 +85,7 @@ object AppQueryHelper {
         includeIconBytes: Boolean = false,
     ): List<Map<String, Any?>> {
         val pm = context.packageManager
-        val launcherApps = queryLauncherActivities(context)
+        val launcherApps = queryLauncherActivities(context, includeIconSource = true)
         val result = ArrayList<Map<String, Any?>>(launcherApps.size)
         val indexEdit = try {
             context.getSharedPreferences(ASSISTANT_INDEX_PREFS, Context.MODE_PRIVATE).edit()
@@ -94,15 +99,19 @@ object AppQueryHelper {
                 pm,
                 pkg,
                 entry.lastUpdateTime,
-                context.cacheDir,
+                cacheRoot = context.cacheDir,
+                iconCacheKey = entry.iconCacheKey,
+                iconSource = entry.iconSource,
             )
             val iconFile = iconCacheFile(
                 context.cacheDir,
-                pkg,
+                entry.iconCacheKey,
                 entry.lastUpdateTime,
             )
             val iconPath = iconFile?.takeIf { it.isFile }?.absolutePath
-            indexEdit?.putString(pkg, encodeAssistantIndexValue(entry.label, iconPath))
+            if (entry.launcherFeatureId == null) {
+                indexEdit?.putString(pkg, encodeAssistantIndexValue(entry.label, iconPath))
+            }
 
             result.add(
                 mapOf(
@@ -135,7 +144,7 @@ object AppQueryHelper {
         queryLauncherActivities(context).all { entry ->
             iconCacheFile(
                 context.cacheDir,
-                entry.packageName,
+                entry.iconCacheKey,
                 entry.lastUpdateTime,
             )?.isFile == true
         }
@@ -146,9 +155,16 @@ object AppQueryHelper {
         val label: String,
         val lastUpdateTime: Long,
         val launcherFeatureId: String?,
-    )
+        val iconSource: Drawable?,
+    ) {
+        val iconCacheKey: String
+            get() = if (launcherFeatureId == null) packageName else componentName
+    }
 
-    private fun queryLauncherActivities(context: Context): List<LauncherActivityEntry> {
+    private fun queryLauncherActivities(
+        context: Context,
+        includeIconSource: Boolean = false,
+    ): List<LauncherActivityEntry> {
         val pm = context.packageManager
         val intent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
@@ -168,13 +184,14 @@ object AppQueryHelper {
             val activityName = resolveInfo.activityInfo.name
             val featureId = featureAliases[activityName]
             if (pkg == myPackage && featureId == null) continue
+            val componentName = "$pkg/$activityName"
             // Dedupe: some OEMs (notably Samsung) expose multiple LAUNCHER
             // activities for the same package (Calendar, Clock, etc.). Keep
             // only the first — that's the one the system itself treats as the
             // primary launcher activity. Launcher feature aliases are separate
             // drawer icons even though they share this package, so dedupe them
             // by component instead.
-            val dedupeKey = if (featureId == null) pkg else "$pkg/$activityName"
+            val dedupeKey = if (featureId == null) pkg else componentName
             if (!seen.add(dedupeKey)) continue
 
             val label = try {
@@ -190,13 +207,24 @@ object AppQueryHelper {
                 0L
             }
 
+            val iconSource = if (includeIconSource && featureId != null) {
+                try {
+                    resolveInfo.loadIcon(pm)
+                } catch (e: Exception) {
+                    null
+                }
+            } else {
+                null
+            }
+
             result.add(
                 LauncherActivityEntry(
                     packageName = pkg,
-                    componentName = "$pkg/$activityName",
+                    componentName = componentName,
                     label = label,
                     lastUpdateTime = lastUpdate,
                     launcherFeatureId = featureId,
+                    iconSource = iconSource,
                 )
             )
         }
@@ -208,33 +236,35 @@ object AppQueryHelper {
         pkg: String,
         lastUpdateTime: Long,
         cacheRoot: File? = null,
+        iconCacheKey: String = pkg,
+        iconSource: Drawable? = null,
     ): ByteArray? {
         synchronized(iconCache) {
-            val hit = iconCache[pkg]
+            val hit = iconCache[iconCacheKey]
             if (hit != null && hit.lastUpdateTime == lastUpdateTime) {
-                writeDiskIconIfMissing(cacheRoot, pkg, lastUpdateTime, hit.bytes)
+                writeDiskIconIfMissing(cacheRoot, iconCacheKey, lastUpdateTime, hit.bytes)
                 return hit.bytes
             }
         }
 
-        val diskHit = readDiskIcon(cacheRoot, pkg, lastUpdateTime)
+        val diskHit = readDiskIcon(cacheRoot, iconCacheKey, lastUpdateTime)
         if (diskHit != null) {
             synchronized(iconCache) {
-                iconCache[pkg] = CachedIcon(lastUpdateTime, diskHit)
+                iconCache[iconCacheKey] = CachedIcon(lastUpdateTime, diskHit)
             }
             return diskHit
         }
 
         val bytes = try {
-            pm.getApplicationIcon(pkg).toLauncherIconBytes()
+            (iconSource ?: pm.getApplicationIcon(pkg)).toLauncherIconBytes()
         } catch (e: Exception) {
             return null
         }
         if (bytes.isEmpty()) return null
         synchronized(iconCache) {
-            iconCache[pkg] = CachedIcon(lastUpdateTime, bytes)
+            iconCache[iconCacheKey] = CachedIcon(lastUpdateTime, bytes)
         }
-        writeDiskIcon(cacheRoot, pkg, lastUpdateTime, bytes)
+        writeDiskIcon(cacheRoot, iconCacheKey, lastUpdateTime, bytes)
         return bytes
     }
 

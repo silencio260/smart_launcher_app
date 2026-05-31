@@ -12,16 +12,16 @@ class LauncherFeature {
   final String aliasClassName;
   final String title;
   final String subtitle;
-  final IconData icon;
   final Color color;
+  final String artworkId;
 
   const LauncherFeature({
     required this.id,
     required this.aliasClassName,
     required this.title,
     required this.subtitle,
-    required this.icon,
     required this.color,
+    required this.artworkId,
   });
 
   String get packageName => launcherPackage;
@@ -47,47 +47,110 @@ class LauncherFeature {
       );
 }
 
+class LauncherFeatureArtwork {
+  final String id;
+  final Color color;
+
+  const LauncherFeatureArtwork({
+    required this.id,
+    required this.color,
+  });
+}
+
 class LauncherFeatureCatalog {
   LauncherFeatureCatalog._();
 
+  static const clockClass =
+      'com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.ClockActivity';
+  static const fileLockerClass =
+      'com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.FileLockerActivity';
+  static const appLockerClass =
+      'com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.AppLockerActivity';
+  static const appHiderClass =
+      'com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.AppHiderActivity';
+  static const calculatorVaultClass =
+      'com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.CalculatorVaultActivity';
+  static const notesVaultClass =
+      'com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.NotesVaultActivity';
+  static const weatherVaultClass =
+      'com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.WeatherVaultActivity';
+  static const browserVaultClass =
+      'com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.BrowserVaultActivity';
+
+  static const fileLockerArtwork = LauncherFeatureArtwork(
+    id: 'file_locker',
+    color: Color(0xFF101014),
+  );
+
+  static const appHiderArtwork = LauncherFeatureArtwork(
+    id: 'app_hider',
+    color: Color(0xFF101014),
+  );
+
+  static const appLockerArtwork = LauncherFeatureArtwork(
+    id: 'app_locker',
+    color: Color(0xFF111114),
+  );
+
+  static const clockArtwork = LauncherFeatureArtwork(
+    id: 'clock',
+    color: Color(0xFF0B0B0D),
+  );
+
+  static const calculatorArtwork = LauncherFeatureArtwork(
+    id: 'calculator',
+    color: Color(0xFF171719),
+  );
+
+  static const notesArtwork = LauncherFeatureArtwork(
+    id: 'notes',
+    color: Color(0xFF312E81),
+  );
+
+  static const weatherArtwork = LauncherFeatureArtwork(
+    id: 'weather',
+    color: Color(0xFF075985),
+  );
+
+  static const browserArtwork = LauncherFeatureArtwork(
+    id: 'browser',
+    color: Color(0xFF172554),
+  );
+
   static const fileLocker = LauncherFeature(
     id: 'file_locker',
-    aliasClassName:
-        'com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.FileLockerActivity',
+    aliasClassName: fileLockerClass,
     title: 'File Locker',
     subtitle: 'Hide private files in an encrypted vault',
-    icon: Icons.enhanced_encryption_outlined,
     color: Color(0xFF26A69A),
+    artworkId: 'file_locker',
   );
 
   static const appHider = LauncherFeature(
     id: 'app_hider',
-    aliasClassName:
-        'com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.AppHiderActivity',
+    aliasClassName: appHiderClass,
     title: 'App Hider',
     subtitle: 'Hide apps from drawer and search',
-    icon: Icons.visibility_off_outlined,
     color: Color(0xFF5C6BC0),
+    artworkId: 'app_hider',
   );
 
   static const appLocker = LauncherFeature(
     id: 'app_locker',
-    aliasClassName:
-        'com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.AppLockerActivity',
+    aliasClassName: appLockerClass,
     title: 'App Locker',
     subtitle: 'Require unlock for apps opened here',
-    icon: Icons.lock_outline,
     color: Color(0xFFEF5350),
+    artworkId: 'app_locker',
   );
 
   static const alarmClock = LauncherFeature(
     id: 'alarm_clock',
-    aliasClassName:
-        'com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.ClockActivity',
-    title: 'Alarm Clock',
+    aliasClassName: clockClass,
+    title: 'Clock',
     subtitle: 'Alarms, timers, and stopwatch shortcuts',
-    icon: Icons.alarm_outlined,
     color: Color(0xFFFFB300),
+    artworkId: 'clock',
   );
 
   static const homeFeatures = <LauncherFeature>[
@@ -103,25 +166,39 @@ class LauncherFeatureCatalog {
 
   static final Map<String, LauncherFeature> byPackage = const {};
 
+  static const Map<String, LauncherFeatureArtwork> byArtworkId = {
+    'file_locker': fileLockerArtwork,
+    'app_hider': appHiderArtwork,
+    'app_locker': appLockerArtwork,
+    'clock': clockArtwork,
+    'calculator': calculatorArtwork,
+    'notes': notesArtwork,
+    'weather': weatherArtwork,
+    'browser': browserArtwork,
+  };
+
+  static const Map<String, String> artworkIdByComponent = {
+    '${LauncherFeature.launcherPackage}/$calculatorVaultClass': 'calculator',
+    calculatorVaultClass: 'calculator',
+    '${LauncherFeature.launcherPackage}/$notesVaultClass': 'notes',
+    notesVaultClass: 'notes',
+    '${LauncherFeature.launcherPackage}/$weatherVaultClass': 'weather',
+    weatherVaultClass: 'weather',
+    '${LauncherFeature.launcherPackage}/$browserVaultClass': 'browser',
+    browserVaultClass: 'browser',
+  };
+
   static final Map<String, LauncherFeature> byComponent = {
     for (final feature in homeFeatures) feature.componentName: feature,
     for (final feature in homeFeatures) feature.aliasClassName: feature,
-    '${LauncherFeature.launcherPackage}/com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.CalculatorVaultActivity':
-        appHider,
-    'com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.CalculatorVaultActivity':
-        appHider,
-    '${LauncherFeature.launcherPackage}/com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.NotesVaultActivity':
-        appHider,
-    'com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.NotesVaultActivity':
-        appHider,
-    '${LauncherFeature.launcherPackage}/com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.WeatherVaultActivity':
-        appHider,
-    'com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.WeatherVaultActivity':
-        appHider,
-    '${LauncherFeature.launcherPackage}/com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.BrowserVaultActivity':
-        appHider,
-    'com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.BrowserVaultActivity':
-        appHider,
+    '${LauncherFeature.launcherPackage}/$calculatorVaultClass': appHider,
+    calculatorVaultClass: appHider,
+    '${LauncherFeature.launcherPackage}/$notesVaultClass': appHider,
+    notesVaultClass: appHider,
+    '${LauncherFeature.launcherPackage}/$weatherVaultClass': appHider,
+    weatherVaultClass: appHider,
+    '${LauncherFeature.launcherPackage}/$browserVaultClass': appHider,
+    browserVaultClass: appHider,
   };
 
   static List<AppInfo> get apps =>
@@ -145,6 +222,19 @@ class LauncherFeatureCatalog {
 
   static LauncherFeature? fromComponent(String? componentName) =>
       componentName == null ? null : byComponent[componentName];
+
+  static LauncherFeatureArtwork? artworkForId(String? id) {
+    final feature = fromId(id);
+    if (feature == null) return null;
+    return byArtworkId[feature.artworkId];
+  }
+
+  static LauncherFeatureArtwork? artworkForComponent(String? componentName) {
+    if (componentName == null) return null;
+    final artworkId = artworkIdByComponent[componentName] ??
+        fromComponent(componentName)?.artworkId;
+    return artworkId == null ? null : byArtworkId[artworkId];
+  }
 
   static String? idForPackage(String packageName) => byPackage[packageName]?.id;
 
