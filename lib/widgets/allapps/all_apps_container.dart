@@ -237,8 +237,7 @@ class _AllAppsContainerState extends State<AllAppsContainer>
         onAppInfo: () {
           final app = _menuApp!;
           _dismissMenu();
-          final featureId = app.launcherFeatureId ??
-              LauncherFeatureCatalog.idForPackage(app.packageName);
+          final featureId = LauncherFeatureCatalog.idForApp(app);
           if (featureId != null) {
             FeatureLaunchDispatcher.openFeature(context, featureId);
           } else {
@@ -249,7 +248,7 @@ class _AllAppsContainerState extends State<AllAppsContainer>
           final app = _menuApp!;
           _dismissMenu();
           final hidden = widget.settings.hiddenApps.toSet()
-            ..add(app.packageName);
+            ..add(app.launcherKey);
           context.read<SettingsCubit>().update(
                 widget.settings.copyWith(hiddenApps: hidden.toList()..sort()),
               );
@@ -273,7 +272,9 @@ class _AllAppsContainerState extends State<AllAppsContainer>
                 : context
                     .read<AppsCubit>()
                     .searchApps(searchState.query)
-                    .where((a) => !hidden.contains(a.packageName))
+                    .where((a) =>
+                        !hidden.contains(a.launcherKey) &&
+                        !hidden.contains(a.packageName))
                     .toList(growable: false);
             return _buildRecycler(displayApps);
           },
@@ -296,7 +297,9 @@ class _AllAppsContainerState extends State<AllAppsContainer>
     final result = hidden.isEmpty
         ? source
         : source
-            .where((a) => !hidden.contains(a.packageName))
+            .where((a) =>
+                !hidden.contains(a.launcherKey) &&
+                !hidden.contains(a.packageName))
             .toList(growable: false);
     _visibleCacheSource = source;
     _visibleCache = result;

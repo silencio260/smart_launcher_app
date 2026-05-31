@@ -16,6 +16,33 @@ object AppQueryHelper {
     private const val TARGET_ICON_PX = 192
     private const val ICON_CACHE_VERSION = 2
     private const val ICON_CACHE_DIR = "launcher_icon_cache"
+    private const val FEATURE_CLOCK =
+        "com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.ClockActivity"
+    private const val FEATURE_FILE_LOCKER =
+        "com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.FileLockerActivity"
+    private const val FEATURE_APP_LOCKER =
+        "com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.AppLockerActivity"
+    private const val FEATURE_APP_HIDER =
+        "com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.AppHiderActivity"
+    private const val FEATURE_CALCULATOR =
+        "com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.CalculatorVaultActivity"
+    private const val FEATURE_NOTES =
+        "com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.NotesVaultActivity"
+    private const val FEATURE_WEATHER =
+        "com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.WeatherVaultActivity"
+    private const val FEATURE_BROWSER =
+        "com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.BrowserVaultActivity"
+
+    private val featureAliases = mapOf(
+        FEATURE_CLOCK to "alarm_clock",
+        FEATURE_FILE_LOCKER to "file_locker",
+        FEATURE_APP_LOCKER to "app_locker",
+        FEATURE_APP_HIDER to "app_hider",
+        FEATURE_CALCULATOR to "app_hider",
+        FEATURE_NOTES to "app_hider",
+        FEATURE_WEATHER to "app_hider",
+        FEATURE_BROWSER to "app_hider",
+    )
 
     // Last-known display label + icon path, keyed by package. Kept fresh on
     // every app enumeration so the Install/Uninstall Assistant can title and
@@ -85,6 +112,7 @@ object AppQueryHelper {
                     "lastUpdateTime" to entry.lastUpdateTime,
                     "icon" to if (includeIconBytes) iconBytes else null,
                     "iconPath" to iconPath,
+                    "launcherFeatureId" to entry.launcherFeatureId,
                 )
             )
         }
@@ -117,6 +145,7 @@ object AppQueryHelper {
         val componentName: String,
         val label: String,
         val lastUpdateTime: Long,
+        val launcherFeatureId: String?,
     )
 
     private fun queryLauncherActivities(context: Context): List<LauncherActivityEntry> {
@@ -136,12 +165,17 @@ object AppQueryHelper {
 
         for (resolveInfo in pm.queryIntentActivities(intent, flags)) {
             val pkg = resolveInfo.activityInfo.packageName
-            if (pkg == myPackage) continue
+            val activityName = resolveInfo.activityInfo.name
+            val featureId = featureAliases[activityName]
+            if (pkg == myPackage && featureId == null) continue
             // Dedupe: some OEMs (notably Samsung) expose multiple LAUNCHER
             // activities for the same package (Calendar, Clock, etc.). Keep
             // only the first — that's the one the system itself treats as the
-            // primary launcher activity.
-            if (!seen.add(pkg)) continue
+            // primary launcher activity. Launcher feature aliases are separate
+            // drawer icons even though they share this package, so dedupe them
+            // by component instead.
+            val dedupeKey = if (featureId == null) pkg else "$pkg/$activityName"
+            if (!seen.add(dedupeKey)) continue
 
             val label = try {
                 resolveInfo.loadLabel(pm).toString()
@@ -156,13 +190,13 @@ object AppQueryHelper {
                 0L
             }
 
-            val activityName = resolveInfo.activityInfo.name
             result.add(
                 LauncherActivityEntry(
                     packageName = pkg,
                     componentName = "$pkg/$activityName",
                     label = label,
                     lastUpdateTime = lastUpdate,
+                    launcherFeatureId = featureId,
                 )
             )
         }

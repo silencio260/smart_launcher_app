@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/app_info.dart';
+import '../models/launcher_feature.dart';
 
 class AppSnapshot {
   final String snapshotKey;
@@ -42,13 +43,16 @@ class AppSnapshotCache {
             !await File(iconPath).exists()) {
           return null;
         }
+        final componentName = item['componentName'] as String? ?? packageName;
         apps.add(
           AppInfo(
             id: 0,
             packageName: packageName,
-            appComponentName: item['componentName'] as String? ?? packageName,
+            appComponentName: componentName,
             title: name ?? packageName,
             iconPath: iconPath,
+            launcherFeatureId: item['launcherFeatureId'] as String? ??
+                LauncherFeatureCatalog.idForComponent(componentName),
           ),
         );
       }
@@ -76,6 +80,7 @@ class AppSnapshotCache {
               'componentName': app.appComponentName,
               'name': app.name,
               'iconPath': app.iconPath,
+              'launcherFeatureId': app.launcherFeatureId,
             },
         ],
       };

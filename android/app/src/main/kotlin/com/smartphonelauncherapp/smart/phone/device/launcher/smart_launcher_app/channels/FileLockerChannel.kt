@@ -129,13 +129,14 @@ class FileLockerChannel(private val activity: Activity) {
         }
     }
 
-    private fun importUri(uri: Uri): Boolean {
+    private fun importUri(uri: Uri): Map<String, Any?>? {
         val info = queryInfo(uri)
         val id = "file_${System.currentTimeMillis()}"
         val vaultFile = File(vaultDir(), "$id.bin")
         activity.contentResolver.openInputStream(uri)?.use { input ->
             encryptToFile(input, vaultFile)
-        } ?: return false
+        } ?: return null
+        val createdAt = System.currentTimeMillis()
 
         val meta = readMeta()
         meta.put(
@@ -144,10 +145,15 @@ class FileLockerChannel(private val activity: Activity) {
                 .put("name", info.first)
                 .put("size", info.second)
                 .put("path", vaultFile.absolutePath)
-                .put("createdAt", System.currentTimeMillis())
+                .put("createdAt", createdAt)
         )
         writeMeta(meta)
-        return true
+        return mapOf(
+            "id" to id,
+            "name" to info.first,
+            "size" to info.second,
+            "createdAt" to createdAt,
+        )
     }
 
     private fun exportToUri(id: String, uri: Uri): Boolean {

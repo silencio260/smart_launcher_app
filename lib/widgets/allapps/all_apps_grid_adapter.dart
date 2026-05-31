@@ -18,9 +18,8 @@ class AppRow extends DrawerItem {
 
 List<DrawerItem> buildSections(List<AppInfo> apps, int columns) {
   final items = <DrawerItem>[];
-  final favoriteApps = apps
-      .where((app) => LauncherFeatureCatalog.isFeaturePackage(app.packageName))
-      .toList(growable: false);
+  final favoriteApps =
+      apps.where(LauncherFeatureCatalog.isFeatureApp).toList(growable: false);
   if (favoriteApps.isNotEmpty) {
     items.add(SectionHeader('Favorites'));
     for (var i = 0; i < favoriteApps.length; i += columns) {
@@ -31,7 +30,7 @@ List<DrawerItem> buildSections(List<AppInfo> apps, int columns) {
   }
 
   final sectionApps = apps
-      .where((app) => !LauncherFeatureCatalog.isFeaturePackage(app.packageName))
+      .where((app) => !LauncherFeatureCatalog.isFeatureApp(app))
       .toList(growable: false);
   String? currentLetter;
 

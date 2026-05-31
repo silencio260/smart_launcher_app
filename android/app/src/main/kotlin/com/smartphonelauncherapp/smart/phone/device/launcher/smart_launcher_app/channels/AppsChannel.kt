@@ -1,6 +1,7 @@
 package com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels
 
 import android.app.Activity
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
@@ -92,6 +93,26 @@ class AppsChannel(private val activity: Activity) {
                                 activity.startActivity(intent)
                                 result.success(true)
                             } else {
+                                result.success(false)
+                            }
+                        } else {
+                            result.success(false)
+                        }
+                    }
+                    "launchComponent" -> {
+                        val pkg = call.argument<String>("packageName")
+                        val component = call.argument<String>("componentName")
+                        if (pkg != null && component != null) {
+                            val className = component.substringAfter('/', component)
+                            val intent = Intent(Intent.ACTION_MAIN).apply {
+                                addCategory(Intent.CATEGORY_LAUNCHER)
+                                setComponent(ComponentName(pkg, className))
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            try {
+                                activity.startActivity(intent)
+                                result.success(true)
+                            } catch (_: Exception) {
                                 result.success(false)
                             }
                         } else {

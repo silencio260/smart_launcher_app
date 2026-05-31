@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'data/feature_hive_store.dart';
 import 'models/launcher_settings.dart';
 import 'state/apps_cubit.dart';
 import 'state/launcher_cubit.dart';
@@ -11,8 +12,9 @@ import 'state/workspace_cubit.dart';
 import 'screens/home_screen.dart';
 import 'widgets/workspace/route_coverage_scope.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await FeatureHiveStore.init();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,

@@ -68,6 +68,17 @@ class LauncherService {
     return result ?? false;
   }
 
+  static Future<bool> launchComponent({
+    required String packageName,
+    required String componentName,
+  }) async {
+    final result = await _apps.invokeMethod<bool>('launchComponent', {
+      'packageName': packageName,
+      'componentName': componentName,
+    });
+    return result ?? false;
+  }
+
   static Future<void> openAppSettings(String packageName) async {
     await _apps.invokeMethod('openAppSettings', {'packageName': packageName});
   }
@@ -120,6 +131,28 @@ class LauncherService {
   static Future<bool> createAlarm() async =>
       await _alarm.invokeMethod<bool>('createAlarm') ?? false;
 
+  static Future<bool> scheduleSmartAlarm({
+    required String id,
+    required int triggerAtMillis,
+    required String label,
+  }) async =>
+      await _alarm.invokeMethod<bool>('scheduleSmartAlarm', {
+        'id': id,
+        'triggerAtMillis': triggerAtMillis,
+        'label': label,
+      }) ??
+      false;
+
+  static Future<bool> cancelSmartAlarm(String id) async =>
+      await _alarm.invokeMethod<bool>('cancelSmartAlarm', {'id': id}) ?? false;
+
+  static Future<bool> canScheduleExactAlarms() async =>
+      await _alarm.invokeMethod<bool>('canScheduleExactAlarms') ?? true;
+
+  static Future<void> requestExactAlarmAccess() async {
+    await _alarm.invokeMethod<void>('requestExactAlarmAccess');
+  }
+
   static Future<bool> openTimer() async =>
       await _alarm.invokeMethod<bool>('openTimer') ?? false;
 
@@ -132,6 +165,41 @@ class LauncherService {
   static Future<bool> requestOverlayPermission() async =>
       await _system.invokeMethod<bool>('requestOverlayPermission') ?? false;
 
+  static Future<bool> consumePendingFeatureRoute() async {
+    final route =
+        await _system.invokeMethod<String>('consumePendingFeatureRoute');
+    return route != null && route.isNotEmpty;
+  }
+
+  static Future<String?> consumePendingFeatureId() async {
+    return _system.invokeMethod<String>('consumePendingFeatureRoute');
+  }
+
+  static Future<void> setDeviceLockedApps(List<String> packageNames) async {
+    await _system.invokeMethod<void>('setDeviceLockedApps', {
+      'packageNames': packageNames,
+    });
+  }
+
+  static Future<bool> isUsageAccessEnabled() async =>
+      await _system.invokeMethod<bool>('isUsageAccessEnabled') ?? false;
+
+  static Future<void> requestUsageAccess() async {
+    await _system.invokeMethod<void>('requestUsageAccess');
+  }
+
+  static Future<bool> isAccessibilityServiceEnabled() async =>
+      await _system.invokeMethod<bool>('isAccessibilityServiceEnabled') ??
+      false;
+
+  static Future<void> requestAccessibilityAccess() async {
+    await _system.invokeMethod<void>('requestAccessibilityAccess');
+  }
+
+  static Future<void> setAppHiderDisguise(String label) async {
+    await _system.invokeMethod<void>('setAppHiderDisguise', {'label': label});
+  }
+
   static Future<List<Map<String, dynamic>>> listLockedFiles() async {
     final raw = await _fileLocker.invokeMethod<List<dynamic>>('listFiles');
     return (raw ?? const [])
@@ -140,8 +208,18 @@ class LauncherService {
         .toList(growable: false);
   }
 
-  static Future<bool> importLockedFile() async =>
-      await _fileLocker.invokeMethod<bool>('importFile') ?? false;
+  static Future<bool> importLockedFile() async {
+    final result = await _fileLocker.invokeMethod<Object?>('importFile');
+    if (result is bool) return result;
+    if (result is Map) return true;
+    return false;
+  }
+
+  static Future<Map<String, dynamic>?> importLockedFileDetails() async {
+    final raw =
+        await _fileLocker.invokeMethod<Map<dynamic, dynamic>>('importFile');
+    return raw?.cast<String, dynamic>();
+  }
 
   static Future<bool> exportLockedFile(String id) async =>
       await _fileLocker.invokeMethod<bool>('exportFile', {'id': id}) ?? false;

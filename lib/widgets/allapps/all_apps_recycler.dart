@@ -103,7 +103,7 @@ class _AllAppsRecyclerState extends State<AllAppsRecycler> {
                                 Expanded(
                                   child: Center(
                                     child: _DrawerAppIcon(
-                                      key: ValueKey(app.packageName),
+                                      key: ValueKey(app.launcherKey),
                                       app: app,
                                       settings: widget.settings,
                                       dragController: widget.dragController,

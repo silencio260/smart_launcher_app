@@ -3,26 +3,44 @@ import 'dart:convert';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../data/feature_hive_store.dart';
 import '../models/launcher_feature_settings.dart';
+import '../services/launcher_service.dart';
 
 class LauncherFeatureSettingsCubit extends Cubit<LauncherFeatureSettings> {
   static const _key = 'launcher_feature_settings_v1';
+  static const _legacyPrefsKey = 'launcher_feature_settings_v1';
 
   LauncherFeatureSettingsCubit() : super(const LauncherFeatureSettings());
 
   Future<void> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_key);
-    if (raw == null) return;
+    final dynamic box;
     try {
-      emit(_fromJson(jsonDecode(raw) as Map<String, dynamic>));
+      box = FeatureHiveStore.box(FeatureHiveBoxes.featureSettings);
+    } catch (_) {
+      await _syncNativePolicy(state);
+      return;
+    }
+    var raw = box.get(_key);
+    raw ??= await _migrateLegacySettings(box);
+    if (raw == null) {
+      await _syncNativePolicy(state);
+      return;
+    }
+    try {
+      final map = raw is String ? jsonDecode(raw) : raw;
+      if (map is Map) emit(_fromJson(map.cast<String, dynamic>()));
     } catch (_) {}
+    await _syncNativePolicy(state);
   }
 
   Future<void> update(LauncherFeatureSettings settings) async {
     emit(settings);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_key, jsonEncode(_toJson(settings)));
+    try {
+      final box = FeatureHiveStore.box(FeatureHiveBoxes.featureSettings);
+      await box.put(_key, _toJson(settings));
+    } catch (_) {}
+    await _syncNativePolicy(settings);
   }
 
   Future<void> setAppLocked(String packageName, bool locked) {
@@ -55,5 +73,22 @@ class LauncherFeatureSettingsCubit extends Cubit<LauncherFeatureSettings> {
               false,
       lockedApps: (json['lockedApps'] as List?)?.cast<String>() ?? const [],
     );
+  }
+
+  Future<Object?> _migrateLegacySettings(dynamic box) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final legacy = prefs.getString(_legacyPrefsKey);
+      if (legacy == null) return null;
+      final decoded = jsonDecode(legacy) as Map<String, dynamic>;
+      await box.put(_key, decoded);
+      return decoded;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _syncNativePolicy(LauncherFeatureSettings settings) async {
+    await LauncherService.setDeviceLockedApps(settings.lockedApps);
   }
 }

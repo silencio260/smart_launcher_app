@@ -9,6 +9,7 @@ class SearchResult {
   final Uint8List? icon;
   final String? iconPath;
   final String? packageName;
+  final String? componentName;
   final String? shortcutId;
   final String? query;
   final double score;
@@ -20,6 +21,7 @@ class SearchResult {
     this.icon,
     this.iconPath,
     this.packageName,
+    this.componentName,
     this.shortcutId,
     this.query,
     this.score = 0,

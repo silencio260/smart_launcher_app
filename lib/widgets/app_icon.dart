@@ -147,8 +147,7 @@ class _AppMenu extends StatelessWidget {
           const Divider(color: Colors.white12),
           _menuItem(context, Icons.info_outline, 'App info', () {
             Navigator.pop(context);
-            final featureId = app.launcherFeatureId ??
-                LauncherFeatureCatalog.idForPackage(app.packageName);
+            final featureId = LauncherFeatureCatalog.idForApp(app);
             if (featureId != null) {
               FeatureLaunchDispatcher.openFeature(context, featureId);
             } else {

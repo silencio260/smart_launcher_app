@@ -237,7 +237,7 @@ class DefaultLayoutSeeder {
   }
 
   static WorkspaceItemInfo _toItem(AppInfo app) => WorkspaceItemInfo(
-        id: app.packageName.hashCode,
+        id: app.launcherKey.hashCode,
         itemType: ItemType.application,
         packageName: app.packageName,
         componentName: app.appComponentName,

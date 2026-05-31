@@ -14,6 +14,7 @@ import '../models/launcher_widget_info.dart';
 import '../models/launcher_settings.dart';
 import '../models/launcher_state.dart' as ls;
 import '../models/workspace_item_info.dart';
+import '../data/mini_app_repositories.dart';
 import '../services/after_call_service.dart';
 import '../services/install_assistant_service.dart';
 import '../services/default_layout_seeder.dart';
@@ -95,9 +96,11 @@ class _HomeScreenState extends State<HomeScreen>
       );
       // An after-call overlay tap (cold start) leaves an action waiting natively.
       _consumeAfterCallAction();
+      _consumeFeatureRoute();
       // An install/uninstall overlay tap (add-to-home, hide, cleanup, disable)
       // is stashed natively; drain it the same way.
       _consumeInstallAssistantAction();
+      ClockRepository().rescheduleEnabledAlarms();
       _maybePromptDefaultLauncher();
     });
     _dragController.addListener(_onDragChange);
@@ -163,6 +166,7 @@ class _HomeScreenState extends State<HomeScreen>
     context.read<AppsCubit>().refreshBadges();
     // A warm resume can be an after-call overlay tap; drain any pending action.
     _consumeAfterCallAction();
+    _consumeFeatureRoute();
     // …or an install/uninstall overlay tap chosen while we were backgrounded.
     _consumeInstallAssistantAction();
     // Full app list reload is expensive (icon decode for every package). The
@@ -261,8 +265,7 @@ class _HomeScreenState extends State<HomeScreen>
         title: app.name,
         icon: app.icon,
         iconPath: app.iconPath,
-        launcherFeatureId: app.launcherFeatureId ??
-            LauncherFeatureCatalog.idForPackage(app.packageName),
+        launcherFeatureId: LauncherFeatureCatalog.idForApp(app),
         screenId: 0,
       ),
       settings.gridColumns,
@@ -441,6 +444,12 @@ class _HomeScreenState extends State<HomeScreen>
       case 'note':
         _openSearch();
     }
+  }
+
+  Future<void> _consumeFeatureRoute() async {
+    final featureId = await LauncherService.consumePendingFeatureId();
+    if (!mounted || featureId == null || featureId.isEmpty) return;
+    FeatureLaunchDispatcher.openFeature(context, featureId);
   }
 
   // The install/uninstall card is a native system overlay. Actions that mutate
@@ -642,8 +651,7 @@ class _HomeScreenState extends State<HomeScreen>
         onDismiss: _dismissAppInfoTooltip,
         onAppInfo: () {
           _dismissAppInfoTooltip();
-          final featureId = app.launcherFeatureId ??
-              LauncherFeatureCatalog.idForPackage(app.packageName);
+          final featureId = LauncherFeatureCatalog.idForApp(app);
           if (featureId != null) {
             FeatureLaunchDispatcher.openFeature(context, featureId);
           } else {
@@ -920,7 +928,6 @@ class _HomeScreenState extends State<HomeScreen>
   ) {
     final slotCount = _effectiveDockSlots(settings);
     final refs = _resolveDockRefs(appsState, settings).take(slotCount);
-    final byPackage = appsState.appsByPackage;
     final items = refs.map<DockItem?>((ref) {
       if (ref.isEmpty) return null;
       if (_isDockFolderRef(ref)) {
@@ -932,7 +939,7 @@ class _HomeScreenState extends State<HomeScreen>
           folder: _resolveFolderIcons(folder, appsState),
         );
       }
-      final app = byPackage[ref];
+      final app = appsState.appsByKey[ref] ?? appsState.appsByPackage[ref];
       return app == null ? null : DockAppItem(app);
     }).toList();
     return items;
@@ -957,7 +964,7 @@ class _HomeScreenState extends State<HomeScreen>
     final resolved = pinned.isEmpty
         ? appsState.apps.take(settings.dockSize).toList()
         : pinned;
-    return resolved.map((a) => a.packageName).toList();
+    return resolved.map((a) => a.launcherKey).toList();
   }
 
   int _effectiveDockSlots(LauncherSettings settings) {
@@ -973,17 +980,18 @@ class _HomeScreenState extends State<HomeScreen>
     String ref,
     AppsState appsState,
   ) {
-    final app = appsState.appsByPackage[ref];
+    final app = appsState.appsByKey[ref] ?? appsState.appsByPackage[ref];
     return WorkspaceItemInfo(
       id: app?.id ?? ref.hashCode,
       itemType: ItemType.application,
-      packageName: ref,
+      packageName: app?.packageName ?? ref,
       componentName: app?.appComponentName ?? ref,
       title: app?.name ?? ref,
       icon: app?.icon,
       iconPath: app?.iconPath,
-      launcherFeatureId:
-          app?.launcherFeatureId ?? LauncherFeatureCatalog.idForPackage(ref),
+      launcherFeatureId: app?.launcherFeatureId ??
+          LauncherFeatureCatalog.idForComponent(ref) ??
+          LauncherFeatureCatalog.idForPackage(ref),
     );
   }
 
@@ -1073,7 +1081,9 @@ class _HomeScreenState extends State<HomeScreen>
     final visibleApps = hidden.isEmpty
         ? apps
         : apps
-            .where((app) => !hidden.contains(app.packageName))
+            .where((app) =>
+                !hidden.contains(app.launcherKey) &&
+                !hidden.contains(app.packageName))
             .toList(growable: false);
     if (visibleApps.isEmpty) return;
 

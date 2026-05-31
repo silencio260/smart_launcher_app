@@ -3846,7 +3846,9 @@ class _CellLayoutViewState extends State<CellLayoutView>
     // selector on every other tile on the page.
     return Center(
       child: BlocSelector<AppsCubit, AppsState, AppInfo?>(
-        selector: (state) => state.appsByPackage[item.packageName],
+        selector: (state) =>
+            state.appsByKey[item.launcherKey] ??
+            state.appsByPackage[item.packageName],
         builder: (context, liveApp) {
           final app = AppInfo(
             id: item.id,

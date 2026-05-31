@@ -12,7 +12,10 @@ class AppSearchService {
     final results = <SearchResult>[];
 
     for (final app in apps) {
-      if (hiddenPackages.contains(app.packageName)) continue;
+      if (hiddenPackages.contains(app.launcherKey) ||
+          hiddenPackages.contains(app.packageName)) {
+        continue;
+      }
       final name = app.name.toLowerCase();
       double score = 0;
       if (name.startsWith(q)) {
@@ -29,6 +32,7 @@ class AppSearchService {
         icon: app.icon,
         iconPath: app.iconPath,
         packageName: app.packageName,
+        componentName: app.launcherKey,
         score: score,
       ));
     }

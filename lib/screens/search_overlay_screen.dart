@@ -69,7 +69,9 @@ class _SearchOverlayScreenState extends State<SearchOverlayScreen> {
     Navigator.pop(context);
     switch (result.type) {
       case SearchResultType.app:
-        if (result.packageName != null) {
+        if (result.componentName != null) {
+          FeatureLaunchDispatcher.launchKey(context, result.componentName!);
+        } else if (result.packageName != null) {
           FeatureLaunchDispatcher.launchPackage(context, result.packageName!);
         }
       case SearchResultType.calculator:
@@ -147,9 +149,9 @@ class _SearchOverlayScreenState extends State<SearchOverlayScreen> {
   }
 
   Widget _buildLeading(SearchResult r) {
-    if (r.packageName != null &&
-        LauncherFeatureCatalog.isFeaturePackage(r.packageName!)) {
-      return FeatureIcon(packageName: r.packageName, size: 40);
+    final featureId = LauncherFeatureCatalog.idForComponent(r.componentName);
+    if (featureId != null) {
+      return FeatureIcon(featureId: featureId, size: 40);
     }
     if (r.icon != null || (r.iconPath?.isNotEmpty ?? false)) {
       return ShapedIcon(

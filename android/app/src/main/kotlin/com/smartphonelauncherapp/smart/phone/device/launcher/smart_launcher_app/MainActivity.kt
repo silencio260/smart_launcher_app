@@ -44,6 +44,7 @@ class MainActivity : FlutterActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
         appWidgetHost.startListening()
         handleAfterCallIntent(intent)
+        handleFeatureIntent(intent)
     }
 
     // singleTask: a tap on the after-call overlay re-enters this activity here.
@@ -51,12 +52,29 @@ class MainActivity : FlutterActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleAfterCallIntent(intent)
+        handleFeatureIntent(intent)
     }
 
     private fun handleAfterCallIntent(intent: Intent?) {
         val action = intent?.getStringExtra(AfterCallOverlay.EXTRA_ACTION) ?: return
         intent.removeExtra(AfterCallOverlay.EXTRA_ACTION)
         AfterCallChannel.deliver(action)
+    }
+
+    private fun handleFeatureIntent(intent: Intent?) {
+        val className = intent?.component?.className ?: return
+        val featureId = when (className) {
+            "$packageName.features.ClockActivity" -> "alarm_clock"
+            "$packageName.features.FileLockerActivity" -> "file_locker"
+            "$packageName.features.AppLockerActivity" -> "app_locker"
+            "$packageName.features.AppHiderActivity" -> "app_hider"
+            "$packageName.features.CalculatorVaultActivity" -> "app_hider"
+            "$packageName.features.NotesVaultActivity" -> "app_hider"
+            "$packageName.features.WeatherVaultActivity" -> "app_hider"
+            "$packageName.features.BrowserVaultActivity" -> "app_hider"
+            else -> null
+        } ?: return
+        SystemChannel.deliverFeatureRoute(featureId)
     }
 
     override fun onDestroy() {

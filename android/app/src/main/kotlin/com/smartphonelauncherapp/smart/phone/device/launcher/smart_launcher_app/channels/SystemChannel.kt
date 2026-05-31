@@ -1,7 +1,9 @@
 package com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels
 
 import android.app.Activity
+import android.app.AppOpsManager
 import android.app.role.RoleManager
+import android.content.Context
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -17,6 +19,15 @@ class SystemChannel(private val activity: Activity) {
 
     companion object {
         private const val REQUEST_CODE_HOME_ROLE = 4011
+        private const val APP_LOCK_PREFS = "app_lock_policy"
+        private const val KEY_LOCKED_PACKAGES = "locked_packages"
+
+        @Volatile
+        private var pendingFeatureRoute: String? = null
+
+        fun deliverFeatureRoute(route: String) {
+            pendingFeatureRoute = route
+        }
     }
 
     fun register(messenger: BinaryMessenger) {
@@ -90,6 +101,37 @@ class SystemChannel(private val activity: Activity) {
                     }
                     "requestAccessibilityAccess" -> {
                         activity.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        result.success(true)
+                    }
+                    "consumePendingFeatureRoute" -> {
+                        val route = pendingFeatureRoute
+                        pendingFeatureRoute = null
+                        result.success(route)
+                    }
+                    "setDeviceLockedApps" -> {
+                        val packageNames =
+                            call.argument<List<String>>("packageNames") ?: emptyList()
+                        activity.getSharedPreferences(APP_LOCK_PREFS, Context.MODE_PRIVATE)
+                            .edit()
+                            .putStringSet(KEY_LOCKED_PACKAGES, packageNames.toSet())
+                            .apply()
+                        LauncherAccessibilityService.reloadPolicy(activity)
+                        result.success(true)
+                    }
+                    "isUsageAccessEnabled" -> {
+                        result.success(isUsageAccessEnabled())
+                    }
+                    "requestUsageAccess" -> {
+                        try {
+                            activity.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.success(false)
+                        }
+                    }
+                    "setAppHiderDisguise" -> {
+                        val label = call.argument<String>("label") ?: "App Hider"
+                        setAppHiderDisguise(label)
                         result.success(true)
                     }
                     "canDrawOverlays" -> {
@@ -195,5 +237,48 @@ class SystemChannel(private val activity: Activity) {
         ) ?: return false
         return TextUtils.SimpleStringSplitter(':').also { it.setString(enabledServices) }
             .any { it.equals(expectedService, ignoreCase = true) }
+    }
+
+    private fun isUsageAccessEnabled(): Boolean {
+        val appOps = activity.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+        val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            appOps.unsafeCheckOpNoThrow(
+                AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(),
+                activity.packageName,
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            appOps.checkOpNoThrow(
+                AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(),
+                activity.packageName,
+            )
+        }
+        return mode == AppOpsManager.MODE_ALLOWED
+    }
+
+    private fun setAppHiderDisguise(label: String) {
+        val pm = activity.packageManager
+        val aliases = mapOf(
+            "App Hider" to "features.AppHiderActivity",
+            "Calculator" to "features.CalculatorVaultActivity",
+            "Notes" to "features.NotesVaultActivity",
+            "Weather" to "features.WeatherVaultActivity",
+            "Browser" to "features.BrowserVaultActivity",
+        )
+        val selected = aliases[label] ?: aliases.getValue("App Hider")
+        for ((_, alias) in aliases) {
+            val state = if (alias == selected) {
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+            } else {
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            }
+            pm.setComponentEnabledSetting(
+                ComponentName(activity.packageName, "${activity.packageName}.$alias"),
+                state,
+                PackageManager.DONT_KILL_APP,
+            )
+        }
     }
 }

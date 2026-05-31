@@ -316,15 +316,15 @@ class _DockSlot extends StatelessWidget {
     required this.onDismissEditSelection,
   });
 
-  // Writes `packageName` at position `slot` in dockPackages, expanding the
+  // Writes an app launcher key at position `slot` in dockPackages, expanding the
   // list with empty strings as needed.
-  void _setDockSlot(BuildContext context, String packageName) {
+  void _setDockSlot(BuildContext context, String launcherKey) {
     final s = context.read<SettingsCubit>().state;
     final packages = _ensureInitialized(s.dockPackages);
     while (packages.length <= slot) {
       packages.add('');
     }
-    packages[slot] = packageName;
+    packages[slot] = launcherKey;
     context.read<SettingsCubit>().update(s.copyWith(dockPackages: packages));
   }
 
@@ -333,7 +333,7 @@ class _DockSlot extends StatelessWidget {
   List<String> _ensureInitialized(List<String> current) {
     if (current.isNotEmpty) return List<String>.from(current);
     return apps.map((item) {
-      if (item is DockAppItem) return item.app.packageName;
+      if (item is DockAppItem) return item.app.launcherKey;
       if (item is DockFolderItem) return '$kDockFolderPrefix${item.folderId}';
       return '';
     }).toList();
@@ -365,7 +365,7 @@ class _DockSlot extends StatelessWidget {
         onAcceptWithDetails: (details) {
           final payload = details.data;
           final pkg = (payload.item is WorkspaceItemInfo)
-              ? (payload.item as WorkspaceItemInfo).packageName
+              ? (payload.item as WorkspaceItemInfo).launcherKey
               : '';
           if (pkg.isEmpty) return;
 
@@ -439,16 +439,16 @@ class _DockSlot extends StatelessWidget {
           d.data.sourcePage != -1 || d.data.sourceSlot != slot,
       onAcceptWithDetails: (details) {
         final incoming = details.data;
-        final incomingPkg = (incoming.item is WorkspaceItemInfo)
-            ? (incoming.item as WorkspaceItemInfo).packageName
+        final incomingRef = (incoming.item is WorkspaceItemInfo)
+            ? (incoming.item as WorkspaceItemInfo).launcherKey
             : '';
-        if (incomingPkg.isEmpty) return;
+        if (incomingRef.isEmpty) return;
 
         // Save the displaced app before overwriting this slot
-        final displacedPkg = currentApp.packageName;
+        final displacedRef = currentApp.launcherKey;
 
         // Put incoming app into this dock slot
-        _setDockSlot(context, incomingPkg);
+        _setDockSlot(context, incomingRef);
 
         // Relocate the displaced app to the source location
         if (incoming.sourcePage >= 0) {
@@ -457,7 +457,7 @@ class _DockSlot extends StatelessWidget {
           final displacedItem = WorkspaceItemInfo(
             id: currentApp.id,
             itemType: ItemType.application,
-            packageName: displacedPkg,
+            packageName: currentApp.packageName,
             componentName: currentApp.appComponentName,
             title: currentApp.name,
             icon: currentApp.icon,
@@ -473,7 +473,7 @@ class _DockSlot extends StatelessWidget {
           while (packages.length <= incoming.sourceSlot) {
             packages.add('');
           }
-          packages[incoming.sourceSlot] = displacedPkg;
+          packages[incoming.sourceSlot] = displacedRef;
           context
               .read<SettingsCubit>()
               .update(s.copyWith(dockPackages: packages));

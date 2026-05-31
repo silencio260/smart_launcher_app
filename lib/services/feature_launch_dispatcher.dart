@@ -4,9 +4,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../models/app_info.dart';
 import '../models/launcher_feature.dart';
 import '../screens/features/alarm_clock_screen.dart';
+import '../screens/features/app_hider_screen.dart';
 import '../screens/features/app_locker_screen.dart';
 import '../screens/features/file_locker_screen.dart';
-import '../screens/settings/hidden_apps_screen.dart';
 import '../services/launcher_service.dart';
 import '../state/apps_cubit.dart';
 import '../state/launcher_feature_cubit.dart';
@@ -16,8 +16,7 @@ class FeatureLaunchDispatcher {
   FeatureLaunchDispatcher._();
 
   static Future<void> launch(BuildContext context, AppInfo app) async {
-    final featureId = app.launcherFeatureId ??
-        LauncherFeatureCatalog.idForPackage(app.packageName);
+    final featureId = LauncherFeatureCatalog.idForApp(app);
     if (featureId != null) {
       openFeature(context, featureId);
       return;
@@ -31,14 +30,22 @@ class FeatureLaunchDispatcher {
       );
       if (!unlocked) return;
     }
-    await LauncherService.launchApp(app.packageName);
+    if (app.appComponentName.contains('/')) {
+      await LauncherService.launchComponent(
+        packageName: app.packageName,
+        componentName: app.appComponentName,
+      );
+    } else {
+      await LauncherService.launchApp(app.packageName);
+    }
   }
 
   static Future<void> launchPackage(
     BuildContext context,
     String packageName,
   ) async {
-    final app = context.read<AppsCubit>().state.appsByPackage[packageName] ??
+    final app = context.read<AppsCubit>().state.appsByKey[packageName] ??
+        context.read<AppsCubit>().state.appsByPackage[packageName] ??
         AppInfo(
           id: packageName.hashCode,
           packageName: packageName,
@@ -49,10 +56,16 @@ class FeatureLaunchDispatcher {
     await launch(context, app);
   }
 
+  static Future<void> launchKey(BuildContext context, String key) async {
+    final app = context.read<AppsCubit>().state.appsByKey[key] ??
+        context.read<AppsCubit>().state.appsByPackage[key];
+    if (app != null) await launch(context, app);
+  }
+
   static void openFeature(BuildContext context, String featureId) {
     final screen = switch (featureId) {
       'file_locker' => const FileLockerScreen(),
-      'app_hider' => const HiddenAppsScreen(),
+      'app_hider' => const AppHiderScreen(),
       'app_locker' => const AppLockerScreen(),
       'alarm_clock' => const AlarmClockScreen(),
       _ => null,

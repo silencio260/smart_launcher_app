@@ -32,21 +32,25 @@ class HiddenAppsScreen extends StatelessWidget {
                 itemCount: apps.length,
                 itemBuilder: (context, i) {
                   final app = apps[i];
-                  final hidden = s.hiddenApps.contains(app.packageName);
+                  final hidden = s.hiddenApps.contains(app.launcherKey) ||
+                      s.hiddenApps.contains(app.packageName);
                   return CheckboxListTile(
                     title: Text(app.name),
-                    subtitle: Text(app.packageName),
+                    subtitle: Text(app.isInternalFeature
+                        ? 'Launcher mini app'
+                        : app.packageName),
                     secondary: _HiddenAppIcon(app: app),
                     value: hidden,
                     onChanged: (v) {
                       if (v == true) {
                         cubit.update(s.copyWith(
-                          hiddenApps: [...s.hiddenApps, app.packageName],
+                          hiddenApps: [...s.hiddenApps, app.launcherKey],
                         ));
                       } else {
                         cubit.update(s.copyWith(
                           hiddenApps: s.hiddenApps
-                              .where((p) => p != app.packageName)
+                              .where((p) =>
+                                  p != app.launcherKey && p != app.packageName)
                               .toList(),
                         ));
                       }

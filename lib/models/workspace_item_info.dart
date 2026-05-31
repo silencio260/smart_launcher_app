@@ -35,4 +35,7 @@ class WorkspaceItemInfo extends ItemInfo {
     this.isSystemApp = false,
     this.personKeys = const [],
   });
+
+  String get launcherKey =>
+      launcherFeatureId == null ? packageName : (componentName ?? packageName);
 }

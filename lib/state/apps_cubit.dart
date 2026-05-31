@@ -33,11 +33,13 @@ class AppsState extends Equatable {
   // reference is unchanged so toggling `loading` doesn't rebuild a map of
   // potentially thousands of entries.
   final Map<String, AppInfo> appsByPackage;
+  final Map<String, AppInfo> appsByKey;
 
   const AppsState._({
     required this.apps,
     required this.loading,
     required this.appsByPackage,
+    required this.appsByKey,
   });
 
   factory AppsState({
@@ -48,6 +50,7 @@ class AppsState extends Equatable {
       apps: apps,
       loading: loading,
       appsByPackage: {for (final a in apps) a.packageName: a},
+      appsByKey: {for (final a in apps) a.launcherKey: a},
     );
   }
 
@@ -59,10 +62,14 @@ class AppsState extends Equatable {
     final nextMap = identical(nextApps, this.apps)
         ? appsByPackage
         : {for (final a in nextApps) a.packageName: a};
+    final nextKeyMap = identical(nextApps, this.apps)
+        ? appsByKey
+        : {for (final a in nextApps) a.launcherKey: a};
     return AppsState._(
       apps: nextApps,
       loading: loading ?? this.loading,
       appsByPackage: nextMap,
+      appsByKey: nextKeyMap,
     );
   }
 
@@ -304,12 +311,34 @@ class AppsCubit extends Cubit<AppsState> {
   }
 
   List<AppInfo> _withInternalFeatures(List<AppInfo> nativeApps) {
-    final filteredNative = nativeApps
-        .where(
-            (app) => !LauncherFeatureCatalog.isFeaturePackage(app.packageName))
-        .toList(growable: false);
+    final featureIds = <String>{};
+    final nativeFeatures = <AppInfo>[];
+    final filteredNative = <AppInfo>[];
+    for (final app in nativeApps) {
+      final featureId = LauncherFeatureCatalog.idForComponent(
+            app.appComponentName,
+          ) ??
+          app.launcherFeatureId;
+      if (featureId == null) {
+        filteredNative.add(app);
+        continue;
+      }
+      nativeFeatures.add(AppInfo(
+        id: app.id,
+        packageName: app.packageName,
+        appComponentName: app.appComponentName,
+        title: app.title,
+        icon: app.icon,
+        iconPath: app.iconPath,
+        launcherFeatureId: featureId,
+      ));
+      featureIds.add(featureId);
+    }
     return [
-      ...LauncherFeatureCatalog.apps,
+      ...nativeFeatures,
+      ...LauncherFeatureCatalog.apps.where(
+        (feature) => !featureIds.contains(feature.launcherFeatureId),
+      ),
       ...filteredNative,
     ];
   }

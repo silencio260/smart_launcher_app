@@ -410,22 +410,22 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     final pages = state.pages.isEmpty
         ? <WorkspacePage>[_emptyPage()]
         : List<WorkspacePage>.from(state.pages);
-    final existingPackages = <String>{};
+    final existingKeys = <String>{};
     for (final page in pages) {
       for (final content in page.slots.values) {
-        if (content is AppSlot) existingPackages.add(content.item.packageName);
+        if (content is AppSlot) existingKeys.add(content.item.launcherKey);
       }
     }
     for (final folder in state.folders.values) {
       for (final item in folder.contents) {
-        existingPackages.add(item.packageName);
+        existingKeys.add(item.launcherKey);
       }
     }
 
     final pageZeroSlots = Map<int, SlotContent>.from(pages.first.slots);
     var changed = false;
     for (final feature in LauncherFeatureCatalog.homeFeatures) {
-      if (existingPackages.contains(feature.packageName)) continue;
+      if (existingKeys.contains(feature.componentName)) continue;
       final slot = findFirstAppFit(
         WorkspacePage(pageZeroSlots),
         columns,
@@ -433,7 +433,7 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
       );
       if (slot == null) break;
       pageZeroSlots[slot] = AppSlot(feature.toWorkspaceItem(screenId: 0));
-      existingPackages.add(feature.packageName);
+      existingKeys.add(feature.componentName);
       changed = true;
     }
 
@@ -1663,6 +1663,8 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
           componentName: cMap['componentName'] as String?,
           title: cMap['title'] as String?,
           launcherFeatureId: cMap['launcherFeatureId'] as String? ??
+              LauncherFeatureCatalog.idForComponent(
+                  cMap['componentName'] as String?) ??
               LauncherFeatureCatalog.idForPackage(
                   cMap['packageName'] as String),
         );
@@ -1702,6 +1704,8 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
           componentName: data['componentName'] as String?,
           title: data['title'] as String?,
           launcherFeatureId: data['launcherFeatureId'] as String? ??
+              LauncherFeatureCatalog.idForComponent(
+                  data['componentName'] as String?) ??
               LauncherFeatureCatalog.idForPackage(
                   data['packageName'] as String),
         );

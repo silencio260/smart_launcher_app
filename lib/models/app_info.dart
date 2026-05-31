@@ -38,10 +38,13 @@ class AppInfo extends ItemInfo {
               ? Uint8List.fromList(List<int>.from(rawIcon))
               : null,
       iconPath: map['iconPath'] as String?,
+      launcherFeatureId: map['launcherFeatureId'] as String?,
     );
   }
 
   String get name => title ?? packageName;
 
   bool get isInternalFeature => launcherFeatureId != null;
+
+  String get launcherKey => isInternalFeature ? appComponentName : packageName;
 }

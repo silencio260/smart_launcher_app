@@ -209,7 +209,7 @@ object AfterCallOverlay {
             setPadding(pad, pad, pad, pad)
             background = GradientDrawable().apply {
                 cornerRadius = dp(ctx, 22f).toFloat()
-                setColor(Color.WHITE)
+                setColor(Color.parseColor("#1C1C1E"))
             }
             // Swallow taps so they don't fall through to the scrim and dismiss.
             isClickable = true
@@ -222,7 +222,7 @@ object AfterCallOverlay {
         header.addView(
             TextView(ctx).apply {
                 text = "Call ended"
-                setTextColor(Color.parseColor("#1E1E1E"))
+                setTextColor(Color.WHITE)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
             },
@@ -234,22 +234,26 @@ object AfterCallOverlay {
         card.addView(
             TextView(ctx).apply {
                 text = "Quick actions"
-                setTextColor(Color.parseColor("#6B6B6B"))
+                setTextColor(Color.parseColor("#8E8E93"))
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
                 setPadding(0, dp(ctx, 4f), 0, dp(ctx, 16f))
             },
         )
 
         val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-        row.addView(actionItem(ctx, "📅", "Calendar", "#3B82F6") {
+        row.addView(actionItem(ctx, "⏰", "Alarm", "#F5A623") {
+            launchFeature(ctx, "features.ClockActivity")
+            dismiss()
+        })
+        row.addView(actionItem(ctx, "＋", "Calendar", "#3B82F6") {
             openCalendar(ctx)
             dismiss()
         })
-        row.addView(actionItem(ctx, "🔒", "Vault", "#8B5CF6") {
+        row.addView(actionItem(ctx, "⌁", "Vault", "#14B8A6") {
             launchApp(ctx, ACTION_VAULT)
             dismiss()
         })
-        row.addView(actionItem(ctx, "📝", "Note", "#10B981") {
+        row.addView(actionItem(ctx, "✎", "Note", "#8B5CF6") {
             launchApp(ctx, ACTION_NOTE)
             dismiss()
         })
@@ -263,11 +267,11 @@ object AfterCallOverlay {
         return TextView(ctx).apply {
             text = "✕"
             gravity = Gravity.CENTER
-            setTextColor(Color.parseColor("#6B6B6B"))
+            setTextColor(Color.parseColor("#8E8E93"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#EFEFEF"))
+                setColor(Color.parseColor("#2A2A2D"))
             }
             layoutParams = LinearLayout.LayoutParams(size, size)
             isClickable = true
@@ -296,7 +300,7 @@ object AfterCallOverlay {
         val caption = TextView(ctx).apply {
             text = label
             gravity = Gravity.CENTER
-            setTextColor(Color.parseColor("#1E1E1E"))
+            setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             setPadding(0, dp(ctx, 6f), 0, 0)
         }
@@ -332,6 +336,17 @@ object AfterCallOverlay {
             val intent = Intent(ctx, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 .putExtra(EXTRA_ACTION, action)
+            ctx.startActivity(intent)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun launchFeature(ctx: Context, alias: String) {
+        try {
+            val intent = Intent(Intent.ACTION_MAIN)
+                .addCategory(Intent.CATEGORY_LAUNCHER)
+                .setClassName(ctx.packageName, "${ctx.packageName}.$alias")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             ctx.startActivity(intent)
         } catch (_: Exception) {
         }
