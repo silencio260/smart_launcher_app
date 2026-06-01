@@ -126,12 +126,21 @@ class ClockAlarmRecord {
 const Object _unset = Object();
 
 class ClockRepository {
+  /// Reserved id for the throwaway "test alarm" fired from the Alarms tab. It
+  /// is never persisted as a saved alarm and is skipped by the fired-alarm
+  /// sync, so it never shows up in the list or disables a real alarm.
+  static const String testAlarmId = '__alarm_test__';
+
   Box get _alarms => FeatureHiveStore.box(FeatureHiveBoxes.clockAlarms);
   Box get _cities => FeatureHiveStore.box(FeatureHiveBoxes.clockWorldCities);
   Box get _timers => FeatureHiveStore.box(FeatureHiveBoxes.clockTimerPresets);
 
   List<ClockAlarmRecord> alarms() =>
-      _alarms.values.whereType<Map>().map(ClockAlarmRecord.fromMap).toList()
+      _alarms.values
+          .whereType<Map>()
+          .map(ClockAlarmRecord.fromMap)
+          .where((a) => a.id != testAlarmId)
+          .toList()
         ..sort((a, b) => a.hour == b.hour
             ? a.minute.compareTo(b.minute)
             : a.hour.compareTo(b.hour));
@@ -227,6 +236,7 @@ class ClockRepository {
     try {
       final fired = await LauncherService.consumeFiredAlarms();
       for (final id in fired) {
+        if (id == testAlarmId) continue;
         final existing = alarm(id);
         if (existing != null && existing.repeatDays.isEmpty && existing.enabled) {
           await saveAlarm(existing.copyWith(enabled: false));

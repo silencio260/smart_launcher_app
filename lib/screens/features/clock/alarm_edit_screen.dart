@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../data/mini_app_repositories.dart';
@@ -83,6 +84,9 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
 
   Future<void> _save() async {
     final record = _build();
+    // An alarm that can't post a notification can't surface its ring UI on
+    // Android 13+, so make sure we've asked before scheduling.
+    await _ensureNotificationPermission();
     final scheduled = await widget.repo.saveAndSchedule(record);
     if (!mounted) return;
     if (!scheduled) {
@@ -95,6 +99,16 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
         SnackBar(content: Text('Alarm set ${ClockService.humanizeUntil(next)}')),
       );
       Navigator.pop(context, true);
+    }
+  }
+
+  /// Asks for POST_NOTIFICATIONS the first time it's needed. If the user has
+  /// permanently denied it, the request is a no-op and the Alarms-tab setup
+  /// banner steers them to settings instead.
+  Future<void> _ensureNotificationPermission() async {
+    final status = await Permission.notification.status;
+    if (!status.isGranted && !status.isPermanentlyDenied) {
+      await Permission.notification.request();
     }
   }
 

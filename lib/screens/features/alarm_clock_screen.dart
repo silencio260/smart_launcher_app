@@ -38,6 +38,9 @@ class _AlarmClockScreenState extends State<AlarmClockScreen>
   bool _fullScreen = true;
   bool _battery = true;
 
+  // Only auto-prompt for notifications once per app session.
+  static bool _notificationPromptShown = false;
+
   @override
   void initState() {
     super.initState();
@@ -51,6 +54,20 @@ class _AlarmClockScreenState extends State<AlarmClockScreen>
       if (mounted) setState(() {});
     });
     _loadPermissions();
+    _maybePromptNotifications();
+  }
+
+  /// Notifications gate the entire ring UI on Android 13+, so ask up front the
+  /// first time the clock is opened rather than waiting for the user to notice
+  /// the setup banner.
+  Future<void> _maybePromptNotifications() async {
+    if (_notificationPromptShown) return;
+    _notificationPromptShown = true;
+    final status = await Permission.notification.status;
+    if (!status.isGranted && !status.isPermanentlyDenied) {
+      await Permission.notification.request();
+      await _loadPermissions();
+    }
   }
 
   @override
@@ -94,6 +111,12 @@ class _AlarmClockScreenState extends State<AlarmClockScreen>
     return MiniAppScaffold(
       title: titles[_tab],
       actions: [
+        if (_tab == 0)
+          IconButton(
+            tooltip: 'Test alarm in 5s',
+            icon: const Icon(Icons.play_circle_outline, color: miniAppAccent),
+            onPressed: _testAlarm,
+          ),
         if (_tab == 0)
           IconButton(
             icon: const Icon(Icons.add, color: miniAppAccent),
@@ -152,6 +175,39 @@ class _AlarmClockScreenState extends State<AlarmClockScreen>
   Future<void> _toggleAlarm(ClockAlarmRecord alarm, bool value) async {
     await _clock.saveAndSchedule(alarm.copyWith(enabled: value));
     if (mounted) setState(() {});
+  }
+
+  /// Fires a throwaway alarm ~5s out through the real native path so the user
+  /// can verify the full notification → full-screen → Snooze/Dismiss flow (and
+  /// be prompted for any missing permission) without scheduling and waiting.
+  Future<void> _testAlarm() async {
+    if (!await LauncherService.canScheduleExactAlarms()) {
+      await LauncherService.requestExactAlarmAccess();
+    }
+    final notif = await Permission.notification.status;
+    if (!notif.isGranted && !notif.isPermanentlyDenied) {
+      await Permission.notification.request();
+    }
+    await _loadPermissions();
+    final trigger = DateTime.now().add(const Duration(seconds: 5));
+    final ok = await LauncherService.scheduleSmartAlarm(
+      id: ClockRepository.testAlarmId,
+      triggerAtMillis: trigger.millisecondsSinceEpoch,
+      label: 'Test alarm',
+      hour: trigger.hour,
+      minute: trigger.minute,
+      vibrate: true,
+      autoSilenceMinutes: 1,
+      kind: 'alarm',
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok
+            ? 'Test alarm rings in 5s — lock the phone to see the full-screen ring.'
+            : 'Could not schedule. Allow exact alarms, then try again.'),
+      ),
+    );
   }
 
   Widget _buildAlarms() {
@@ -637,11 +693,13 @@ class _SetupCard extends StatelessWidget {
             'after a reboot.',
             style: TextStyle(color: miniAppMuted, height: 1.3),
           ),
+          if (!notifications) ...[
+            const SizedBox(height: 12),
+            _NotificationBanner(onAllow: onFixNotifications),
+          ],
           const SizedBox(height: 8),
           if (!exactAlarm)
             _SetupRow('Exact alarms', 'Fix', onFixExact),
-          if (!notifications)
-            _SetupRow('Notifications', 'Allow', onFixNotifications),
           if (!fullScreen)
             _SetupRow('Full-screen alarms', 'Allow', onFixFullScreen),
           if (!battery)
@@ -668,6 +726,48 @@ class _SetupRow extends StatelessWidget {
         Expanded(child: Text(label)),
         TextButton(onPressed: onTap, child: Text(action)),
       ],
+    );
+  }
+}
+
+/// Prominent, can't-miss warning shown when notifications are denied — without
+/// this permission the alarm rings with no notification and no full-screen UI,
+/// so it gets a banner rather than a quiet pill.
+class _NotificationBanner extends StatelessWidget {
+  final VoidCallback onAllow;
+
+  const _NotificationBanner({required this.onAllow});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF4A1E1E),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.6)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.notifications_off_outlined,
+              color: Colors.redAccent),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              "Alarms can't alert you until notifications are allowed.",
+              style: TextStyle(
+                  color: Colors.white,
+                  height: 1.3,
+                  fontWeight: FontWeight.w600),
+            ),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: onAllow,
+            child: const Text('Allow'),
+          ),
+        ],
+      ),
     );
   }
 }
