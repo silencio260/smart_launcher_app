@@ -37,8 +37,12 @@ class AlarmRingActivity : Activity() {
         const val EXTRA_LABEL = "alarm_label"
         const val EXTRA_KIND = "alarm_kind"
 
-        private const val ACCENT = 0xFFF5A623.toInt()
+        // Black & white clock theme (matches the Flutter clock app): the
+        // primary action is a white pill with black text, secondary is the
+        // dark surface, and labels are muted gray. No orange accent.
+        private const val ACCENT = 0xFFFFFFFF.toInt()
         private const val SURFACE = 0xFF1C1C1E.toInt()
+        private const val MUTED = 0xFF8E8E93.toInt()
 
         fun ringIntent(context: Context, id: String, label: String, kind: String): Intent =
             Intent(context, AlarmRingActivity::class.java)
@@ -112,7 +116,7 @@ class AlarmRingActivity : Activity() {
         root.addView(
             TextView(this).apply {
                 text = if (kind == "timer") "TIMER" else "ALARM"
-                setTextColor(ACCENT)
+                setTextColor(MUTED)
                 textSize = 16f
                 letterSpacing = 0.3f
                 gravity = Gravity.CENTER

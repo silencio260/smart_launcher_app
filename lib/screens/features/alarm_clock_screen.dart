@@ -615,21 +615,13 @@ class _AlarmClockScreenState extends State<AlarmClockScreen>
   Widget _buildTimerSetup() {
     final presetSeconds = _pickerDuration.inSeconds;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 120),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 120),
       children: [
-        SizedBox(
-          height: 180,
-          child: CupertinoTheme(
-            data: const CupertinoThemeData(brightness: Brightness.dark),
-            child: CupertinoTimerPicker(
-              mode: CupertinoTimerPickerMode.hms,
-              initialTimerDuration: _pickerDuration,
-              onTimerDurationChanged: (value) =>
-                  setState(() => _pickerDuration = value),
-            ),
-          ),
+        _DurationWheel(
+          duration: _pickerDuration,
+          onChanged: (value) => setState(() => _pickerDuration = value),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 24),
         TextField(
           controller: _timerLabel,
           cursorColor: Colors.white,
@@ -1029,6 +1021,183 @@ class _LapHeader extends StatelessWidget {
 
 /// Circular timer preset (e.g. "Focus" / 25 m). Selected → white ring; else a
 /// flat surface circle.
+/// One UI-style Hours / Minutes / Seconds duration picker: three large looping
+/// wheels under fixed column labels, with bright centred digits and dimmed
+/// neighbours separated by colons. Reports the combined [Duration] on change
+/// and re-syncs the wheels when [duration] is set externally (preset taps).
+class _DurationWheel extends StatefulWidget {
+  final Duration duration;
+  final ValueChanged<Duration> onChanged;
+
+  const _DurationWheel({required this.duration, required this.onChanged});
+
+  @override
+  State<_DurationWheel> createState() => _DurationWheelState();
+}
+
+class _DurationWheelState extends State<_DurationWheel> {
+  static const double _itemExtent = 53;
+  static const double _height = 240;
+
+  late int _h = widget.duration.inHours.clamp(0, 99);
+  late int _m = widget.duration.inMinutes.remainder(60);
+  late int _s = widget.duration.inSeconds.remainder(60);
+
+  late final FixedExtentScrollController _hCtl =
+      FixedExtentScrollController(initialItem: _h);
+  late final FixedExtentScrollController _mCtl =
+      FixedExtentScrollController(initialItem: _m);
+  late final FixedExtentScrollController _sCtl =
+      FixedExtentScrollController(initialItem: _s);
+
+  @override
+  void didUpdateWidget(covariant _DurationWheel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final h = widget.duration.inHours.clamp(0, 99);
+    final m = widget.duration.inMinutes.remainder(60);
+    final s = widget.duration.inSeconds.remainder(60);
+    // Only react to external changes (e.g. a preset tap), not to the value we
+    // just reported ourselves while scrolling.
+    if (h != _h) _hCtl.jumpToItem(h);
+    if (m != _m) _mCtl.jumpToItem(m);
+    if (s != _s) _sCtl.jumpToItem(s);
+    if (h != _h || m != _m || s != _s) {
+      setState(() {
+        _h = h;
+        _m = m;
+        _s = s;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _hCtl.dispose();
+    _mCtl.dispose();
+    _sCtl.dispose();
+    super.dispose();
+  }
+
+  void _report() => widget.onChanged(
+      Duration(hours: _h, minutes: _m, seconds: _s));
+
+  Widget _label(String text) => Expanded(
+        child: Center(
+          child: Text(
+            text,
+            style: const TextStyle(
+                color: miniAppMuted, fontSize: 16, fontWeight: FontWeight.w400),
+          ),
+        ),
+      );
+
+  Widget _colon() => SizedBox(
+        width: 18,
+        height: _height,
+        child: const Center(
+          child: Text(
+            ':',
+            style: TextStyle(
+                color: Colors.white, fontSize: 32, fontWeight: FontWeight.w300),
+          ),
+        ),
+      );
+
+  Widget _wheel({
+    required FixedExtentScrollController controller,
+    required int count,
+    required int selected,
+    required ValueChanged<int> onChanged,
+  }) {
+    return Expanded(
+      child: CupertinoPicker(
+        scrollController: controller,
+        itemExtent: _itemExtent,
+        looping: true,
+        diameterRatio: 1.4,
+        backgroundColor: Colors.transparent,
+        selectionOverlay: const SizedBox.shrink(),
+        onSelectedItemChanged: onChanged,
+        children: [
+          for (int i = 0; i < count; i++)
+            Center(
+              child: Text(
+                i.toString().padLeft(2, '0'),
+                style: TextStyle(
+                  fontSize: i == selected ? 37 : 24,
+                  fontWeight:
+                      i == selected ? FontWeight.w500 : FontWeight.w300,
+                  color: i == selected ? Colors.white : miniAppMuted,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CupertinoTheme(
+      data: const CupertinoThemeData(brightness: Brightness.dark),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              _label('Hours'),
+              const SizedBox(width: 18),
+              _label('Minutes'),
+              const SizedBox(width: 18),
+              _label('Seconds'),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: _height,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _wheel(
+                  controller: _hCtl,
+                  count: 100,
+                  selected: _h,
+                  onChanged: (i) {
+                    if (i == _h) return;
+                    setState(() => _h = i);
+                    _report();
+                  },
+                ),
+                _colon(),
+                _wheel(
+                  controller: _mCtl,
+                  count: 60,
+                  selected: _m,
+                  onChanged: (i) {
+                    if (i == _m) return;
+                    setState(() => _m = i);
+                    _report();
+                  },
+                ),
+                _colon(),
+                _wheel(
+                  controller: _sCtl,
+                  count: 60,
+                  selected: _s,
+                  onChanged: (i) {
+                    if (i == _s) return;
+                    setState(() => _s = i);
+                    _report();
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _PresetCircle extends StatelessWidget {
   final String name;
   final int seconds;
