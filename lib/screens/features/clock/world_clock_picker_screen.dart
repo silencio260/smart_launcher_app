@@ -73,7 +73,7 @@ class _WorldClockPickerScreenState extends State<WorldClockPickerScreen> {
                   subtitle: Text(city.country,
                       style: const TextStyle(color: miniAppMuted)),
                   trailing: added
-                      ? const Icon(Icons.check, color: miniAppAccent)
+                      ? const Icon(Icons.check, color: Colors.white)
                       : const Icon(Icons.add, color: miniAppMuted),
                   onTap: added ? null : () => _add(city),
                 );

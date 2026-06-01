@@ -7,6 +7,7 @@ import '../../../data/mini_app_repositories.dart';
 import '../../../services/clock_service.dart';
 import '../../../services/launcher_service.dart';
 import '../mini_app_chrome.dart';
+import 'clock_theme.dart';
 import 'ringtone_picker_screen.dart';
 
 /// Full create/edit screen for a single alarm. Returns true if the alarm list
@@ -200,7 +201,7 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
               ListTile(
                 title: Text(labelOf(option)),
                 trailing: option == current
-                    ? const Icon(Icons.check, color: miniAppAccent)
+                    ? const Icon(Icons.check, color: Colors.white)
                     : null,
                 onTap: () => Navigator.pop(context, option),
               ),
@@ -215,118 +216,164 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
   Widget build(BuildContext context) {
     return MiniAppScaffold(
       title: _isNew ? 'New alarm' : 'Edit alarm',
-      actions: [
-        TextButton(onPressed: _save, child: const Text('Save')),
-      ],
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 48),
-        children: [
-          SizedBox(
-            height: 180,
-            child: CupertinoTheme(
-              data: const CupertinoThemeData(brightness: Brightness.dark),
-              child: CupertinoDatePicker(
-                mode: CupertinoDatePickerMode.time,
-                use24hFormat: MediaQuery.of(context).alwaysUse24HourFormat,
-                initialDateTime:
-                    DateTime(2024, 1, 1, _time.hour, _time.minute),
-                onDateTimeChanged: (value) =>
-                    setState(() => _time = TimeOfDay.fromDateTime(value)),
+      bottomNavigationBar: _buildActionBar(context),
+      child: Theme(
+        data: clockThemeOf(context),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+          children: [
+            SizedBox(
+              height: 180,
+              child: CupertinoTheme(
+                data: const CupertinoThemeData(brightness: Brightness.dark),
+                child: CupertinoDatePicker(
+                  mode: CupertinoDatePickerMode.time,
+                  use24hFormat: MediaQuery.of(context).alwaysUse24HourFormat,
+                  initialDateTime:
+                      DateTime(2024, 1, 1, _time.hour, _time.minute),
+                  onDateTimeChanged: (value) =>
+                      setState(() => _time = TimeOfDay.fromDateTime(value)),
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 12),
-          _RepeatPicker(
-            selected: _repeatDays,
-            labels: _dayLabels,
-            onToggle: (day) => setState(() {
-              if (!_repeatDays.add(day)) _repeatDays.remove(day);
-            }),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            ClockService.repeatLabel(_repeatDays.toList()..sort()),
-            style: const TextStyle(color: miniAppMuted),
-          ),
-          const SizedBox(height: 18),
-          TextField(
-            controller: _label,
-            decoration: const InputDecoration(
-              labelText: 'Label',
-              border: OutlineInputBorder(),
+            const SizedBox(height: 12),
+            _RepeatPicker(
+              selected: _repeatDays,
+              labels: _dayLabels,
+              onToggle: (day) => setState(() {
+                if (!_repeatDays.add(day)) _repeatDays.remove(day);
+              }),
             ),
-          ),
-          const SizedBox(height: 18),
-          MiniCard(
-            padding: EdgeInsets.zero,
-            child: Column(
-              children: [
-                _TapRow(
-                  icon: Icons.music_note,
-                  label: 'Sound',
-                  value: _ringtoneTitle,
-                  onTap: _pickRingtone,
-                ),
-                const Divider(height: 1, color: miniAppSurface2),
-                _SwitchRow(
-                  icon: Icons.vibration,
-                  label: 'Vibrate',
-                  value: _vibrate,
-                  onChanged: (v) => setState(() => _vibrate = v),
-                ),
-                const Divider(height: 1, color: miniAppSurface2),
-                _SwitchRow(
-                  icon: Icons.volume_up_outlined,
-                  label: 'Increase volume gradually',
-                  value: _gradualVolume,
-                  onChanged: (v) => setState(() => _gradualVolume = v),
-                ),
-                const Divider(height: 1, color: miniAppSurface2),
-                _TapRow(
-                  icon: Icons.snooze,
-                  label: 'Snooze',
-                  value: '$_snoozeMinutes min',
-                  onTap: () => _pickFromOptions(
-                    title: 'Snooze duration',
-                    options: const [1, 5, 10, 15, 20, 30],
-                    current: _snoozeMinutes,
-                    labelOf: (m) => '$m min',
-                    onSelected: (m) => setState(() => _snoozeMinutes = m),
-                  ),
-                ),
-                const Divider(height: 1, color: miniAppSurface2),
-                _TapRow(
-                  icon: Icons.timer_off_outlined,
-                  label: 'Silence after',
-                  value: _autoSilenceMinutes == 0
-                      ? 'Never'
-                      : '$_autoSilenceMinutes min',
-                  onTap: () => _pickFromOptions(
-                    title: 'Silence after',
-                    options: const [0, 1, 5, 10, 15, 30],
-                    current: _autoSilenceMinutes,
-                    labelOf: (m) => m == 0 ? 'Never' : '$m min',
-                    onSelected: (m) =>
-                        setState(() => _autoSilenceMinutes = m),
-                  ),
-                ),
-              ],
+            const SizedBox(height: 8),
+            Text(
+              ClockService.repeatLabel(_repeatDays.toList()..sort()),
+              style: const TextStyle(color: miniAppMuted),
             ),
-          ),
-          if (!_isNew) ...[
-            const SizedBox(height: 24),
-            OutlinedButton.icon(
-              onPressed: _delete,
-              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-              label: const Text('Delete alarm',
-                  style: TextStyle(color: Colors.redAccent)),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Colors.redAccent),
-                padding: const EdgeInsets.symmetric(vertical: 14),
+            const SizedBox(height: 18),
+            TextField(
+              controller: _label,
+              cursorColor: Colors.white,
+              decoration: const InputDecoration(
+                labelText: 'Alarm name',
+                border: UnderlineInputBorder(),
+                focusedBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: Colors.white),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            MiniCard(
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  _TapRow(
+                    icon: Icons.music_note,
+                    label: 'Alarm sound',
+                    value: _ringtoneTitle,
+                    onTap: _pickRingtone,
+                  ),
+                  const Divider(height: 1, color: miniAppSurface2),
+                  _SwitchRow(
+                    icon: Icons.vibration,
+                    label: 'Vibration',
+                    value: _vibrate,
+                    onChanged: (v) => setState(() => _vibrate = v),
+                  ),
+                  const Divider(height: 1, color: miniAppSurface2),
+                  _SwitchRow(
+                    icon: Icons.volume_up_outlined,
+                    label: 'Increase volume gradually',
+                    value: _gradualVolume,
+                    onChanged: (v) => setState(() => _gradualVolume = v),
+                  ),
+                  const Divider(height: 1, color: miniAppSurface2),
+                  _TapRow(
+                    icon: Icons.snooze,
+                    label: 'Snooze',
+                    value: '$_snoozeMinutes min',
+                    onTap: () => _pickFromOptions(
+                      title: 'Snooze duration',
+                      options: const [1, 5, 10, 15, 20, 30],
+                      current: _snoozeMinutes,
+                      labelOf: (m) => '$m min',
+                      onSelected: (m) => setState(() => _snoozeMinutes = m),
+                    ),
+                  ),
+                  const Divider(height: 1, color: miniAppSurface2),
+                  _TapRow(
+                    icon: Icons.timer_off_outlined,
+                    label: 'Silence after',
+                    value: _autoSilenceMinutes == 0
+                        ? 'Never'
+                        : '$_autoSilenceMinutes min',
+                    onTap: () => _pickFromOptions(
+                      title: 'Silence after',
+                      options: const [0, 1, 5, 10, 15, 30],
+                      current: _autoSilenceMinutes,
+                      labelOf: (m) => m == 0 ? 'Never' : '$m min',
+                      onSelected: (m) =>
+                          setState(() => _autoSilenceMinutes = m),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (!_isNew) ...[
+              const SizedBox(height: 24),
+              OutlinedButton.icon(
+                onPressed: _delete,
+                icon:
+                    const Icon(Icons.delete_outline, color: Colors.redAccent),
+                label: const Text('Delete alarm',
+                    style: TextStyle(color: Colors.redAccent)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.redAccent),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Bottom Cancel | Save bar, matching the One UI alarm editor.
+  Widget _buildActionBar(BuildContext context) {
+    return SafeArea(
+      child: Container(
+        decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: miniAppSurface2, width: 1)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: const Text('Cancel',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              ),
+            ),
+            Expanded(
+              child: TextButton(
+                onPressed: _save,
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: const Text('Save',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               ),
             ),
           ],
-        ],
+        ),
       ),
     );
   }
@@ -354,12 +401,13 @@ class _RepeatPicker extends StatelessWidget {
             child: CircleAvatar(
               radius: 21,
               backgroundColor:
-                  selected.contains(i + 1) ? miniAppAccent : miniAppSurface,
+                  selected.contains(i + 1) ? Colors.white : miniAppSurface,
               child: Text(
                 labels[i].substring(0, 1),
                 style: TextStyle(
-                  color:
-                      selected.contains(i + 1) ? Colors.black : Colors.white,
+                  color: selected.contains(i + 1)
+                      ? Colors.black
+                      : miniAppMuted,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -386,7 +434,7 @@ class _TapRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon, color: miniAppAccent),
+      leading: Icon(icon, color: Colors.white),
       title: Text(label),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -420,7 +468,7 @@ class _SwitchRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SwitchListTile(
-      secondary: Icon(icon, color: miniAppAccent),
+      secondary: Icon(icon, color: Colors.white),
       title: Text(label),
       value: value,
       onChanged: onChanged,

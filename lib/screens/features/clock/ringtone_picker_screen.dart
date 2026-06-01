@@ -70,6 +70,7 @@ class _RingtonePickerScreenState extends State<RingtonePickerScreen> {
         TextButton(
           onPressed: () =>
               Navigator.pop(context, {'uri': _uri, 'title': _title}),
+          style: TextButton.styleFrom(foregroundColor: Colors.white),
           child: const Text('Done'),
         ),
       ],
@@ -79,7 +80,7 @@ class _RingtonePickerScreenState extends State<RingtonePickerScreen> {
           MiniCard(
             child: Row(
               children: [
-                const Icon(Icons.music_note, color: miniAppAccent),
+                const Icon(Icons.music_note, color: Colors.white),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -101,7 +102,7 @@ class _RingtonePickerScreenState extends State<RingtonePickerScreen> {
                     _previewing
                         ? Icons.stop_circle_outlined
                         : Icons.play_circle_outline,
-                    color: miniAppAccent,
+                    color: Colors.white,
                     size: 34,
                   ),
                 ),
@@ -148,10 +149,10 @@ class _OptionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-      leading: Icon(icon, color: miniAppAccent),
+      leading: Icon(icon, color: Colors.white),
       title: Text(title, style: const TextStyle(fontSize: 16)),
       trailing: selected
-          ? const Icon(Icons.check, color: miniAppAccent)
+          ? const Icon(Icons.check, color: Colors.white)
           : const Icon(Icons.chevron_right, color: miniAppMuted),
       onTap: onTap,
     );
