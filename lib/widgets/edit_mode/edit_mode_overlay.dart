@@ -4,10 +4,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/app_info.dart';
 import '../../models/folder_info.dart';
+import '../../models/launcher_feature.dart';
 import '../../models/launcher_settings.dart';
 import '../../models/workspace_item_info.dart';
 import '../../state/apps_cubit.dart';
 import '../../state/workspace_cubit.dart';
+import '../icons/feature_icon.dart';
 import '../icons/shaped_icon.dart';
 import 'threshold_reorderable_list.dart';
 
@@ -215,6 +217,8 @@ class _EditModeOverlayState extends State<EditModeOverlay>
       builder: (context, constraints) {
         final appsByPackage =
             context.select((AppsCubit cubit) => cubit.state.appsByPackage);
+        final appsByKey =
+            context.select((AppsCubit cubit) => cubit.state.appsByKey);
         // Show ~2 thumbnails per screen so dragging between slots feels natural.
         final viewH = constraints.maxHeight - 8; // vertical padding allowance
         final thumbH = viewH;
@@ -290,6 +294,7 @@ class _EditModeOverlayState extends State<EditModeOverlay>
                     folders: state.folders,
                     settings: widget.settings,
                     appsByPackage: appsByPackage,
+                    appsByKey: appsByKey,
                     onJump: () {
                       widget.onPageSelected(i);
                       _dismiss();
@@ -492,6 +497,7 @@ class _PageCard extends StatelessWidget {
   final WorkspacePage page;
   final Map<String, FolderInfo> folders;
   final Map<String, AppInfo> appsByPackage;
+  final Map<String, AppInfo> appsByKey;
   final LauncherSettings settings;
   final VoidCallback onJump;
 
@@ -499,6 +505,7 @@ class _PageCard extends StatelessWidget {
     required this.page,
     required this.folders,
     required this.appsByPackage,
+    required this.appsByKey,
     required this.settings,
     required this.onJump,
   });
@@ -525,6 +532,7 @@ class _PageCard extends StatelessWidget {
             page: page,
             folders: folders,
             appsByPackage: appsByPackage,
+            appsByKey: appsByKey,
             settings: settings,
           ),
         ),
@@ -569,12 +577,14 @@ class _PagePreview extends StatelessWidget {
   final WorkspacePage page;
   final Map<String, FolderInfo> folders;
   final Map<String, AppInfo> appsByPackage;
+  final Map<String, AppInfo> appsByKey;
   final LauncherSettings settings;
 
   const _PagePreview({
     required this.page,
     required this.folders,
     required this.appsByPackage,
+    required this.appsByKey,
     required this.settings,
   });
 
@@ -635,7 +645,7 @@ class _PagePreview extends StatelessWidget {
       case AppSlot(:final item):
         return _AppTile(
           item: item,
-          liveApp: appsByPackage[item.packageName],
+          liveApp: _liveAppFor(item),
           iconSize: iconSize,
           shape: settings.iconShape,
           showLabel: settings.showLabels,
@@ -645,6 +655,7 @@ class _PagePreview extends StatelessWidget {
         return _FolderTile(
           folder: folder,
           appsByPackage: appsByPackage,
+          appsByKey: appsByKey,
           iconSize: iconSize,
           shape: settings.iconShape,
           showLabel: settings.showLabels,
@@ -662,6 +673,12 @@ class _PagePreview extends StatelessWidget {
       case EmptySlot():
         return const SizedBox.shrink();
     }
+  }
+
+  AppInfo? _liveAppFor(WorkspaceItemInfo item) {
+    return appsByKey[item.launcherKey] ??
+        (item.componentName == null ? null : appsByKey[item.componentName]) ??
+        appsByPackage[item.packageName];
   }
 }
 
@@ -685,17 +702,29 @@ class _AppTile extends StatelessWidget {
     final label = item.title ?? liveApp?.name ?? '';
     final fontSize = (iconSize * 0.3).clamp(7.5, 10.0);
     final cacheKey = item.packageName.isEmpty ? null : item.packageName;
+    final featureId = item.launcherFeatureId ?? liveApp?.launcherFeatureId;
+    final componentName = item.componentName ?? liveApp?.appComponentName;
+    final useFeatureIcon = featureId != null ||
+        LauncherFeatureCatalog.artworkForComponent(componentName) != null;
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       mainAxisSize: MainAxisSize.min,
       children: [
-        ShapedIcon(
-          iconBytes: liveApp?.icon ?? item.icon,
-          iconPath: liveApp?.iconPath ?? item.iconPath,
-          cacheKey: cacheKey,
-          shape: shape,
-          size: iconSize,
-        ),
+        if (useFeatureIcon)
+          FeatureIcon(
+            featureId: featureId,
+            packageName: item.packageName,
+            componentName: componentName,
+            size: iconSize,
+          )
+        else
+          ShapedIcon(
+            iconBytes: liveApp?.icon ?? item.icon,
+            iconPath: liveApp?.iconPath ?? item.iconPath,
+            cacheKey: cacheKey,
+            shape: shape,
+            size: iconSize,
+          ),
         if (showLabel && label.isNotEmpty) ...[
           const SizedBox(height: 3),
           Padding(
@@ -721,6 +750,7 @@ class _AppTile extends StatelessWidget {
 class _FolderTile extends StatelessWidget {
   final FolderInfo? folder;
   final Map<String, AppInfo> appsByPackage;
+  final Map<String, AppInfo> appsByKey;
   final double iconSize;
   final String shape;
   final bool showLabel;
@@ -728,6 +758,7 @@ class _FolderTile extends StatelessWidget {
   const _FolderTile({
     required this.folder,
     required this.appsByPackage,
+    required this.appsByKey,
     required this.iconSize,
     required this.shape,
     required this.showLabel,
@@ -771,7 +802,7 @@ class _FolderTile extends StatelessWidget {
                         height: miniSize,
                         child: _FolderPreviewIcon(
                           item: item,
-                          liveApp: appsByPackage[item.packageName],
+                          liveApp: _liveAppFor(item),
                           shape: shape,
                           size: miniSize,
                         ),
@@ -799,6 +830,12 @@ class _FolderTile extends StatelessWidget {
       ],
     );
   }
+
+  AppInfo? _liveAppFor(WorkspaceItemInfo item) {
+    return appsByKey[item.launcherKey] ??
+        (item.componentName == null ? null : appsByKey[item.componentName]) ??
+        appsByPackage[item.packageName];
+  }
 }
 
 class _FolderPreviewIcon extends StatelessWidget {
@@ -817,6 +854,17 @@ class _FolderPreviewIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cacheKey = item.packageName.isEmpty ? null : item.packageName;
+    final featureId = item.launcherFeatureId ?? liveApp?.launcherFeatureId;
+    final componentName = item.componentName ?? liveApp?.appComponentName;
+    if (featureId != null ||
+        LauncherFeatureCatalog.artworkForComponent(componentName) != null) {
+      return FeatureIcon(
+        featureId: featureId,
+        packageName: item.packageName,
+        componentName: componentName,
+        size: size,
+      );
+    }
     return ShapedIcon(
       iconBytes: liveApp?.icon ?? item.icon,
       iconPath: liveApp?.iconPath ?? item.iconPath,
