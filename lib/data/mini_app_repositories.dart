@@ -957,6 +957,93 @@ class AppLockSecurityRepository {
   }
 }
 
+/// App Hider's own PIN/pattern + fingerprint credential, separate from the Vault
+/// and App Lock. Stored in the [FeatureHiveBoxes.hiddenSpace] box (alongside the
+/// disguise key, which it leaves untouched), using the same salted-SHA-256
+/// scheme as [VaultSecurityRepository] so the in-launcher setup/unlock flow can
+/// reuse the Vault's screens.
+///
+/// Unlike App Lock there is **no native mirror**: hiding apps is purely a
+/// launcher concern (the drawer/search read [LauncherSettings.hiddenApps]), so
+/// the credential only ever gates the in-app management screen.
+class AppHiderSecurityRepository {
+  Box get _box => FeatureHiveStore.box(FeatureHiveBoxes.hiddenSpace);
+
+  static const typePin = 'pin';
+  static const typePattern = 'pattern';
+
+  bool get isConfigured => (_box.get('hash') as String?)?.isNotEmpty ?? false;
+
+  /// `pin` or `pattern`. Defaults to `pin` before setup.
+  String get type => _box.get('type', defaultValue: typePin).toString();
+
+  bool get biometricEnabled =>
+      _box.get('biometric', defaultValue: false) as bool;
+
+  /// Grace window in ms during which re-opening App Hider skips the prompt.
+  /// 0 = always lock immediately.
+  int get autoLockMs => (_box.get('autoLockMs', defaultValue: 0) as num).toInt();
+
+  bool get withinGrace {
+    final grace = autoLockMs;
+    if (grace <= 0) return false;
+    final last = (_box.get('lastUnlockAt', defaultValue: 0) as num).toInt();
+    if (last == 0) return false;
+    return DateTime.now().millisecondsSinceEpoch - last < grace;
+  }
+
+  /// Hashes [code] with a fresh random salt and stores it under [type].
+  Future<void> setCredential(String type, String code) async {
+    final salt = _randomSalt();
+    await _box.put('type', type);
+    await _box.put('salt', salt);
+    await _box.put('hash', _hash(code, salt));
+    await _box.put('lastUnlockAt', 0);
+  }
+
+  bool verify(String code) {
+    final salt = _box.get('salt') as String?;
+    final hash = _box.get('hash') as String?;
+    if (salt == null || hash == null) return false;
+    return _constantTimeEquals(_hash(code, salt), hash);
+  }
+
+  Future<void> setBiometricEnabled(bool value) => _box.put('biometric', value);
+
+  Future<void> setAutoLockMs(int value) => _box.put('autoLockMs', value);
+
+  Future<void> markUnlocked() =>
+      _box.put('lastUnlockAt', DateTime.now().millisecondsSinceEpoch);
+
+  /// Removes the App Hider passcode. Leaves the `disguise` preference (and any
+  /// already-hidden apps, which live in [LauncherSettings]) untouched.
+  Future<void> clear() async {
+    await _box.delete('type');
+    await _box.delete('salt');
+    await _box.delete('hash');
+    await _box.delete('biometric');
+    await _box.delete('lastUnlockAt');
+  }
+
+  String _hash(String code, String salt) =>
+      sha256.convert(utf8.encode('$salt::$code')).toString();
+
+  String _randomSalt() {
+    final rnd = Random.secure();
+    final bytes = List<int>.generate(16, (_) => rnd.nextInt(256));
+    return base64Encode(bytes);
+  }
+
+  bool _constantTimeEquals(String a, String b) {
+    if (a.length != b.length) return false;
+    var diff = 0;
+    for (var i = 0; i < a.length; i++) {
+      diff |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+    }
+    return diff == 0;
+  }
+}
+
 class MiniAppPolicyRepository {
   Box get _hidden => FeatureHiveStore.box(FeatureHiveBoxes.hiddenSpace);
 
