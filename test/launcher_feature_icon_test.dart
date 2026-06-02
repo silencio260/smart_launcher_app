@@ -40,8 +40,7 @@ void main() {
     );
   });
 
-  testWidgets(
-      'feature fallback icon uses custom art instead of Material glyphs',
+  testWidgets('feature fallback icon uses PNG art instead of glyphs',
       (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
@@ -58,7 +57,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(FeatureIcon),
-        matching: find.byType(CustomPaint),
+        matching: find.byType(Image),
       ),
       findsOneWidget,
     );

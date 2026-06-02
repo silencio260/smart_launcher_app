@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../../data/mini_app_repositories.dart';
@@ -7,6 +9,7 @@ import 'mini_app_chrome.dart';
 import 'mini_app_kit.dart';
 import 'vault/vault_lock_screen.dart';
 import 'vault/vault_settings_screen.dart';
+import 'vault/vault_viewer_screen.dart';
 
 /// The vault: a simple, monochrome (alarm-themed) encrypted file locker. One
 /// default "All" folder; imports land there unless another folder is open.
@@ -42,6 +45,8 @@ class _FileLockerScreenState extends State<FileLockerScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    // Leaving the vault: drop any decrypted previews we wrote to cache.
+    LauncherService.clearVaultViewCache();
     super.dispose();
   }
 
@@ -58,6 +63,7 @@ class _FileLockerScreenState extends State<FileLockerScreen>
     // route (folder/settings) is on top.
     final isCurrent = ModalRoute.of(context)?.isCurrent ?? true;
     if (isCurrent && _unlocked && _sec.isConfigured && !_sec.withinGrace) {
+      LauncherService.clearVaultViewCache();
       setState(() => _unlocked = false);
     }
   }
@@ -80,7 +86,9 @@ class _FileLockerScreenState extends State<FileLockerScreen>
 
   Future<void> _import() async {
     _pendingImport = true;
-    await LauncherService.pickVaultFiles();
+    await LauncherService.pickVaultFiles(
+      deleteOriginals: _sec.removeOriginals,
+    );
   }
 
   Future<void> _newFolder() async {
@@ -286,7 +294,10 @@ class VaultFolderScreen extends StatefulWidget {
 class _VaultFolderScreenState extends State<VaultFolderScreen>
     with WidgetsBindingObserver {
   final _repo = VaultRepository();
+  final _sec = VaultSecurityRepository();
   final _selected = <String>{};
+  // Memoised decrypted previews so toggling selection doesn't re-decrypt.
+  final _thumbs = <String, Future<Uint8List?>>{};
   var _selecting = false;
   var _pendingImport = false;
 
@@ -295,6 +306,9 @@ class _VaultFolderScreenState extends State<VaultFolderScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
   }
+
+  Future<Uint8List?> _thumb(String id) =>
+      _thumbs.putIfAbsent(id, () => LauncherService.vaultThumbnail(id));
 
   @override
   void dispose() {
@@ -329,7 +343,17 @@ class _VaultFolderScreenState extends State<VaultFolderScreen>
 
   Future<void> _import() async {
     _pendingImport = true;
-    await LauncherService.pickVaultFiles();
+    await LauncherService.pickVaultFiles(
+      deleteOriginals: _sec.removeOriginals,
+    );
+  }
+
+  void _openViewer(int index) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VaultViewerScreen(items: _items, initialIndex: index),
+      ),
+    );
   }
 
   void _toggle(String id) {
@@ -507,13 +531,15 @@ class _VaultFolderScreenState extends State<VaultFolderScreen>
                     final id = item['id'].toString();
                     return _FileCard(
                       name: item['name']?.toString() ?? 'File',
+                      kind: item['kind']?.toString() ?? 'file',
+                      thumbnail: _thumb(id),
                       selecting: _selecting,
                       selected: _selected.contains(id),
                       onTap: () {
                         if (_selecting) {
                           _toggle(id);
                         } else {
-                          _enterSelection(id);
+                          _openViewer(index);
                         }
                       },
                       onLongPress: () => _enterSelection(id),
@@ -588,6 +614,8 @@ class _FolderCard extends StatelessWidget {
 
 class _FileCard extends StatelessWidget {
   final String name;
+  final String kind;
+  final Future<Uint8List?> thumbnail;
   final bool selecting;
   final bool selected;
   final VoidCallback onTap;
@@ -595,6 +623,8 @@ class _FileCard extends StatelessWidget {
 
   const _FileCard({
     required this.name,
+    required this.kind,
+    required this.thumbnail,
     required this.selecting,
     required this.selected,
     required this.onTap,
@@ -615,13 +645,7 @@ class _FileCard extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: Container(
-                    color: miniAppSurface2,
-                    alignment: Alignment.center,
-                    child: Icon(_fileIcon(name), color: Colors.white, size: 46),
-                  ),
-                ),
+                Expanded(child: _preview()),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
                   child: Text(
@@ -653,6 +677,33 @@ class _FileCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _preview() {
+    return FutureBuilder<Uint8List?>(
+      future: thumbnail,
+      builder: (context, snap) {
+        final bytes = snap.data;
+        if (bytes == null) {
+          return Container(
+            color: miniAppSurface2,
+            alignment: Alignment.center,
+            child: Icon(_fileIcon(name), color: Colors.white, size: 46),
+          );
+        }
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.memory(bytes, fit: BoxFit.cover),
+            if (kind == 'video')
+              const Center(
+                child: Icon(Icons.play_circle_fill,
+                    color: Colors.white70, size: 40),
+              ),
+          ],
+        );
+      },
     );
   }
 }

@@ -50,10 +50,12 @@ class LauncherFeature {
 class LauncherFeatureArtwork {
   final String id;
   final Color color;
+  final String assetPath;
 
   const LauncherFeatureArtwork({
     required this.id,
     required this.color,
+    required this.assetPath,
   });
 }
 
@@ -80,41 +82,49 @@ class LauncherFeatureCatalog {
   static const fileLockerArtwork = LauncherFeatureArtwork(
     id: 'file_locker',
     color: Color(0xFF101014),
+    assetPath: 'assets/feature_icons/ic_feature_file_locker.png',
   );
 
   static const appHiderArtwork = LauncherFeatureArtwork(
     id: 'app_hider',
     color: Color(0xFF101014),
+    assetPath: 'assets/feature_icons/ic_feature_app_hider.png',
   );
 
   static const appLockerArtwork = LauncherFeatureArtwork(
     id: 'app_locker',
     color: Color(0xFF111114),
+    assetPath: 'assets/feature_icons/ic_feature_app_locker.png',
   );
 
   static const clockArtwork = LauncherFeatureArtwork(
     id: 'clock',
     color: Color(0xFF0B0B0D),
+    assetPath: 'assets/feature_icons/ic_feature_clock.png',
   );
 
   static const calculatorArtwork = LauncherFeatureArtwork(
     id: 'calculator',
     color: Color(0xFF171719),
+    assetPath: 'assets/feature_icons/ic_feature_calculator.png',
   );
 
   static const notesArtwork = LauncherFeatureArtwork(
     id: 'notes',
     color: Color(0xFF312E81),
+    assetPath: 'assets/feature_icons/ic_feature_notes.png',
   );
 
   static const weatherArtwork = LauncherFeatureArtwork(
     id: 'weather',
     color: Color(0xFF075985),
+    assetPath: 'assets/feature_icons/ic_feature_weather.png',
   );
 
   static const browserArtwork = LauncherFeatureArtwork(
     id: 'browser',
     color: Color(0xFF172554),
+    assetPath: 'assets/feature_icons/ic_feature_browser.png',
   );
 
   static const fileLocker = LauncherFeature(

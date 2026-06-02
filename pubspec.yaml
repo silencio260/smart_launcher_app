@@ -27,6 +27,7 @@ dependencies:
   path_provider: ^2.1.4
   hive: ^2.2.3
   hive_flutter: ^1.1.0
+  video_player: ^2.9.2
   timezone: ^0.10.1
   flutter_timezone: ^5.1.0
 
@@ -37,3 +38,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/feature_icons/

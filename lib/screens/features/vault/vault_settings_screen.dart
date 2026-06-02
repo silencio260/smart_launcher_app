@@ -97,6 +97,21 @@ class _VaultSettingsScreenState extends State<VaultSettingsScreen> {
               ),
             ),
             const SizedBox(height: 18),
+            const MiniSectionHeader('Privacy'),
+            MiniFeatureRow(
+              icon: Icons.hide_image_outlined,
+              iconColor: Colors.white,
+              title: 'Remove originals after import',
+              subtitle: 'Delete imported files from your gallery',
+              trailing: Switch(
+                value: _sec.removeOriginals,
+                onChanged: (value) async {
+                  await _sec.setRemoveOriginals(value);
+                  setState(() {});
+                },
+              ),
+            ),
+            const SizedBox(height: 18),
             const MiniSectionHeader('Auto-lock'),
             MiniFeatureRow(
               icon: Icons.lock_clock_outlined,

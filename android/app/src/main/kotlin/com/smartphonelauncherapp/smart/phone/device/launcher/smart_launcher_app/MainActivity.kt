@@ -11,6 +11,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.AfterCallChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.AlarmChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.AppInstallEventChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.AppLockChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.AppsChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.CalendarChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.ContactsChannel
@@ -93,6 +94,7 @@ class MainActivity : FlutterActivity() {
 
         AppsChannel(this).register(messenger)
         SystemChannel(this).register(messenger)
+        AppLockChannel(this).register(messenger)
         WallpaperChannel(this).register(messenger)
         notificationChannel = NotificationChannel(this).also { it.register(messenger) }
         ContactsChannel(this).register(messenger)

@@ -729,6 +729,8 @@ class VaultRepository {
       'albumId': target,
       'name': name,
       'size': data['size'] ?? 0,
+      'kind': data['kind']?.toString() ?? 'file',
+      'mime': data['mime']?.toString() ?? '',
       'createdAt': data['createdAt'] ?? DateTime.now().millisecondsSinceEpoch,
     });
   }
@@ -754,6 +756,8 @@ class VaultRepository {
         'albumId': target,
         'name': file['name']?.toString() ?? 'Locked file',
         'size': file['size'] ?? 0,
+        'kind': file['kind']?.toString() ?? 'file',
+        'mime': file['mime']?.toString() ?? '',
         'createdAt':
             file['createdAt'] ?? DateTime.now().millisecondsSinceEpoch,
       });
@@ -780,6 +784,11 @@ class VaultSecurityRepository {
 
   bool get biometricEnabled =>
       _box.get('biometric', defaultValue: false) as bool;
+
+  /// When true, importing a file deletes the original from the gallery (a true
+  /// "hide"). Defaults to on. On Android 11+ the system shows a confirm dialog.
+  bool get removeOriginals =>
+      _box.get('removeOriginals', defaultValue: true) as bool;
 
   /// Grace window in ms during which re-opening the vault skips the prompt.
   /// 0 = always lock immediately.
@@ -812,10 +821,109 @@ class VaultSecurityRepository {
   Future<void> setBiometricEnabled(bool value) =>
       _box.put('biometric', value);
 
+  Future<void> setRemoveOriginals(bool value) =>
+      _box.put('removeOriginals', value);
+
   Future<void> setAutoLockMs(int value) => _box.put('autoLockMs', value);
 
   Future<void> markUnlocked() =>
       _box.put('lastUnlockAt', DateTime.now().millisecondsSinceEpoch);
+
+  String _hash(String code, String salt) =>
+      sha256.convert(utf8.encode('$salt::$code')).toString();
+
+  String _randomSalt() {
+    final rnd = Random.secure();
+    final bytes = List<int>.generate(16, (_) => rnd.nextInt(256));
+    return base64Encode(bytes);
+  }
+
+  bool _constantTimeEquals(String a, String b) {
+    if (a.length != b.length) return false;
+    var diff = 0;
+    for (var i = 0; i < a.length; i++) {
+      diff |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+    }
+    return diff == 0;
+  }
+}
+
+/// App Lock's own PIN/pattern + fingerprint credential — separate from the
+/// Vault's, stored in the (otherwise unused) [FeatureHiveBoxes.appLockPolicy]
+/// box. Mirrors the Vault's salted-SHA-256 scheme so the in-launcher screens
+/// ([AppLockLockScreen]/[AppLockSettingsScreen]) reuse the same flow.
+///
+/// Critically, every credential write is also **mirrored to native** via
+/// [LauncherService.setAppLockCredential] so the device-wide lock overlay (which
+/// runs with no Flutter engine) can recompute and verify the identical hash.
+class AppLockSecurityRepository {
+  Box get _box => FeatureHiveStore.box(FeatureHiveBoxes.appLockPolicy);
+
+  static const typePin = 'pin';
+  static const typePattern = 'pattern';
+
+  bool get isConfigured => (_box.get('hash') as String?)?.isNotEmpty ?? false;
+
+  /// `pin` or `pattern`. Defaults to `pin` before setup.
+  String get type => _box.get('type', defaultValue: typePin).toString();
+
+  bool get biometricEnabled =>
+      _box.get('biometric', defaultValue: false) as bool;
+
+  /// Grace window in ms during which re-opening App Lock skips the prompt.
+  /// 0 = always lock immediately.
+  int get autoLockMs => (_box.get('autoLockMs', defaultValue: 0) as num).toInt();
+
+  bool get withinGrace {
+    final grace = autoLockMs;
+    if (grace <= 0) return false;
+    final last = (_box.get('lastUnlockAt', defaultValue: 0) as num).toInt();
+    if (last == 0) return false;
+    return DateTime.now().millisecondsSinceEpoch - last < grace;
+  }
+
+  /// Hashes [code] with a fresh random salt, stores it, and mirrors the
+  /// `type`/`salt`/`hash` to native so the overlay can verify it.
+  Future<void> setCredential(String type, String code) async {
+    final salt = _randomSalt();
+    final hash = _hash(code, salt);
+    await _box.put('type', type);
+    await _box.put('salt', salt);
+    await _box.put('hash', hash);
+    await _box.put('lastUnlockAt', 0);
+    await LauncherService.setAppLockCredential(
+      type: type,
+      salt: salt,
+      hash: hash,
+    );
+  }
+
+  bool verify(String code) {
+    final salt = _box.get('salt') as String?;
+    final hash = _box.get('hash') as String?;
+    if (salt == null || hash == null) return false;
+    return _constantTimeEquals(_hash(code, salt), hash);
+  }
+
+  Future<void> setBiometricEnabled(bool value) async {
+    await _box.put('biometric', value);
+    await LauncherService.setAppLockBiometricEnabled(value);
+  }
+
+  Future<void> setAutoLockMs(int value) => _box.put('autoLockMs', value);
+
+  Future<void> markUnlocked() =>
+      _box.put('lastUnlockAt', DateTime.now().millisecondsSinceEpoch);
+
+  /// Fully removes the App Lock credential, locally and natively.
+  Future<void> clear() async {
+    await _box.delete('type');
+    await _box.delete('salt');
+    await _box.delete('hash');
+    await _box.delete('biometric');
+    await _box.delete('lastUnlockAt');
+    await LauncherService.clearAppLockCredential();
+  }
 
   String _hash(String code, String salt) =>
       sha256.convert(utf8.encode('$salt::$code')).toString();

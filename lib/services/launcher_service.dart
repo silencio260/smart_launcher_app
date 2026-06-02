@@ -25,6 +25,8 @@ class LauncherService {
       MethodChannel('com.genrevibes.smartlauncher/security');
   static const _fileLocker =
       MethodChannel('com.genrevibes.smartlauncher/file_locker');
+  static const _appLock =
+      MethodChannel('com.genrevibes.smartlauncher/app_lock');
 
   static Future<List<AppInfo>> getInstalledApps() async {
     final List<dynamic> raw = await _apps.invokeMethod('getApps');
@@ -263,6 +265,41 @@ class LauncherService {
     });
   }
 
+  /// Mirrors the App Lock credential to native so the device-wide lock overlay
+  /// (which runs with no Flutter engine) can verify it. [hash] must be the
+  /// exact `sha256("$salt::$code")` the Dart `AppLockSecurityRepository`
+  /// computes, so the native side recomputes and compares identically.
+  static Future<void> setAppLockCredential({
+    required String type,
+    required String salt,
+    required String hash,
+  }) async {
+    try {
+      await _appLock.invokeMethod<void>('setAppLockCredential', {
+        'type': type,
+        'salt': salt,
+        'hash': hash,
+      });
+    } catch (_) {
+      // Channel may not be ready during cold start; the repo re-mirrors on the
+      // next credential write.
+    }
+  }
+
+  static Future<void> setAppLockBiometricEnabled(bool enabled) async {
+    try {
+      await _appLock.invokeMethod<void>('setAppLockBiometricEnabled', {
+        'enabled': enabled,
+      });
+    } catch (_) {}
+  }
+
+  static Future<void> clearAppLockCredential() async {
+    try {
+      await _appLock.invokeMethod<void>('clearAppLockCredential');
+    } catch (_) {}
+  }
+
   static Future<bool> isUsageAccessEnabled() async =>
       await _system.invokeMethod<bool>('isUsageAccessEnabled') ?? false;
 
@@ -295,8 +332,15 @@ class LauncherService {
   /// (the launcher is `singleTask`, which drops `onActivityResult`), so this
   /// returns immediately after launching; the caller reconciles the imported
   /// files via [listLockedFiles] once it regains focus.
-  static Future<void> pickVaultFiles() async {
-    await _fileLocker.invokeMethod<void>('pickFiles');
+  ///
+  /// When [deleteOriginals] is true the source files are removed from the
+  /// gallery after a successful import (a true "hide"). On Android 11+ the
+  /// system shows a one-time delete-confirmation dialog.
+  static Future<void> pickVaultFiles({bool deleteOriginals = false}) async {
+    await _fileLocker.invokeMethod<void>(
+      'pickFiles',
+      {'deleteOriginals': deleteOriginals},
+    );
   }
 
   static Future<bool> exportLockedFile(String id) async =>
@@ -304,6 +348,22 @@ class LauncherService {
 
   static Future<bool> deleteLockedFile(String id) async =>
       await _fileLocker.invokeMethod<bool>('deleteFile', {'id': id}) ?? false;
+
+  /// The decrypted JPEG preview for a vault item, or null when there is none
+  /// (documents and files we couldn't decode have no thumbnail).
+  static Future<Uint8List?> vaultThumbnail(String id) async =>
+      _fileLocker.invokeMethod<Uint8List>('thumbnail', {'id': id});
+
+  /// Decrypts a vault item into a private cache file and returns its path, so
+  /// the in-app viewer can display/play it. The cache is wiped on lock via
+  /// [clearVaultViewCache].
+  static Future<String?> vaultDecryptToCache(String id) async =>
+      _fileLocker.invokeMethod<String>('decryptToCache', {'id': id});
+
+  /// Removes every decrypted preview file. Called whenever the vault re-locks.
+  static Future<void> clearVaultViewCache() async {
+    await _fileLocker.invokeMethod<void>('clearViewCache');
+  }
 
   static Future<void> changeWallpaper() async {
     await _system.invokeMethod('changeWallpaper');

@@ -268,7 +268,8 @@ object AfterCallOverlay {
         val size = dp(ctx, 36f)
         return ImageView(ctx).apply {
             setImageResource(R.drawable.ic_after_call_close)
-            scaleType = ImageView.ScaleType.CENTER
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setPadding(dp(ctx, 9f), dp(ctx, 9f), dp(ctx, 9f), dp(ctx, 9f))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(Color.parseColor("#2A2A2D"))
@@ -290,8 +291,8 @@ object AfterCallOverlay {
         val circleSize = dp(ctx, 52f)
         val circle = ImageView(ctx).apply {
             setImageResource(iconRes)
-            scaleType = ImageView.ScaleType.CENTER
-            setPadding(dp(ctx, 13f), dp(ctx, 13f), dp(ctx, 13f), dp(ctx, 13f))
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setPadding(dp(ctx, 8f), dp(ctx, 8f), dp(ctx, 8f), dp(ctx, 8f))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(Color.parseColor(circleColor))

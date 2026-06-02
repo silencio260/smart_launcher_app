@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../data/mini_app_repositories.dart';
 import '../../models/app_info.dart';
 import '../../models/launcher_feature.dart';
 import '../../models/launcher_feature_settings.dart';
@@ -8,10 +9,16 @@ import '../../services/launcher_service.dart';
 import '../../state/apps_cubit.dart';
 import '../../state/launcher_feature_cubit.dart';
 import '../../widgets/icons/shaped_icon.dart';
+import 'app_lock/app_lock_lock_screen.dart';
+import 'app_lock/app_lock_settings_screen.dart';
 import 'clock/clock_theme.dart';
 import 'mini_app_chrome.dart';
 import 'mini_app_kit.dart';
 
+/// App Lock: a monochrome (alarm-themed) per-app locker. Gates on entry behind
+/// its own PIN/pattern + fingerprint (see [AppLockLockScreen]) exactly like the
+/// Vault, then lists apps under Locked / All tabs. Enforcement is native: the
+/// accessibility service shows a lock overlay over any locked app, device-wide.
 class AppLockerScreen extends StatefulWidget {
   const AppLockerScreen({super.key});
 
@@ -19,7 +26,10 @@ class AppLockerScreen extends StatefulWidget {
   State<AppLockerScreen> createState() => _AppLockerScreenState();
 }
 
-class _AppLockerScreenState extends State<AppLockerScreen> {
+class _AppLockerScreenState extends State<AppLockerScreen>
+    with WidgetsBindingObserver {
+  final _sec = AppLockSecurityRepository();
+  var _unlocked = false;
   var _query = '';
   var _accessibility = false;
   var _overlay = false;
@@ -27,7 +37,27 @@ class _AppLockerScreenState extends State<AppLockerScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    if (_sec.isConfigured && _sec.withinGrace) _unlocked = true;
     _refreshPermissions();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !mounted) return;
+    _refreshPermissions();
+    // Auto-lock: re-prompt when we come back from the background, unless a child
+    // route (settings) is on top.
+    final isCurrent = ModalRoute.of(context)?.isCurrent ?? true;
+    if (isCurrent && _unlocked && _sec.isConfigured && !_sec.withinGrace) {
+      setState(() => _unlocked = false);
+    }
   }
 
   Future<void> _refreshPermissions() async {
@@ -40,50 +70,136 @@ class _AppLockerScreenState extends State<AppLockerScreen> {
     });
   }
 
+  void _openSettings() {
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const AppLockSettingsScreen()))
+        .then((_) {
+      if (!mounted) return;
+      // If the user turned App Lock off in settings, drop back to setup.
+      if (!_sec.isConfigured) {
+        setState(() => _unlocked = false);
+      } else {
+        _refreshPermissions();
+        setState(() {});
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    return MiniAppScaffold(
-      title: 'App Locker',
-      child: Theme(
-        data: clockThemeOf(context),
-        child: BlocBuilder<AppsCubit, AppsState>(
-          builder: (context, appsState) {
-            final apps = appsState.apps
-                .where((app) => !LauncherFeatureCatalog.isFeatureApp(app))
-                .where((app) =>
-                    _query.isEmpty ||
-                    app.name.toLowerCase().contains(_query.toLowerCase()) ||
-                    app.packageName
-                        .toLowerCase()
-                        .contains(_query.toLowerCase()))
-                .toList(growable: false);
-            return BlocBuilder<LauncherFeatureSettingsCubit,
-                LauncherFeatureSettings>(
-              builder: (context, featureSettings) {
-                final locked = featureSettings.lockedApps.toSet();
-                return ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
-                  children: [
-                    _statusCard(locked.length),
-                    const SizedBox(height: 12),
-                    ..._setupRows(),
-                    _searchField(),
-                    const SizedBox(height: 6),
-                    for (final app in apps)
-                      _AppLockTile(
-                        app: app,
-                        locked: locked.contains(app.packageName),
-                        onChanged: (value) => context
-                            .read<LauncherFeatureSettingsCubit>()
-                            .setAppLocked(app.packageName, value),
+    if (!_unlocked) {
+      return AppLockLockScreen(
+        security: _sec,
+        onUnlocked: () => setState(() => _unlocked = true),
+        onCancel: () => Navigator.of(context).pop(),
+      );
+    }
+
+    return DefaultTabController(
+      length: 2,
+      child: MiniAppScaffold(
+        title: 'App Locker',
+        actions: [
+          IconButton(
+            tooltip: 'Settings',
+            icon: const Icon(Icons.settings_outlined, color: Colors.white),
+            onPressed: _openSettings,
+          ),
+        ],
+        child: Theme(
+          data: clockThemeOf(context),
+          child: BlocBuilder<AppsCubit, AppsState>(
+            builder: (context, appsState) {
+              return BlocBuilder<LauncherFeatureSettingsCubit,
+                  LauncherFeatureSettings>(
+                builder: (context, featureSettings) {
+                  final locked = featureSettings.lockedApps.toSet();
+                  final all = appsState.apps
+                      .where((app) => !LauncherFeatureCatalog.isFeatureApp(app))
+                      .where(_matchesQuery)
+                      .toList(growable: false);
+                  final lockedApps = all
+                      .where((app) => locked.contains(app.packageName))
+                      .toList(growable: false);
+                  return Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                        child: Column(
+                          children: [
+                            _statusCard(locked.length),
+                            const SizedBox(height: 12),
+                            ..._setupRows(),
+                            _searchField(),
+                          ],
+                        ),
                       ),
-                  ],
-                );
-              },
-            );
-          },
+                      const TabBar(
+                        labelColor: Colors.white,
+                        unselectedLabelColor: miniAppMuted,
+                        indicatorColor: Colors.white,
+                        tabs: [
+                          Tab(text: 'Locked'),
+                          Tab(text: 'All apps'),
+                        ],
+                      ),
+                      Expanded(
+                        child: TabBarView(
+                          children: [
+                            _appList(
+                              lockedApps,
+                              locked,
+                              emptyHint: locked.isEmpty
+                                  ? 'No apps locked yet. Add some from the All apps tab.'
+                                  : 'No locked apps match your search.',
+                            ),
+                            _appList(all, locked),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
         ),
       ),
+    );
+  }
+
+  bool _matchesQuery(AppInfo app) {
+    if (_query.isEmpty) return true;
+    final q = _query.toLowerCase();
+    return app.name.toLowerCase().contains(q) ||
+        app.packageName.toLowerCase().contains(q);
+  }
+
+  Widget _appList(List<AppInfo> apps, Set<String> locked, {String? emptyHint}) {
+    if (apps.isEmpty && emptyHint != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Text(
+            emptyHint,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: miniAppMuted, height: 1.35),
+          ),
+        ),
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 6, 20, 120),
+      children: [
+        for (final app in apps)
+          _AppLockTile(
+            app: app,
+            locked: locked.contains(app.packageName),
+            onChanged: (value) => context
+                .read<LauncherFeatureSettingsCubit>()
+                .setAppLocked(app.packageName, value),
+          ),
+      ],
     );
   }
 
@@ -111,7 +227,7 @@ class _AppLockerScreenState extends State<AppLockerScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  ready ? 'App Lock is active' : 'Set up App Lock',
+                  ready ? 'App Lock is active' : 'Finish setup',
                   style: const TextStyle(
                     fontSize: 19,
                     fontWeight: FontWeight.w800,
@@ -120,8 +236,8 @@ class _AppLockerScreenState extends State<AppLockerScreen> {
                 const SizedBox(height: 4),
                 Text(
                   ready
-                      ? '$lockedCount app${lockedCount == 1 ? '' : 's'} locked behind your device unlock.'
-                      : 'Enable the steps below to lock apps device-wide.',
+                      ? '$lockedCount app${lockedCount == 1 ? '' : 's'} locked behind your passcode.'
+                      : 'Enable the steps below so locks work everywhere.',
                   style: const TextStyle(color: miniAppMuted, height: 1.3),
                 ),
               ],
@@ -133,7 +249,7 @@ class _AppLockerScreenState extends State<AppLockerScreen> {
   }
 
   /// Only the setup steps that still need granting are shown, so the screen
-  /// collapses to the status card + app list once everything is ready.
+  /// collapses to the status card + list once everything is ready.
   List<Widget> _setupRows() {
     final rows = <Widget>[];
     if (!_accessibility) {
@@ -191,16 +307,19 @@ class _AppLockerScreenState extends State<AppLockerScreen> {
   }
 
   Widget _searchField() {
-    return TextField(
-      onChanged: (value) => setState(() => _query = value),
-      decoration: InputDecoration(
-        hintText: 'Search apps',
-        prefixIcon: const Icon(Icons.search),
-        filled: true,
-        fillColor: miniAppSurface,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide.none,
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, bottom: 6),
+      child: TextField(
+        onChanged: (value) => setState(() => _query = value),
+        decoration: InputDecoration(
+          hintText: 'Search apps',
+          prefixIcon: const Icon(Icons.search),
+          filled: true,
+          fillColor: miniAppSurface,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
         ),
       ),
     );

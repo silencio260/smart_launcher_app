@@ -2,9 +2,12 @@ package com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app
 
 import android.app.Activity
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.FileImportActivity
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
+import java.util.concurrent.Executors
 
 /**
  * Method-channel surface for the vault. The actual file picking happens in
@@ -15,13 +18,18 @@ import io.flutter.plugin.common.MethodChannel
 class FileLockerChannel(private val activity: Activity) {
     private val store = FileLockerStore(activity)
 
+    // Thumbnail/decrypt work touches disk + crypto; keep it off the UI thread.
+    private val io = Executors.newSingleThreadExecutor()
+    private val main = Handler(Looper.getMainLooper())
+
     fun register(messenger: BinaryMessenger) {
         MethodChannel(messenger, "com.genrevibes.smartlauncher/file_locker")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "listFiles" -> result.success(store.listFiles())
                     "pickFiles" -> {
-                        launchPicker(FileImportActivity.MODE_IMPORT, null, null)
+                        val delete = call.argument<Boolean>("deleteOriginals") ?: false
+                        launchPicker(FileImportActivity.MODE_IMPORT, null, null, delete)
                         result.success(null)
                     }
                     "exportFile" -> {
@@ -30,14 +38,37 @@ class FileLockerChannel(private val activity: Activity) {
                             result.success(false)
                         } else {
                             val name = store.findMeta(id)?.optString("name") ?: "locked-file"
-                            launchPicker(FileImportActivity.MODE_EXPORT, id, name)
+                            launchPicker(FileImportActivity.MODE_EXPORT, id, name, false)
                             result.success(true)
                         }
                     }
                     "deleteFile" -> result.success(store.deleteFile(call.argument<String>("id")))
+                    "thumbnail" -> {
+                        val id = call.argument<String>("id")
+                        if (id == null) result.success(null)
+                        else runIo(result) { store.thumbnailBytes(id) }
+                    }
+                    "decryptToCache" -> {
+                        val id = call.argument<String>("id")
+                        if (id == null) result.success(null)
+                        else runIo(result) { store.decryptToCacheFile(id) }
+                    }
+                    "clearViewCache" -> runIo(result) { store.clearViewCache(); null }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    /** Runs [work] on the IO executor and delivers its value on the main thread. */
+    private fun runIo(result: MethodChannel.Result, work: () -> Any?) {
+        io.execute {
+            val value = try {
+                work()
+            } catch (_: Exception) {
+                null
+            }
+            main.post { result.success(value) }
+        }
     }
 
     /**
@@ -48,11 +79,12 @@ class FileLockerChannel(private val activity: Activity) {
      */
     fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean = false
 
-    private fun launchPicker(mode: String, id: String?, name: String?) {
+    private fun launchPicker(mode: String, id: String?, name: String?, deleteOriginals: Boolean) {
         val intent = Intent(activity, FileImportActivity::class.java).apply {
             putExtra(FileImportActivity.EXTRA_MODE, mode)
             if (id != null) putExtra(FileImportActivity.EXTRA_ID, id)
             if (name != null) putExtra(FileImportActivity.EXTRA_NAME, name)
+            putExtra(FileImportActivity.EXTRA_DELETE_ORIGINALS, deleteOriginals)
         }
         try {
             activity.startActivity(intent)
