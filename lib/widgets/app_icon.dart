@@ -52,8 +52,11 @@ class AppIcon extends StatelessWidget {
   }
 
   Widget _buildIcon() {
-    final fallback =
-        app.isInternalFeature ? _featureFallbackIcon() : _fallbackIcon();
+    if (app.isInternalFeature) {
+      return _featureFallbackIcon();
+    }
+
+    final fallback = _fallbackIcon();
     final iconPath = app.iconPath;
     if (iconPath != null && iconPath.isNotEmpty) {
       return Image.file(

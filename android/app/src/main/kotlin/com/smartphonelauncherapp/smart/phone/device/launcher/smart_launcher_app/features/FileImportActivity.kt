@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.DocumentsContract
 import android.provider.MediaStore
+import android.util.Log
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.FileLockerStore
 
 /**
@@ -36,6 +37,7 @@ class FileImportActivity : Activity() {
         const val EXTRA_NAME = "name"
         const val EXTRA_DELETE_ORIGINALS = "deleteOriginals"
 
+        private const val TAG = "FileImport"
         private const val REQ_IMPORT = 9010
         private const val REQ_EXPORT = 9011
         private const val REQ_DELETE = 9012
@@ -67,6 +69,7 @@ class FileImportActivity : Activity() {
         try {
             startActivityForResult(pick, REQ_IMPORT)
         } catch (e: Exception) {
+            Log.e(TAG, "Could not open the document picker", e)
             finish()
         }
     }
@@ -133,14 +136,21 @@ class FileImportActivity : Activity() {
         } else {
             data.data?.let { uris.add(it) }
         }
+        Log.d(TAG, "Picker returned ${uris.size} file(s); importing…")
         val imported = mutableListOf<Uri>()
         for (uri in uris) {
             try {
-                if (store.importUri(uri) != null) imported.add(uri)
-            } catch (_: Exception) {
-                // Skip files that can't be read; the rest still import.
+                if (store.importUri(uri) != null) {
+                    imported.add(uri)
+                } else {
+                    Log.w(TAG, "Import returned null (could not open) for $uri")
+                }
+            } catch (e: Exception) {
+                // Skip files that can't be read/encrypted; the rest still import.
+                Log.e(TAG, "Import failed for $uri", e)
             }
         }
+        Log.d(TAG, "Imported ${imported.size}/${uris.size} file(s)")
         return imported
     }
 
@@ -160,7 +170,8 @@ class FileImportActivity : Activity() {
                 val request = MediaStore.createDeleteRequest(contentResolver, media)
                 startIntentSenderForResult(request.intentSender, REQ_DELETE, null, 0, 0, 0)
                 return // finish() happens when REQ_DELETE returns.
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not request deletion of originals", e)
                 finish()
                 return
             }

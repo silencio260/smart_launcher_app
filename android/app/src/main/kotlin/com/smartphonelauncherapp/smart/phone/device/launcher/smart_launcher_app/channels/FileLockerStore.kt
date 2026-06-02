@@ -319,10 +319,13 @@ class FileLockerStore(private val context: Context) {
     }
 
     private fun encryptToFile(input: java.io.InputStream, file: File) {
-        val iv = ByteArray(12)
-        SecureRandom().nextBytes(iv)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, secretKey(), GCMParameterSpec(128, iv))
+        // AndroidKeyStore keys are created with randomized encryption required, so
+        // the Keystore MUST generate the GCM IV itself. Supplying our own here
+        // throws "Caller-provided IV not permitted" — instead we let init() pick
+        // the IV and read it back (always 12 bytes for GCM) to prefix the file.
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey())
+        val iv = cipher.iv
         FileOutputStream(file).use { fileOut ->
             fileOut.write(iv)
             CipherOutputStream(fileOut, cipher).use { cipherOut ->
