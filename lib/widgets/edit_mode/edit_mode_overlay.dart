@@ -215,10 +215,7 @@ class _EditModeOverlayState extends State<EditModeOverlay>
   Widget _buildPagesRow(WorkspaceState state) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final appsByPackage =
-            context.select((AppsCubit cubit) => cubit.state.appsByPackage);
-        final appsByKey =
-            context.select((AppsCubit cubit) => cubit.state.appsByKey);
+        final appsState = context.select((AppsCubit cubit) => cubit.state);
         // Show ~2 thumbnails per screen so dragging between slots feels natural.
         final viewH = constraints.maxHeight - 8; // vertical padding allowance
         final thumbH = viewH;
@@ -293,8 +290,7 @@ class _EditModeOverlayState extends State<EditModeOverlay>
                     page: page,
                     folders: state.folders,
                     settings: widget.settings,
-                    appsByPackage: appsByPackage,
-                    appsByKey: appsByKey,
+                    appsState: appsState,
                     onJump: () {
                       widget.onPageSelected(i);
                       _dismiss();
@@ -496,16 +492,14 @@ class _PageDots extends StatelessWidget {
 class _PageCard extends StatelessWidget {
   final WorkspacePage page;
   final Map<String, FolderInfo> folders;
-  final Map<String, AppInfo> appsByPackage;
-  final Map<String, AppInfo> appsByKey;
+  final AppsState appsState;
   final LauncherSettings settings;
   final VoidCallback onJump;
 
   const _PageCard({
     required this.page,
     required this.folders,
-    required this.appsByPackage,
-    required this.appsByKey,
+    required this.appsState,
     required this.settings,
     required this.onJump,
   });
@@ -531,8 +525,7 @@ class _PageCard extends StatelessWidget {
           child: _PagePreview(
             page: page,
             folders: folders,
-            appsByPackage: appsByPackage,
-            appsByKey: appsByKey,
+            appsState: appsState,
             settings: settings,
           ),
         ),
@@ -576,15 +569,13 @@ class _AddPageCard extends StatelessWidget {
 class _PagePreview extends StatelessWidget {
   final WorkspacePage page;
   final Map<String, FolderInfo> folders;
-  final Map<String, AppInfo> appsByPackage;
-  final Map<String, AppInfo> appsByKey;
+  final AppsState appsState;
   final LauncherSettings settings;
 
   const _PagePreview({
     required this.page,
     required this.folders,
-    required this.appsByPackage,
-    required this.appsByKey,
+    required this.appsState,
     required this.settings,
   });
 
@@ -654,8 +645,7 @@ class _PagePreview extends StatelessWidget {
         final folder = folders[folderId];
         return _FolderTile(
           folder: folder,
-          appsByPackage: appsByPackage,
-          appsByKey: appsByKey,
+          appsState: appsState,
           iconSize: iconSize,
           shape: settings.iconShape,
           showLabel: settings.showLabels,
@@ -675,11 +665,7 @@ class _PagePreview extends StatelessWidget {
     }
   }
 
-  AppInfo? _liveAppFor(WorkspaceItemInfo item) {
-    return appsByKey[item.launcherKey] ??
-        (item.componentName == null ? null : appsByKey[item.componentName]) ??
-        appsByPackage[item.packageName];
-  }
+  AppInfo? _liveAppFor(WorkspaceItemInfo item) => appsState.resolveItem(item);
 }
 
 class _AppTile extends StatelessWidget {
@@ -699,11 +685,19 @@ class _AppTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = item.title ?? liveApp?.name ?? '';
+    // Internal features follow the live alias (App Hider disguise); normal apps
+    // keep their pinned label/component.
+    final isFeature = item.launcherFeatureId != null;
+    final label = (isFeature
+            ? (liveApp?.name ?? item.title)
+            : (item.title ?? liveApp?.name)) ??
+        '';
     final fontSize = (iconSize * 0.3).clamp(7.5, 10.0);
     final cacheKey = item.packageName.isEmpty ? null : item.packageName;
     final featureId = item.launcherFeatureId ?? liveApp?.launcherFeatureId;
-    final componentName = item.componentName ?? liveApp?.appComponentName;
+    final componentName = isFeature
+        ? (liveApp?.appComponentName ?? item.componentName)
+        : (item.componentName ?? liveApp?.appComponentName);
     final useFeatureIcon = featureId != null ||
         LauncherFeatureCatalog.artworkForComponent(componentName) != null;
     return Column(
@@ -749,16 +743,14 @@ class _AppTile extends StatelessWidget {
 
 class _FolderTile extends StatelessWidget {
   final FolderInfo? folder;
-  final Map<String, AppInfo> appsByPackage;
-  final Map<String, AppInfo> appsByKey;
+  final AppsState appsState;
   final double iconSize;
   final String shape;
   final bool showLabel;
 
   const _FolderTile({
     required this.folder,
-    required this.appsByPackage,
-    required this.appsByKey,
+    required this.appsState,
     required this.iconSize,
     required this.shape,
     required this.showLabel,
@@ -831,11 +823,7 @@ class _FolderTile extends StatelessWidget {
     );
   }
 
-  AppInfo? _liveAppFor(WorkspaceItemInfo item) {
-    return appsByKey[item.launcherKey] ??
-        (item.componentName == null ? null : appsByKey[item.componentName]) ??
-        appsByPackage[item.packageName];
-  }
+  AppInfo? _liveAppFor(WorkspaceItemInfo item) => appsState.resolveItem(item);
 }
 
 class _FolderPreviewIcon extends StatelessWidget {
@@ -854,8 +842,11 @@ class _FolderPreviewIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cacheKey = item.packageName.isEmpty ? null : item.packageName;
+    final isFeature = item.launcherFeatureId != null;
     final featureId = item.launcherFeatureId ?? liveApp?.launcherFeatureId;
-    final componentName = item.componentName ?? liveApp?.appComponentName;
+    final componentName = isFeature
+        ? (liveApp?.appComponentName ?? item.componentName)
+        : (item.componentName ?? liveApp?.appComponentName);
     if (featureId != null ||
         LauncherFeatureCatalog.artworkForComponent(componentName) != null) {
       return FeatureIcon(

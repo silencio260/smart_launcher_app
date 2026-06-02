@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import '../models/app_info.dart';
 import '../models/launcher_feature.dart';
+import '../models/workspace_item_info.dart';
 import '../services/app_snapshot_cache.dart';
 import '../services/icons/decoded_icon_cache.dart';
 import '../services/launcher_service.dart';
@@ -34,12 +35,18 @@ class AppsState extends Equatable {
   // potentially thousands of entries.
   final Map<String, AppInfo> appsByPackage;
   final Map<String, AppInfo> appsByKey;
+  // launcherFeatureId -> AppInfo for internal mini-apps. The App Hider's
+  // disguise swaps which activity-alias is enabled, so its launcherKey
+  // (component name) changes; the feature id is the only stable handle to
+  // "whatever alias is currently enabled."
+  final Map<String, AppInfo> appsByFeatureId;
 
   const AppsState._({
     required this.apps,
     required this.loading,
     required this.appsByPackage,
     required this.appsByKey,
+    required this.appsByFeatureId,
   });
 
   factory AppsState({
@@ -51,26 +58,59 @@ class AppsState extends Equatable {
       loading: loading,
       appsByPackage: {for (final a in apps) a.packageName: a},
       appsByKey: {for (final a in apps) a.launcherKey: a},
+      appsByFeatureId: _featureMap(apps),
     );
   }
+
+  static Map<String, AppInfo> _featureMap(List<AppInfo> apps) => {
+        for (final a in apps)
+          if (a.launcherFeatureId != null) a.launcherFeatureId!: a,
+      };
 
   AppsState copyWith({
     List<AppInfo>? apps,
     bool? loading,
   }) {
     final nextApps = apps ?? this.apps;
-    final nextMap = identical(nextApps, this.apps)
-        ? appsByPackage
-        : {for (final a in nextApps) a.packageName: a};
-    final nextKeyMap = identical(nextApps, this.apps)
-        ? appsByKey
-        : {for (final a in nextApps) a.launcherKey: a};
+    final unchanged = identical(nextApps, this.apps);
+    final nextMap =
+        unchanged ? appsByPackage : {for (final a in nextApps) a.packageName: a};
+    final nextKeyMap =
+        unchanged ? appsByKey : {for (final a in nextApps) a.launcherKey: a};
+    final nextFeatureMap =
+        unchanged ? appsByFeatureId : _featureMap(nextApps);
     return AppsState._(
       apps: nextApps,
       loading: loading ?? this.loading,
       appsByPackage: nextMap,
       appsByKey: nextKeyMap,
+      appsByFeatureId: nextFeatureMap,
     );
+  }
+
+  /// Best live [AppInfo] for a pinned [item]. Internal-feature items are matched
+  /// by feature id first, because a disguise swaps which activity-alias (and so
+  /// which launcherKey) is enabled — the stored component key would otherwise
+  /// miss and the tile would freeze on its original label/icon.
+  AppInfo? resolveItem(WorkspaceItemInfo item) {
+    final fid = item.launcherFeatureId;
+    if (fid != null) {
+      final byFeature = appsByFeatureId[fid];
+      if (byFeature != null) return byFeature;
+    }
+    return appsByKey[item.launcherKey] ?? appsByPackage[item.packageName];
+  }
+
+  /// Best live [AppInfo] for a stored dock reference (a launcherKey string).
+  /// Maps a feature's stored component back to its feature id so a disguised
+  /// App Hider resolves to the currently-enabled alias.
+  AppInfo? resolveRef(String ref) {
+    final fid = LauncherFeatureCatalog.idForComponent(ref);
+    if (fid != null) {
+      final byFeature = appsByFeatureId[fid];
+      if (byFeature != null) return byFeature;
+    }
+    return appsByKey[ref] ?? appsByPackage[ref];
   }
 
   @override

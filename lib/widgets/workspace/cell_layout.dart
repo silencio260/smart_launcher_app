@@ -3846,17 +3846,25 @@ class _CellLayoutViewState extends State<CellLayoutView>
     // selector on every other tile on the page.
     return Center(
       child: BlocSelector<AppsCubit, AppsState, AppInfo?>(
-        selector: (state) =>
-            state.appsByKey[item.launcherKey] ??
-            state.appsByPackage[item.packageName],
+        selector: (state) => state.resolveItem(item),
         builder: (context, liveApp) {
+          // Internal features (e.g. the App Hider's disguise) must reflect the
+          // currently-enabled alias, so the live component/label wins. Normal
+          // apps keep their pinned component/title.
+          final isFeature = item.launcherFeatureId != null;
           final app = AppInfo(
             id: item.id,
             packageName: item.packageName,
-            appComponentName: item.componentName ??
-                liveApp?.appComponentName ??
-                item.packageName,
-            title: item.title ?? liveApp?.name,
+            appComponentName: isFeature
+                ? (liveApp?.appComponentName ??
+                    item.componentName ??
+                    item.packageName)
+                : (item.componentName ??
+                    liveApp?.appComponentName ??
+                    item.packageName),
+            title: isFeature
+                ? (liveApp?.name ?? item.title)
+                : (item.title ?? liveApp?.name),
             icon: liveApp?.icon ?? item.icon,
             iconPath: liveApp?.iconPath ?? item.iconPath,
             launcherFeatureId:
@@ -4037,16 +4045,19 @@ class _CellLayoutViewState extends State<CellLayoutView>
 
   FolderInfo _resolveFolderIcons(FolderInfo folder, AppsState appsState) {
     final resolved = folder.contents.map((item) {
-      final live = appsState.apps
-          .where((a) => a.packageName == item.packageName)
-          .firstOrNull;
+      final live = appsState.resolveItem(item);
       if (live == null) return item;
+      // Internal features must follow the live alias (App Hider disguise);
+      // normal apps keep their pinned component/title.
+      final isFeature = item.launcherFeatureId != null;
       return WorkspaceItemInfo(
         id: item.id,
         itemType: item.itemType,
         packageName: item.packageName,
-        componentName: item.componentName ?? live.appComponentName,
-        title: item.title ?? live.name,
+        componentName: isFeature
+            ? live.appComponentName
+            : (item.componentName ?? live.appComponentName),
+        title: isFeature ? live.name : (item.title ?? live.name),
         icon: live.icon,
         iconPath: live.iconPath,
         launcherFeatureId: item.launcherFeatureId ?? live.launcherFeatureId,

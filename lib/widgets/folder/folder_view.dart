@@ -346,16 +346,22 @@ class _FolderViewState extends State<FolderView>
       itemCount: apps.length,
       itemBuilder: (context, i) {
         final item = apps[i];
-        final liveApp = liveApps
-            .where((a) => a.packageName == item.packageName)
-            .firstOrNull;
+        // Feature-aware so a disguised App Hider follows its enabled alias;
+        // resolveItem matches internal features by feature id, normal apps by
+        // launcherKey/package.
+        final liveApp = context.read<AppsCubit>().state.resolveItem(item);
+        final isFeature = item.launcherFeatureId != null;
         final resolvedIcon = item.icon ?? liveApp?.icon;
         final resolvedIconPath = item.iconPath ?? liveApp?.iconPath;
         final app = AppInfo(
           id: item.id,
           packageName: item.packageName,
-          appComponentName: item.componentName ?? item.packageName,
-          title: item.title,
+          appComponentName: isFeature
+              ? (liveApp?.appComponentName ??
+                  item.componentName ??
+                  item.packageName)
+              : (item.componentName ?? item.packageName),
+          title: isFeature ? (liveApp?.name ?? item.title) : item.title,
           icon: resolvedIcon,
           iconPath: resolvedIconPath,
           launcherFeatureId:

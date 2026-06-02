@@ -939,7 +939,7 @@ class _HomeScreenState extends State<HomeScreen>
           folder: _resolveFolderIcons(folder, appsState),
         );
       }
-      final app = appsState.appsByKey[ref] ?? appsState.appsByPackage[ref];
+      final app = appsState.resolveRef(ref);
       return app == null ? null : DockAppItem(app);
     }).toList();
     return items;
@@ -980,7 +980,7 @@ class _HomeScreenState extends State<HomeScreen>
     String ref,
     AppsState appsState,
   ) {
-    final app = appsState.appsByKey[ref] ?? appsState.appsByPackage[ref];
+    final app = appsState.resolveRef(ref);
     return WorkspaceItemInfo(
       id: app?.id ?? ref.hashCode,
       itemType: ItemType.application,
@@ -1184,16 +1184,20 @@ class _HomeScreenState extends State<HomeScreen>
       generation == _drawerPrewarmGeneration;
 
   FolderInfo _resolveFolderIcons(FolderInfo folder, AppsState appsState) {
-    final byPackage = appsState.appsByPackage;
     final resolved = folder.contents.map((item) {
-      final live = byPackage[item.packageName];
+      final live = appsState.resolveItem(item);
       if (live == null) return item;
+      // Internal features must follow the live alias (App Hider disguise);
+      // normal apps keep their pinned component/title.
+      final isFeature = item.launcherFeatureId != null;
       return WorkspaceItemInfo(
         id: item.id,
         itemType: item.itemType,
         packageName: item.packageName,
-        componentName: item.componentName ?? live.appComponentName,
-        title: item.title ?? live.name,
+        componentName: isFeature
+            ? live.appComponentName
+            : (item.componentName ?? live.appComponentName),
+        title: isFeature ? live.name : (item.title ?? live.name),
         icon: live.icon,
         iconPath: live.iconPath,
         launcherFeatureId: item.launcherFeatureId ?? live.launcherFeatureId,
