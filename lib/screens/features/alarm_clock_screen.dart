@@ -1050,6 +1050,8 @@ class _DurationWheelState extends State<_DurationWheel> {
   late final FixedExtentScrollController _sCtl =
       FixedExtentScrollController(initialItem: _s);
 
+  bool _syncingFromWidget = false;
+
   @override
   void didUpdateWidget(covariant _DurationWheel oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -1058,14 +1060,20 @@ class _DurationWheelState extends State<_DurationWheel> {
     final s = widget.duration.inSeconds.remainder(60);
     // Only react to external changes (e.g. a preset tap), not to the value we
     // just reported ourselves while scrolling.
-    if (h != _h) _hCtl.jumpToItem(h);
-    if (m != _m) _mCtl.jumpToItem(m);
-    if (s != _s) _sCtl.jumpToItem(s);
     if (h != _h || m != _m || s != _s) {
-      setState(() {
-        _h = h;
-        _m = m;
-        _s = s;
+      _h = h;
+      _m = m;
+      _s = s;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _syncingFromWidget = true;
+        try {
+          if (_hCtl.hasClients) _hCtl.jumpToItem(_h);
+          if (_mCtl.hasClients) _mCtl.jumpToItem(_m);
+          if (_sCtl.hasClients) _sCtl.jumpToItem(_s);
+        } finally {
+          _syncingFromWidget = false;
+        }
       });
     }
   }
@@ -1162,6 +1170,7 @@ class _DurationWheelState extends State<_DurationWheel> {
                   count: 100,
                   selected: _h,
                   onChanged: (i) {
+                    if (_syncingFromWidget) return;
                     if (i == _h) return;
                     setState(() => _h = i);
                     _report();
@@ -1173,6 +1182,7 @@ class _DurationWheelState extends State<_DurationWheel> {
                   count: 60,
                   selected: _m,
                   onChanged: (i) {
+                    if (_syncingFromWidget) return;
                     if (i == _m) return;
                     setState(() => _m = i);
                     _report();
@@ -1184,6 +1194,7 @@ class _DurationWheelState extends State<_DurationWheel> {
                   count: 60,
                   selected: _s,
                   onChanged: (i) {
+                    if (_syncingFromWidget) return;
                     if (i == _s) return;
                     setState(() => _s = i);
                     _report();
