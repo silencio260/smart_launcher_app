@@ -15,6 +15,7 @@ class FeatureHiveBoxes {
   static const clockWorldCities = 'clock_world_cities_box';
   static const vaultAlbums = 'vault_albums_box';
   static const vaultItems = 'vault_items_box';
+  static const vaultSecurity = 'vault_security_box';
   static const appLockPolicy = 'app_lock_policy_box';
   static const hiddenSpace = 'hidden_space_box';
   static const intruderAttempts = 'intruder_attempts_box';
@@ -22,6 +23,7 @@ class FeatureHiveBoxes {
   static const sensitive = {
     vaultAlbums,
     vaultItems,
+    vaultSecurity,
     appLockPolicy,
     hiddenSpace,
     intruderAttempts,
@@ -50,6 +52,7 @@ class FeatureHiveStore {
       _open(FeatureHiveBoxes.clockWorldCities),
       _open(FeatureHiveBoxes.vaultAlbums),
       _open(FeatureHiveBoxes.vaultItems),
+      _open(FeatureHiveBoxes.vaultSecurity),
       _open(FeatureHiveBoxes.appLockPolicy),
       _open(FeatureHiveBoxes.hiddenSpace),
       _open(FeatureHiveBoxes.intruderAttempts),

@@ -7,9 +7,11 @@ import '../../models/launcher_feature.dart';
 import '../../services/launcher_service.dart';
 import '../../state/apps_cubit.dart';
 import '../../state/settings_cubit.dart';
-import '../../widgets/icons/feature_icon.dart';
 import '../../widgets/icons/shaped_icon.dart';
 import 'mini_app_chrome.dart';
+import 'mini_app_kit.dart';
+
+const _featureId = 'app_hider';
 
 class AppHiderScreen extends StatefulWidget {
   const AppHiderScreen({super.key});
@@ -22,6 +24,8 @@ class _AppHiderScreenState extends State<AppHiderScreen> {
   final _policy = MiniAppPolicyRepository();
   var _unlocked = false;
   var _query = '';
+
+  Color get _accent => accentForFeature(_featureId);
 
   @override
   void initState() {
@@ -46,104 +50,75 @@ class _AppHiderScreenState extends State<AppHiderScreen> {
   Widget build(BuildContext context) {
     return MiniAppScaffold(
       title: 'App Hider',
-      child: !_unlocked
-          ? const Center(child: CircularProgressIndicator())
-          : BlocBuilder<AppsCubit, AppsState>(
-              builder: (context, appsState) {
-                return BlocBuilder<SettingsCubit, dynamic>(
-                  builder: (context, settings) {
-                    final hidden = settings.hiddenApps.toSet();
-                    final visibleApps = appsState.apps
-                        .where(
-                            (app) => !LauncherFeatureCatalog.isFeatureApp(app))
-                        .where((app) =>
-                            _query.isEmpty ||
-                            app.name
-                                .toLowerCase()
-                                .contains(_query.toLowerCase()) ||
-                            app.packageName
-                                .toLowerCase()
-                                .contains(_query.toLowerCase()))
-                        .toList(growable: false);
-                    return ListView(
-                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
-                      children: [
-                        _buildHeader(hidden.length),
-                        const SizedBox(height: 14),
-                        _buildDisguiseCard(),
-                        const SizedBox(height: 14),
-                        TextField(
-                          onChanged: (value) => setState(() => _query = value),
-                          decoration: InputDecoration(
-                            hintText: 'Search apps to hide',
-                            prefixIcon: const Icon(Icons.search),
-                            filled: true,
-                            fillColor: miniAppSurface,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide.none,
+      child: Theme(
+        data: miniAppThemeOf(context, _accent),
+        child: !_unlocked
+            ? const Center(child: CircularProgressIndicator())
+            : BlocBuilder<AppsCubit, AppsState>(
+                builder: (context, appsState) {
+                  return BlocBuilder<SettingsCubit, dynamic>(
+                    builder: (context, settings) {
+                      final hidden = settings.hiddenApps.toSet();
+                      final visibleApps = appsState.apps
+                          .where((app) =>
+                              !LauncherFeatureCatalog.isFeatureApp(app))
+                          .where((app) =>
+                              _query.isEmpty ||
+                              app.name
+                                  .toLowerCase()
+                                  .contains(_query.toLowerCase()) ||
+                              app.packageName
+                                  .toLowerCase()
+                                  .contains(_query.toLowerCase()))
+                          .toList(growable: false);
+                      return ListView(
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+                        children: [
+                          MiniHeroCard(
+                            featureId: _featureId,
+                            title: 'Hidden Space',
+                            subtitle:
+                                '${hidden.length} app${hidden.length == 1 ? '' : 's'} invisible from drawer and search.',
+                          ),
+                          const SizedBox(height: 18),
+                          const MiniSectionHeader('Disguise icon'),
+                          _buildDisguiseCard(),
+                          const SizedBox(height: 18),
+                          const MiniSectionHeader('Hide apps'),
+                          _searchField(),
+                          const SizedBox(height: 6),
+                          for (final app in visibleApps)
+                            _HiddenSpaceTile(
+                              app: app,
+                              hidden: hidden.contains(app.launcherKey) ||
+                                  hidden.contains(app.packageName),
+                              onChanged: (value) => _setHidden(app, value),
                             ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        for (final app in visibleApps)
-                          _HiddenSpaceTile(
-                            app: app,
-                            hidden: hidden.contains(app.launcherKey) ||
-                                hidden.contains(app.packageName),
-                            onChanged: (value) => _setHidden(app, value),
-                          ),
-                      ],
-                    );
-                  },
-                );
-              },
-            ),
-    );
-  }
-
-  Widget _buildHeader(int hiddenCount) {
-    return MiniCard(
-      child: Row(
-        children: [
-          const FeatureIcon(featureId: 'app_hider', size: 58),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Hidden Space',
-                    style:
-                        TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 4),
-                Text(
-                  '$hiddenCount entries invisible from drawer and search',
-                  style: const TextStyle(color: miniAppMuted),
-                ),
-              ],
-            ),
-          ),
-        ],
+                        ],
+                      );
+                    },
+                  );
+                },
+              ),
       ),
     );
   }
 
   Widget _buildDisguiseCard() {
     final disguise = _policy.disguise;
-    return MiniCard(
+    return RoundCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Disguise icon',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
-          const SizedBox(height: 8),
           const Text(
-            'Calculator disguise is staged through Android aliases. The current visible name is stored in Hive.',
-            style: TextStyle(color: miniAppMuted),
+            'Pick how this app appears on the home screen. The disguise is '
+            'staged through Android aliases.',
+            style: TextStyle(color: miniAppMuted, height: 1.3),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           Wrap(
-            spacing: 8,
+            spacing: 10,
+            runSpacing: 10,
             children: [
               for (final option in const [
                 'App Hider',
@@ -152,10 +127,11 @@ class _AppHiderScreenState extends State<AppHiderScreen> {
                 'Weather',
                 'Browser',
               ])
-                ChoiceChip(
-                  label: Text(option),
+                _DisguiseChip(
+                  label: option,
                   selected: disguise == option,
-                  onSelected: (_) async {
+                  accent: _accent,
+                  onTap: () async {
                     await _policy.setDisguise(option);
                     await LauncherService.setAppHiderDisguise(option);
                     setState(() {});
@@ -168,6 +144,22 @@ class _AppHiderScreenState extends State<AppHiderScreen> {
     );
   }
 
+  Widget _searchField() {
+    return TextField(
+      onChanged: (value) => setState(() => _query = value),
+      decoration: InputDecoration(
+        hintText: 'Search apps to hide',
+        prefixIcon: const Icon(Icons.search),
+        filled: true,
+        fillColor: miniAppSurface,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
+  }
+
   void _setHidden(AppInfo app, bool value) {
     final cubit = context.read<SettingsCubit>();
     final settings = cubit.state;
@@ -176,6 +168,42 @@ class _AppHiderScreenState extends State<AppHiderScreen> {
     hidden.remove(app.launcherKey);
     if (value) hidden.add(app.launcherKey);
     cubit.update(settings.copyWith(hiddenApps: hidden.toList()..sort()));
+  }
+}
+
+class _DisguiseChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final Color accent;
+  final VoidCallback onTap;
+
+  const _DisguiseChip({
+    required this.label,
+    required this.selected,
+    required this.accent,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? accent : miniAppSurface2,
+      shape: const StadiumBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.white : Colors.white70,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

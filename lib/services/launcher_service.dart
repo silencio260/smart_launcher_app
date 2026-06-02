@@ -290,17 +290,13 @@ class LauncherService {
         .toList(growable: false);
   }
 
-  static Future<bool> importLockedFile() async {
-    final result = await _fileLocker.invokeMethod<Object?>('importFile');
-    if (result is bool) return result;
-    if (result is Map) return true;
-    return false;
-  }
-
-  static Future<Map<String, dynamic>?> importLockedFileDetails() async {
-    final raw =
-        await _fileLocker.invokeMethod<Map<dynamic, dynamic>>('importFile');
-    return raw?.cast<String, dynamic>();
+  /// Opens the multi-select system file picker in a standalone activity and
+  /// encrypts the chosen files into the vault. The picker runs in its own task
+  /// (the launcher is `singleTask`, which drops `onActivityResult`), so this
+  /// returns immediately after launching; the caller reconciles the imported
+  /// files via [listLockedFiles] once it regains focus.
+  static Future<void> pickVaultFiles() async {
+    await _fileLocker.invokeMethod<void>('pickFiles');
   }
 
   static Future<bool> exportLockedFile(String id) async =>

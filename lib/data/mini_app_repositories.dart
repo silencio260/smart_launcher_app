@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'dart:math';
+
+import 'package:crypto/crypto.dart';
 import 'package:hive/hive.dart';
 import 'package:uuid/uuid.dart';
 
@@ -594,20 +598,55 @@ class VaultRepository {
   Box get _albums => FeatureHiveStore.box(FeatureHiveBoxes.vaultAlbums);
   Box get _items => FeatureHiveStore.box(FeatureHiveBoxes.vaultItems);
 
+  /// The single seeded folder that always exists and can't be deleted. Every
+  /// import lands here unless the user opened another folder first.
+  static const allAlbumId = 'all';
+
+  /// Folders that can never be deleted.
+  static const defaultAlbumIds = {allAlbumId};
+
+  /// Where items fall back to when their folder is deleted.
+  static const fallbackAlbumId = allAlbumId;
+
+  /// Legacy seeded folders from the previous multi-album scheme. Consolidated
+  /// into [allAlbumId] on first run by [ensureDefaults].
+  static const _legacyDefaultIds = {'photos', 'videos', 'documents', 'notes'};
+
   Future<void> ensureDefaults() async {
-    if (_albums.isNotEmpty) return;
-    await _albums.putAll({
-      'photos': {'schema': 1, 'id': 'photos', 'name': 'Photos'},
-      'videos': {'schema': 1, 'id': 'videos', 'name': 'Videos'},
-      'documents': {'schema': 1, 'id': 'documents', 'name': 'Documents'},
-      'notes': {'schema': 1, 'id': 'notes', 'name': 'Private Notes'},
-    });
+    // Always guarantee the "All" folder exists.
+    if (!_albums.containsKey(allAlbumId)) {
+      await _albums.put(
+        allAlbumId,
+        {'schema': 1, 'id': allAlbumId, 'name': 'All'},
+      );
+    }
+    // Migrate any old default folders: move their items into "All", drop them.
+    for (final legacy in _legacyDefaultIds) {
+      if (!_albums.containsKey(legacy)) continue;
+      for (final item in itemsIn(legacy)) {
+        final updated = Map<String, Object?>.from(item);
+        updated['albumId'] = allAlbumId;
+        await _items.put(updated['id'], updated);
+      }
+      await _albums.delete(legacy);
+    }
   }
 
-  List<Map<String, Object?>> albums() => _albums.values
-      .whereType<Map>()
-      .map((e) => e.cast<String, Object?>())
-      .toList(growable: false);
+  List<Map<String, Object?>> albums() {
+    final all = _albums.values
+        .whereType<Map>()
+        .map((e) => e.cast<String, Object?>())
+        .toList(growable: false);
+    // Keep "All" first, then user folders alphabetically.
+    all.sort((a, b) {
+      if (a['id'] == allAlbumId) return -1;
+      if (b['id'] == allAlbumId) return 1;
+      return (a['name']?.toString() ?? '')
+          .toLowerCase()
+          .compareTo((b['name']?.toString() ?? '').toLowerCase());
+    });
+    return all;
+  }
 
   List<Map<String, Object?>> items() => _items.values
       .whereType<Map>()
@@ -616,63 +655,192 @@ class VaultRepository {
     ..sort((a, b) =>
         (b['createdAt'] as int? ?? 0).compareTo(a['createdAt'] as int? ?? 0));
 
-  Future<void> addNativeImport(Map<String, dynamic> data) async {
+  /// Items belonging to [albumId], newest first. The "All" folder shows every
+  /// item regardless of its folder.
+  List<Map<String, Object?>> itemsIn(String albumId) => albumId == allAlbumId
+      ? items()
+      : items().where((item) => item['albumId'] == albumId).toList(growable: false);
+
+  int countIn(String albumId) => albumId == allAlbumId
+      ? _items.length
+      : _items.values.whereType<Map>().where((e) => e['albumId'] == albumId).length;
+
+  /// Creates a user folder and returns its generated id.
+  Future<String> addAlbum(String name) async {
+    final id = 'album_${_uuid.v4()}';
+    await _albums.put(id, {'schema': 1, 'id': id, 'name': name.trim()});
+    return id;
+  }
+
+  Future<void> renameAlbum(String id, String name) async {
+    final raw = _albums.get(id);
+    if (raw is! Map) return;
+    final updated = raw.cast<String, Object?>();
+    updated['name'] = name.trim();
+    await _albums.put(id, updated);
+  }
+
+  /// Deletes a user folder. The "All" folder is protected; any items inside the
+  /// removed folder are reassigned to [fallbackAlbumId] so files are never lost.
+  Future<void> deleteAlbum(String id) async {
+    if (defaultAlbumIds.contains(id) || !_albums.containsKey(id)) return;
+    for (final item in itemsIn(id)) {
+      final updated = Map<String, Object?>.from(item);
+      updated['albumId'] = fallbackAlbumId;
+      await _items.put(updated['id'], updated);
+    }
+    await _albums.delete(id);
+  }
+
+  /// Moves [ids] into [albumId]. Used by bulk selection.
+  Future<void> moveItems(Iterable<String> ids, String albumId) async {
+    final target =
+        _albums.containsKey(albumId) ? albumId : allAlbumId;
+    for (final id in ids) {
+      final raw = _items.get(id);
+      if (raw is! Map) continue;
+      final updated = raw.cast<String, Object?>();
+      updated['albumId'] = target;
+      await _items.put(id, updated);
+    }
+  }
+
+  /// Deletes [ids] from both the encrypted native store and local metadata.
+  Future<void> deleteItems(Iterable<String> ids) async {
+    for (final id in ids) {
+      await LauncherService.deleteLockedFile(id);
+      await _items.delete(id);
+    }
+  }
+
+  /// Persists a freshly imported native file. When [albumId] is given the item
+  /// lands there; otherwise it goes to the "All" folder.
+  Future<void> addNativeImport(
+    Map<String, dynamic> data, {
+    String? albumId,
+  }) async {
     final name = data['name']?.toString() ?? 'Locked file';
-    final albumId = _albumForName(name);
+    final target = (albumId != null && _albums.containsKey(albumId))
+        ? albumId
+        : allAlbumId;
     await _items.put(data['id'], {
       'schema': 1,
       'id': data['id'],
-      'albumId': albumId,
+      'albumId': target,
       'name': name,
       'size': data['size'] ?? 0,
       'createdAt': data['createdAt'] ?? DateTime.now().millisecondsSinceEpoch,
     });
   }
 
-  Future<void> deleteItem(String id) => _items.delete(id);
-
-  String _albumForName(String name) {
-    final lower = name.toLowerCase();
-    if (lower.endsWith('.mp4') || lower.endsWith('.mov')) return 'videos';
-    if (lower.endsWith('.jpg') ||
-        lower.endsWith('.jpeg') ||
-        lower.endsWith('.png') ||
-        lower.endsWith('.webp')) {
-      return 'photos';
+  /// Pulls the native file list and records any encrypted files that aren't yet
+  /// tracked in metadata into [targetAlbumId]. This is how imports are picked up
+  /// after the picker returns (the picker runs in its own task, so it can't
+  /// hand a result straight back through the method channel).
+  ///
+  /// Returns the number of newly-added items.
+  Future<int> reconcileNativeImports(String targetAlbumId) async {
+    final native = await LauncherService.listLockedFiles();
+    final target = _albums.containsKey(targetAlbumId)
+        ? targetAlbumId
+        : allAlbumId;
+    var added = 0;
+    for (final file in native) {
+      final id = file['id']?.toString();
+      if (id == null || id.isEmpty || _items.containsKey(id)) continue;
+      await _items.put(id, {
+        'schema': 1,
+        'id': id,
+        'albumId': target,
+        'name': file['name']?.toString() ?? 'Locked file',
+        'size': file['size'] ?? 0,
+        'createdAt':
+            file['createdAt'] ?? DateTime.now().millisecondsSinceEpoch,
+      });
+      added++;
     }
-    return 'documents';
+    return added;
+  }
+
+  Future<void> deleteItem(String id) => _items.delete(id);
+}
+
+/// Stores the vault's own PIN/pattern credential (salted SHA-256 hash) plus the
+/// biometric and auto-lock preferences. Backed by an encrypted Hive box.
+class VaultSecurityRepository {
+  Box get _box => FeatureHiveStore.box(FeatureHiveBoxes.vaultSecurity);
+
+  static const typePin = 'pin';
+  static const typePattern = 'pattern';
+
+  bool get isConfigured => (_box.get('hash') as String?)?.isNotEmpty ?? false;
+
+  /// `pin` or `pattern`. Defaults to `pin` before setup.
+  String get type => _box.get('type', defaultValue: typePin).toString();
+
+  bool get biometricEnabled =>
+      _box.get('biometric', defaultValue: false) as bool;
+
+  /// Grace window in ms during which re-opening the vault skips the prompt.
+  /// 0 = always lock immediately.
+  int get autoLockMs => (_box.get('autoLockMs', defaultValue: 0) as num).toInt();
+
+  bool get withinGrace {
+    final grace = autoLockMs;
+    if (grace <= 0) return false;
+    final last = (_box.get('lastUnlockAt', defaultValue: 0) as num).toInt();
+    if (last == 0) return false;
+    return DateTime.now().millisecondsSinceEpoch - last < grace;
+  }
+
+  /// Hashes [code] with a fresh random salt and stores it under [type].
+  Future<void> setCredential(String type, String code) async {
+    final salt = _randomSalt();
+    await _box.put('type', type);
+    await _box.put('salt', salt);
+    await _box.put('hash', _hash(code, salt));
+    await _box.put('lastUnlockAt', 0);
+  }
+
+  bool verify(String code) {
+    final salt = _box.get('salt') as String?;
+    final hash = _box.get('hash') as String?;
+    if (salt == null || hash == null) return false;
+    return _constantTimeEquals(_hash(code, salt), hash);
+  }
+
+  Future<void> setBiometricEnabled(bool value) =>
+      _box.put('biometric', value);
+
+  Future<void> setAutoLockMs(int value) => _box.put('autoLockMs', value);
+
+  Future<void> markUnlocked() =>
+      _box.put('lastUnlockAt', DateTime.now().millisecondsSinceEpoch);
+
+  String _hash(String code, String salt) =>
+      sha256.convert(utf8.encode('$salt::$code')).toString();
+
+  String _randomSalt() {
+    final rnd = Random.secure();
+    final bytes = List<int>.generate(16, (_) => rnd.nextInt(256));
+    return base64Encode(bytes);
+  }
+
+  bool _constantTimeEquals(String a, String b) {
+    if (a.length != b.length) return false;
+    var diff = 0;
+    for (var i = 0; i < a.length; i++) {
+      diff |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+    }
+    return diff == 0;
   }
 }
 
 class MiniAppPolicyRepository {
-  Box get _appLock => FeatureHiveStore.box(FeatureHiveBoxes.appLockPolicy);
   Box get _hidden => FeatureHiveStore.box(FeatureHiveBoxes.hiddenSpace);
-  Box get _intruder => FeatureHiveStore.box(FeatureHiveBoxes.intruderAttempts);
 
-  bool get lockNewApps => _appLock.get('lockNewApps', defaultValue: false);
-  String get relockPolicy =>
-      _appLock.get('relockPolicy', defaultValue: 'screen_off').toString();
   String get disguise =>
       _hidden.get('disguise', defaultValue: 'App Hider').toString();
 
-  Future<void> setLockNewApps(bool value) => _appLock.put('lockNewApps', value);
-
-  Future<void> setRelockPolicy(String value) =>
-      _appLock.put('relockPolicy', value);
-
   Future<void> setDisguise(String value) => _hidden.put('disguise', value);
-
-  Future<void> addIntruderAttempt(String packageName) => _intruder.put(
-        _uuid.v4(),
-        {
-          'schema': 1,
-          'packageName': packageName,
-          'createdAt': DateTime.now().millisecondsSinceEpoch,
-        },
-      );
-
-  List<Map<String, Object?>> intruderAttempts() => _intruder.values
-      .whereType<Map>()
-      .map((e) => e.cast<String, Object?>())
-      .toList(growable: false);
 }

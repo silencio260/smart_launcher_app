@@ -213,6 +213,17 @@
             android:excludeFromRecents="true"
             android:theme="@style/LauncherTheme"/>
 
+        <!-- Transparent trampoline that hosts the vault's system file picker.
+             MainActivity is singleTask, which drops SAF results, so the picker
+             runs here (standard launch mode) and encrypts files itself. -->
+        <activity
+            android:name=".features.FileImportActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="standard"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"/>
+
         <!-- Notification listener for badge counts -->
         <service
             android:name=".services.LauncherNotificationService"

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../data/mini_app_repositories.dart';
 import '../../models/app_info.dart';
 import '../../models/launcher_feature.dart';
 import '../../models/launcher_feature_settings.dart';
@@ -9,7 +8,9 @@ import '../../services/launcher_service.dart';
 import '../../state/apps_cubit.dart';
 import '../../state/launcher_feature_cubit.dart';
 import '../../widgets/icons/shaped_icon.dart';
+import 'clock/clock_theme.dart';
 import 'mini_app_chrome.dart';
+import 'mini_app_kit.dart';
 
 class AppLockerScreen extends StatefulWidget {
   const AppLockerScreen({super.key});
@@ -19,9 +20,7 @@ class AppLockerScreen extends StatefulWidget {
 }
 
 class _AppLockerScreenState extends State<AppLockerScreen> {
-  final _policy = MiniAppPolicyRepository();
   var _query = '';
-  var _usage = false;
   var _accessibility = false;
   var _overlay = false;
 
@@ -32,12 +31,10 @@ class _AppLockerScreenState extends State<AppLockerScreen> {
   }
 
   Future<void> _refreshPermissions() async {
-    final usage = await LauncherService.isUsageAccessEnabled();
     final accessibility = await LauncherService.isAccessibilityServiceEnabled();
     final overlay = await LauncherService.canDrawOverlays();
     if (!mounted) return;
     setState(() {
-      _usage = usage;
       _accessibility = accessibility;
       _overlay = overlay;
     });
@@ -47,74 +44,65 @@ class _AppLockerScreenState extends State<AppLockerScreen> {
   Widget build(BuildContext context) {
     return MiniAppScaffold(
       title: 'App Locker',
-      child: BlocBuilder<AppsCubit, AppsState>(
-        builder: (context, appsState) {
-          final apps = appsState.apps
-              .where((app) => !LauncherFeatureCatalog.isFeatureApp(app))
-              .where((app) =>
-                  _query.isEmpty ||
-                  app.name.toLowerCase().contains(_query.toLowerCase()) ||
-                  app.packageName.toLowerCase().contains(_query.toLowerCase()))
-              .toList(growable: false);
-          return BlocBuilder<LauncherFeatureSettingsCubit,
-              LauncherFeatureSettings>(
-            builder: (context, featureSettings) {
-              final locked = featureSettings.lockedApps.toSet();
-              return ListView(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
-                children: [
-                  _buildHeader(locked.length),
-                  const SizedBox(height: 14),
-                  _buildPermissionStack(),
-                  const SizedBox(height: 14),
-                  _buildPolicyControls(),
-                  const SizedBox(height: 14),
-                  TextField(
-                    onChanged: (value) => setState(() => _query = value),
-                    decoration: InputDecoration(
-                      hintText: 'Search apps',
-                      prefixIcon: const Icon(Icons.search),
-                      filled: true,
-                      fillColor: miniAppSurface,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide.none,
+      child: Theme(
+        data: clockThemeOf(context),
+        child: BlocBuilder<AppsCubit, AppsState>(
+          builder: (context, appsState) {
+            final apps = appsState.apps
+                .where((app) => !LauncherFeatureCatalog.isFeatureApp(app))
+                .where((app) =>
+                    _query.isEmpty ||
+                    app.name.toLowerCase().contains(_query.toLowerCase()) ||
+                    app.packageName
+                        .toLowerCase()
+                        .contains(_query.toLowerCase()))
+                .toList(growable: false);
+            return BlocBuilder<LauncherFeatureSettingsCubit,
+                LauncherFeatureSettings>(
+              builder: (context, featureSettings) {
+                final locked = featureSettings.lockedApps.toSet();
+                return ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+                  children: [
+                    _statusCard(locked.length),
+                    const SizedBox(height: 12),
+                    ..._setupRows(),
+                    _searchField(),
+                    const SizedBox(height: 6),
+                    for (final app in apps)
+                      _AppLockTile(
+                        app: app,
+                        locked: locked.contains(app.packageName),
+                        onChanged: (value) => context
+                            .read<LauncherFeatureSettingsCubit>()
+                            .setAppLocked(app.packageName, value),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  for (final app in apps)
-                    _AppLockTile(
-                      app: app,
-                      locked: locked.contains(app.packageName),
-                      onChanged: (value) => context
-                          .read<LauncherFeatureSettingsCubit>()
-                          .setAppLocked(app.packageName, value),
-                    ),
-                ],
-              );
-            },
-          );
-        },
+                  ],
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }
 
-  Widget _buildHeader(int lockedCount) {
-    final ready = _usage && _accessibility && _overlay;
-    return MiniCard(
+  Widget _statusCard(int lockedCount) {
+    final ready = _accessibility && _overlay;
+    return RoundCard(
       child: Row(
         children: [
           Container(
-            width: 58,
-            height: 58,
+            width: 56,
+            height: 56,
             decoration: BoxDecoration(
-              color: ready ? const Color(0xFF193C23) : const Color(0xFF3C2419),
-              shape: BoxShape.circle,
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(16),
             ),
             child: Icon(
-              ready ? Icons.verified_user : Icons.security,
-              color: ready ? Colors.greenAccent : miniAppAccent,
+              ready ? Icons.lock : Icons.lock_open,
+              color: clockAccent,
+              size: 28,
             ),
           ),
           const SizedBox(width: 14),
@@ -123,14 +111,18 @@ class _AppLockerScreenState extends State<AppLockerScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  ready ? 'Device-wide protection active' : 'Protection setup',
+                  ready ? 'App Lock is active' : 'Set up App Lock',
                   style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w800),
+                    fontSize: 19,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '$lockedCount apps locked. Launcher fallback always works.',
-                  style: const TextStyle(color: miniAppMuted),
+                  ready
+                      ? '$lockedCount app${lockedCount == 1 ? '' : 's'} locked behind your device unlock.'
+                      : 'Enable the steps below to lock apps device-wide.',
+                  style: const TextStyle(color: miniAppMuted, height: 1.3),
                 ),
               ],
             ),
@@ -140,78 +132,76 @@ class _AppLockerScreenState extends State<AppLockerScreen> {
     );
   }
 
-  Widget _buildPermissionStack() {
-    return Column(
-      children: [
-        PermissionPill(
-          icon: Icons.query_stats,
-          label: 'Usage Access',
-          value: _usage ? 'On' : 'Needed',
-          onTap: () async {
-            await LauncherService.requestUsageAccess();
-            await _refreshPermissions();
-          },
+  /// Only the setup steps that still need granting are shown, so the screen
+  /// collapses to the status card + app list once everything is ready.
+  List<Widget> _setupRows() {
+    final rows = <Widget>[];
+    if (!_accessibility) {
+      rows.add(_setupRow(
+        icon: Icons.accessibility_new,
+        title: 'Enable App Lock service',
+        subtitle: 'Lets the lock screen appear when you open a locked app',
+        onTap: () async {
+          await LauncherService.requestAccessibilityAccess();
+          await _refreshPermissions();
+        },
+      ));
+    }
+    if (!_overlay) {
+      rows.add(_setupRow(
+        icon: Icons.layers_outlined,
+        title: 'Allow display over apps',
+        subtitle: 'Lets the unlock prompt show on top of locked apps',
+        onTap: () async {
+          await LauncherService.requestOverlayPermission();
+          await _refreshPermissions();
+        },
+      ));
+    }
+    return rows;
+  }
+
+  Widget _setupRow({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: MiniFeatureRow(
+        icon: icon,
+        iconColor: clockAccent,
+        title: title,
+        subtitle: subtitle,
+        onTap: onTap,
+        trailing: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Enable',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+            ),
+            SizedBox(width: 6),
+            Icon(Icons.chevron_right, color: miniAppMuted),
+          ],
         ),
-        const SizedBox(height: 10),
-        PermissionPill(
-          icon: Icons.accessibility_new,
-          label: 'Accessibility Lock Service',
-          value: _accessibility ? 'On' : 'Needed',
-          onTap: () async {
-            await LauncherService.requestAccessibilityAccess();
-            await _refreshPermissions();
-          },
-        ),
-        const SizedBox(height: 10),
-        PermissionPill(
-          icon: Icons.layers_outlined,
-          label: 'Lock screen overlay',
-          value: _overlay ? 'On' : 'Needed',
-          onTap: () async {
-            await LauncherService.requestOverlayPermission();
-            await _refreshPermissions();
-          },
-        ),
-      ],
+      ),
     );
   }
 
-  Widget _buildPolicyControls() {
-    return MiniCard(
-      child: Column(
-        children: [
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Lock newly installed apps'),
-            subtitle: const Text('Prompt from Install Assistant'),
-            value: _policy.lockNewApps,
-            onChanged: (value) async {
-              await _policy.setLockNewApps(value);
-              setState(() {});
-            },
-          ),
-          const Divider(color: miniAppSurface2),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Relock policy'),
-            subtitle: Text(_policy.relockPolicy),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () async {
-              final next = _policy.relockPolicy == 'screen_off'
-                  ? 'immediately'
-                  : 'screen_off';
-              await _policy.setRelockPolicy(next);
-              setState(() {});
-            },
-          ),
-          const Divider(color: miniAppSurface2),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Intruder attempts'),
-            subtitle: Text('${_policy.intruderAttempts().length} captured'),
-            trailing: const Icon(Icons.camera_alt_outlined),
-          ),
-        ],
+  Widget _searchField() {
+    return TextField(
+      onChanged: (value) => setState(() => _query = value),
+      decoration: InputDecoration(
+        hintText: 'Search apps',
+        prefixIcon: const Icon(Icons.search),
+        filled: true,
+        fillColor: miniAppSurface,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
       ),
     );
   }
@@ -241,7 +231,7 @@ class _AppLockTile extends StatelessWidget {
       ),
       title: Text(app.name, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
-        app.packageName,
+        locked ? 'Locked' : app.packageName,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(color: miniAppMuted),
