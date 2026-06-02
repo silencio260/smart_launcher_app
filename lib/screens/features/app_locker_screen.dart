@@ -10,6 +10,7 @@ import '../../state/apps_cubit.dart';
 import '../../state/launcher_feature_cubit.dart';
 import '../../widgets/icons/shaped_icon.dart';
 import 'app_lock/app_lock_lock_screen.dart';
+import 'app_lock/app_lock_protection_guide.dart';
 import 'app_lock/app_lock_settings_screen.dart';
 import 'clock/clock_theme.dart';
 import 'mini_app_chrome.dart';
@@ -65,6 +66,17 @@ class _AppLockerScreenState extends State<AppLockerScreen>
     setState(() {
       _accessibility = accessibility;
       _overlay = overlay;
+    });
+  }
+
+  bool get _ready => _accessibility && _overlay;
+
+  void _openGuide() {
+    Navigator.of(context)
+        .push(MaterialPageRoute(
+            builder: (_) => const AppLockProtectionGuide()))
+        .then((_) {
+      if (mounted) _refreshPermissions();
     });
   }
 
@@ -128,9 +140,11 @@ class _AppLockerScreenState extends State<AppLockerScreen>
                   return ListView(
                     padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
                     children: [
-                      _statusCard(locked.length),
+                      if (_ready)
+                        _statusCard(locked.length)
+                      else
+                        _offBanner(),
                       const SizedBox(height: 12),
-                      ..._setupRows(),
                       _searchField(),
                       const SizedBox(height: 8),
                       TabBar(
@@ -194,8 +208,8 @@ class _AppLockerScreenState extends State<AppLockerScreen>
     ];
   }
 
+  /// Shown once the service + overlay are granted: a calm "active" summary.
   Widget _statusCard(int lockedCount) {
-    final ready = _accessibility && _overlay;
     return RoundCard(
       child: Row(
         children: [
@@ -206,29 +220,20 @@ class _AppLockerScreenState extends State<AppLockerScreen>
               color: Colors.white.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: Icon(
-              ready ? Icons.lock : Icons.lock_open,
-              color: clockAccent,
-              size: 28,
-            ),
+            child: const Icon(Icons.lock, color: clockAccent, size: 28),
           ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  ready ? 'App Lock is active' : 'Finish setup',
-                  style: const TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.w800,
-                  ),
+                const Text(
+                  'App Lock is active',
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  ready
-                      ? '$lockedCount app${lockedCount == 1 ? '' : 's'} locked behind your passcode.'
-                      : 'Enable the steps below so locks work everywhere.',
+                  '$lockedCount app${lockedCount == 1 ? '' : 's'} locked behind your passcode.',
                   style: const TextStyle(color: miniAppMuted, height: 1.3),
                 ),
               ],
@@ -239,61 +244,44 @@ class _AppLockerScreenState extends State<AppLockerScreen>
     );
   }
 
-  /// Only the setup steps that still need granting are shown, so the screen
-  /// collapses to the status card + list once everything is ready.
-  List<Widget> _setupRows() {
-    final rows = <Widget>[];
-    if (!_accessibility) {
-      rows.add(_setupRow(
-        icon: Icons.accessibility_new,
-        title: 'Enable App Lock service',
-        subtitle: 'Lets the lock screen appear when you open a locked app',
-        onTap: () async {
-          await LauncherService.requestAccessibilityAccess();
-          await _refreshPermissions();
-        },
-      ));
-    }
-    if (!_overlay) {
-      rows.add(_setupRow(
-        icon: Icons.layers_outlined,
-        title: 'Allow display over apps',
-        subtitle: 'Lets the unlock prompt show on top of locked apps',
-        onTap: () async {
-          await LauncherService.requestOverlayPermission();
-          await _refreshPermissions();
-        },
-      ));
-    }
-    return rows;
-  }
-
-  Widget _setupRow({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: MiniFeatureRow(
-        icon: icon,
-        iconColor: clockAccent,
-        title: title,
-        subtitle: subtitle,
-        onTap: onTap,
-        trailing: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Enable',
-              style:
-                  TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+  /// Shown while the service/overlay are missing: an unmissable warning that
+  /// locked apps are NOT protected, tapping into the guided setup flow.
+  Widget _offBanner() {
+    final warn = accentForFeature('app_locker');
+    return RoundCard(
+      onTap: _openGuide,
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: warn.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(16),
             ),
-            SizedBox(width: 6),
-            Icon(Icons.chevron_right, color: miniAppMuted),
-          ],
-        ),
+            child: Icon(Icons.gpp_maybe, color: warn, size: 28),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'App Lock is OFF',
+                  style: TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w800, color: warn),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Your locked apps are NOT protected. Tap to turn on protection.',
+                  style: TextStyle(color: miniAppMuted, height: 1.3),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Icon(Icons.chevron_right, color: miniAppMuted),
+        ],
       ),
     );
   }

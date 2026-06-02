@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
 import android.text.TextUtils
 import io.flutter.plugin.common.BinaryMessenger
@@ -100,7 +101,7 @@ class SystemChannel(private val activity: Activity) {
                         result.success(true)
                     }
                     "requestAccessibilityAccess" -> {
-                        activity.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        openAccessibilitySettings()
                         result.success(true)
                     }
                     "consumePendingFeatureRoute" -> {
@@ -226,6 +227,41 @@ class SystemChannel(private val activity: Activity) {
         ) ?: return false
         val cn = ComponentName(activity, "com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.services.LauncherNotificationService")
         return flat.contains(cn.flattenToString())
+    }
+
+    // Deep-links straight to OUR accessibility service's on/off page (the
+    // "Smart Launcher Accessibility" toggle) instead of the long generic list,
+    // which buries the service several taps deep on One UI. Falls back to the
+    // generic Accessibility settings if the OEM rejects the deep-link.
+    private fun openAccessibilitySettings() {
+        val component = ComponentName(
+            activity,
+            LauncherAccessibilityService::class.java
+        ).flattenToString()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                val args = Bundle().apply {
+                    putString(":settings:fragment_args_key", component)
+                }
+                // Use the literal action string rather than the SDK constant
+                // (Settings.ACTION_ACCESSIBILITY_DETAILS_SETTINGS) so this compiles
+                // regardless of compileSdk; the value is stable across versions.
+                val intent = Intent("android.settings.ACCESSIBILITY_DETAILS_SETTINGS").apply {
+                    putExtra(":settings:fragment_args_key", component)
+                    putExtra(":settings:show_fragment_args", args)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                activity.startActivity(intent)
+                return
+            } catch (e: Exception) {
+                // Fall through to the generic accessibility list below.
+            }
+        }
+        try {
+            activity.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        } catch (e: Exception) {
+            // Nothing else we can do; the Dart side re-checks on resume.
+        }
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {

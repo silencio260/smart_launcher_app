@@ -8,6 +8,7 @@ import '../clock/clock_theme.dart';
 import '../mini_app_chrome.dart';
 import '../mini_app_kit.dart';
 import 'app_lock_lock_screen.dart';
+import 'app_lock_protection_guide.dart';
 
 /// App Lock settings, mirroring the Vault's settings screen (change passcode,
 /// switch PIN/Pattern, toggle fingerprint, auto-lock) plus the bits unique to
@@ -58,6 +59,17 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen>
     setState(() {
       _accessibility = accessibility;
       _overlay = overlay;
+    });
+  }
+
+  bool get _ready => _accessibility && _overlay;
+
+  void _openGuide() {
+    Navigator.of(context)
+        .push(MaterialPageRoute(
+            builder: (_) => const AppLockProtectionGuide()))
+        .then((_) {
+      if (mounted) _refreshPermissions();
     });
   }
 
@@ -186,34 +198,29 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen>
               onTap: _cycleAutoLock,
             ),
             const SizedBox(height: 18),
-            const MiniSectionHeader('Permissions'),
+            const MiniSectionHeader('Protection'),
             MiniFeatureRow(
-              icon: Icons.accessibility_new,
-              iconColor: Colors.white,
-              title: 'App Lock service',
-              subtitle:
-                  'Lets the lock screen appear when you open a locked app',
-              trailing: _permTrailing(_accessibility),
-              onTap: _accessibility
-                  ? null
-                  : () async {
-                      await LauncherService.requestAccessibilityAccess();
-                      await _refreshPermissions();
-                    },
-            ),
-            const SizedBox(height: 12),
-            MiniFeatureRow(
-              icon: Icons.layers_outlined,
-              iconColor: Colors.white,
-              title: 'Display over apps',
-              subtitle: 'Lets the unlock screen show on top of locked apps',
-              trailing: _permTrailing(_overlay),
-              onTap: _overlay
-                  ? null
-                  : () async {
-                      await LauncherService.requestOverlayPermission();
-                      await _refreshPermissions();
-                    },
+              icon: _ready ? Icons.verified_user : Icons.gpp_maybe,
+              iconColor:
+                  _ready ? Colors.white : accentForFeature('app_locker'),
+              title: 'Device-wide lock',
+              subtitle: _ready
+                  ? 'Locked apps are protected everywhere on this phone.'
+                  : 'OFF — locked apps are not protected. Tap to turn it on.',
+              trailing: _ready
+                  ? const Icon(Icons.check_circle, color: Colors.white)
+                  : const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('Fix',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700)),
+                        SizedBox(width: 6),
+                        Icon(Icons.chevron_right, color: miniAppMuted),
+                      ],
+                    ),
+              onTap: _openGuide,
             ),
             const SizedBox(height: 26),
             MiniFeatureRow(
@@ -229,18 +236,4 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen>
     );
   }
 
-  Widget _permTrailing(bool granted) {
-    if (granted) {
-      return const Icon(Icons.check_circle, color: Colors.white);
-    }
-    return const Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text('Enable',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-        SizedBox(width: 6),
-        Icon(Icons.chevron_right, color: miniAppMuted),
-      ],
-    );
-  }
 }
