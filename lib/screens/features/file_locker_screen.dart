@@ -25,6 +25,7 @@ class _FileLockerScreenState extends State<FileLockerScreen>
     with WidgetsBindingObserver {
   final _repo = VaultRepository();
   final _sec = VaultSecurityRepository();
+  final _thumbs = <String, Future<Uint8List?>>{};
   var _unlocked = false;
   var _pendingImport = false;
 
@@ -59,13 +60,9 @@ class _FileLockerScreenState extends State<FileLockerScreen>
       _reconcile(VaultRepository.allAlbumId, 'All');
       return;
     }
-    // Auto-lock: re-prompt when we come back from the background, unless a child
-    // route (folder/settings) is on top.
-    final isCurrent = ModalRoute.of(context)?.isCurrent ?? true;
-    if (isCurrent && _unlocked && _sec.isConfigured && !_sec.withinGrace) {
-      LauncherService.clearVaultViewCache();
-      setState(() => _unlocked = false);
-    }
+    // Keep the current unlock while this screen is alive. Android also sends
+    // resumed after file pickers and system prompts, so re-locking here makes
+    // normal vault actions feel random.
   }
 
   Future<void> _onUnlocked() async {
@@ -73,13 +70,18 @@ class _FileLockerScreenState extends State<FileLockerScreen>
     if (mounted) setState(() => _unlocked = true);
   }
 
+  Future<Uint8List?> _thumb(String id) =>
+      _thumbs.putIfAbsent(id, () => LauncherService.vaultThumbnail(id));
+
   Future<void> _reconcile(String albumId, String label) async {
     final added = await _repo.reconcileNativeImports(albumId);
     if (!mounted) return;
     setState(() {});
     if (added > 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Added $added item${added == 1 ? '' : 's'} to $label')),
+        SnackBar(
+            content:
+                Text('Added $added item${added == 1 ? '' : 's'} to $label')),
       );
     }
   }
@@ -115,8 +117,8 @@ class _FileLockerScreenState extends State<FileLockerScreen>
   void _openFolder(String id, String name) {
     Navigator.of(context)
         .push(MaterialPageRoute(
-          builder: (_) => VaultFolderScreen(albumId: id, albumName: name),
-        ))
+      builder: (_) => VaultFolderScreen(albumId: id, albumName: name),
+    ))
         .then((_) {
       if (mounted) setState(() {});
     });
@@ -195,8 +197,8 @@ class _FileLockerScreenState extends State<FileLockerScreen>
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
               children: [
                 ClockCard(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 14),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   child: Row(
                     children: [
                       Container(
@@ -224,8 +226,7 @@ class _FileLockerScreenState extends State<FileLockerScreen>
                 GridView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate:
-                      const SliverGridDelegateWithFixedCrossAxisCount(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
                     mainAxisSpacing: 14,
                     crossAxisSpacing: 14,
@@ -237,12 +238,15 @@ class _FileLockerScreenState extends State<FileLockerScreen>
                     final id = folder['id'].toString();
                     final name = folder['name']?.toString() ?? 'Folder';
                     final isAll = id == VaultRepository.allAlbumId;
+                    final cover = _repo.coverItem(id);
+                    final coverId = cover?['id']?.toString();
                     return _FolderCard(
                       name: name,
                       count: _repo.countIn(id),
-                      icon: isAll
-                          ? Icons.inbox_outlined
-                          : Icons.folder_outlined,
+                      icon:
+                          isAll ? Icons.inbox_outlined : Icons.folder_outlined,
+                      coverThumbnail: coverId == null ? null : _thumb(coverId),
+                      coverKind: cover?['kind']?.toString(),
                       onTap: () => _openFolder(id, name),
                       onLongPress: isAll ? null : () => _folderMenu(id, name),
                     );
@@ -403,8 +407,8 @@ class _VaultFolderScreenState extends State<VaultFolderScreen>
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text('Move to',
-                    style: TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w800)),
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
               ),
             ),
             for (final folder in folders)
@@ -446,8 +450,8 @@ class _VaultFolderScreenState extends State<VaultFolderScreen>
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel',
-                  style: TextStyle(color: miniAppMuted)),
+              child:
+                  const Text('Cancel', style: TextStyle(color: miniAppMuted)),
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, true),
@@ -495,8 +499,7 @@ class _VaultFolderScreenState extends State<VaultFolderScreen>
                   ),
                 IconButton(
                   tooltip: 'Delete',
-                  icon:
-                      const Icon(Icons.delete_outline, color: Colors.white),
+                  icon: const Icon(Icons.delete_outline, color: Colors.white),
                   onPressed: _selected.isEmpty ? null : _deleteSelected,
                 ),
                 IconButton(
@@ -515,11 +518,11 @@ class _VaultFolderScreenState extends State<VaultFolderScreen>
         child: Theme(
           data: clockThemeOf(context),
           child: items.isEmpty
-              ? _EmptyFolder(isAll: widget.albumId == VaultRepository.allAlbumId)
+              ? _EmptyFolder(
+                  isAll: widget.albumId == VaultRepository.allAlbumId)
               : GridView.builder(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
-                  gridDelegate:
-                      const SliverGridDelegateWithFixedCrossAxisCount(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
                     mainAxisSpacing: 14,
                     crossAxisSpacing: 14,
@@ -556,6 +559,8 @@ class _FolderCard extends StatelessWidget {
   final String name;
   final int count;
   final IconData icon;
+  final Future<Uint8List?>? coverThumbnail;
+  final String? coverKind;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
 
@@ -563,6 +568,8 @@ class _FolderCard extends StatelessWidget {
     required this.name,
     required this.count,
     required this.icon,
+    this.coverThumbnail,
+    this.coverKind,
     required this.onTap,
     this.onLongPress,
   });
@@ -580,11 +587,7 @@ class _FolderCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              child: Container(
-                color: miniAppSurface2,
-                alignment: Alignment.center,
-                child: Icon(icon, size: 44, color: Colors.white),
-              ),
+              child: _cover(),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
@@ -608,6 +611,51 @@ class _FolderCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _cover() {
+    final thumbnail = coverThumbnail;
+    if (thumbnail == null) {
+      return _folderIconPreview();
+    }
+    return FutureBuilder<Uint8List?>(
+      future: thumbnail,
+      builder: (context, snap) {
+        final bytes = snap.data;
+        if (bytes == null) return _folderIconPreview();
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.memory(bytes, fit: BoxFit.cover),
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.black26, Colors.transparent],
+                ),
+              ),
+            ),
+            if (coverKind == 'video')
+              const Center(
+                child: Icon(
+                  Icons.play_circle_fill,
+                  color: Colors.white70,
+                  size: 42,
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _folderIconPreview() {
+    return Container(
+      color: miniAppSurface2,
+      alignment: Alignment.center,
+      child: Icon(icon, size: 44, color: Colors.white),
     );
   }
 }

@@ -3,13 +3,21 @@ package com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app
 import android.app.Activity
 import android.content.ContentUris
 import android.content.Intent
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
+import android.view.Gravity
+import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.TextView
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.FileLockerStore
+import java.util.concurrent.Executors
 
 /**
  * Standalone, transparent activity that hosts the system file picker for the
@@ -19,7 +27,7 @@ import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.
  * Framework picker opens in its own task and its result never makes it back to
  * `MainActivity.onActivityResult` — that is why in-channel imports silently
  * failed. This activity uses the default (`standard`) launch mode, so it
- * reliably receives `onActivityResult`, performs the encrypt-to-vault work
+ * reliably receives `onActivityResult`, performs the hide-to-vault work
  * itself, and finishes. Flutter then reconciles the imported files via the
  * `listFiles` channel call once it regains focus.
  *
@@ -47,9 +55,15 @@ class FileImportActivity : Activity() {
     private var exportId: String? = null
     private var deleteOriginals = false
 
+    // Copying media (esp. a large video) must not run on the UI thread, or the
+    // activity ANRs and the whole app is killed. Do it here, post back to finish.
+    private val io = Executors.newSingleThreadExecutor()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        store = FileLockerStore(this)
+        // applicationContext so the copy can finish even if this transient
+        // activity is torn down.
+        store = FileLockerStore(applicationContext)
         deleteOriginals = intent.getBooleanExtra(EXTRA_DELETE_ORIGINALS, false)
         // Only launch the picker on a fresh start; on recreation we wait for the
         // pending result instead of opening a second picker.
@@ -99,13 +113,19 @@ class FileImportActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         when (requestCode) {
             REQ_IMPORT -> {
-                val imported = if (resultCode == RESULT_OK && data != null) {
-                    importFrom(data)
-                } else {
-                    emptyList()
-                }
-                if (deleteOriginals && imported.isNotEmpty()) {
-                    removeOriginals(imported) // finishes itself (now or after the delete dialog)
+                if (resultCode == RESULT_OK && data != null) {
+                    showProgress("Hiding…")
+                    io.execute {
+                        val imported = importFrom(data)
+                        runOnUiThread {
+                            if (deleteOriginals && imported.isNotEmpty()) {
+                                // finishes itself (now or after the delete dialog)
+                                removeOriginals(imported)
+                            } else {
+                                finish()
+                            }
+                        }
+                    }
                 } else {
                     finish()
                 }
@@ -114,15 +134,53 @@ class FileImportActivity : Activity() {
                 val id = exportId
                 val uri = data?.data
                 if (resultCode == RESULT_OK && id != null && uri != null) {
-                    try {
-                        store.exportToUri(id, uri)
-                    } catch (_: Exception) {
+                    showProgress("Exporting…")
+                    io.execute {
+                        try {
+                            store.exportToUri(id, uri)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Export failed for $id", e)
+                        }
+                        runOnUiThread { finish() }
                     }
+                } else {
+                    finish()
                 }
-                finish()
             }
             else -> finish() // REQ_DELETE and anything unexpected.
         }
+    }
+
+    /** Minimal spinner so the transparent activity doesn't look frozen while copying. */
+    private fun showProgress(label: String) {
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            addView(ProgressBar(this@FileImportActivity))
+            addView(TextView(this@FileImportActivity).apply {
+                text = label
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+                setPadding(0, 32, 0, 0)
+            })
+        }
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(0xCC000000.toInt())
+            addView(
+                column,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    Gravity.CENTER,
+                ),
+            )
+        }
+        setContentView(root)
+    }
+
+    override fun onDestroy() {
+        io.shutdown()
+        super.onDestroy()
     }
 
     /** Imports each picked uri; returns the source uris that imported cleanly. */

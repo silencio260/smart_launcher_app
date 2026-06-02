@@ -1,78 +1,63 @@
 package com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
+import android.util.Log
+import android.util.Size
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.security.KeyStore
+import java.nio.ByteBuffer
 import java.security.SecureRandom
-import javax.crypto.Cipher
-import javax.crypto.CipherInputStream
-import javax.crypto.CipherOutputStream
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 
 /**
- * Encrypts/decrypts vault files and tracks their metadata. Only needs a
- * [Context], so it is shared between [FileLockerChannel] (list/export/delete/
- * thumbnail/view) and
+ * Hides vault files and tracks their metadata. Only needs a [Context], so it is
+ * shared between [FileLockerChannel] (list/export/delete/thumbnail/view) and
  * [com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.FileImportActivity]
  * (the standalone picker that performs imports/exports).
  *
- * Every imported file is AES-GCM encrypted into app-private storage (invisible
- * to the gallery / MediaStore / other apps without root). A small JPEG preview
- * is generated at import time and stored *also encrypted* (`<id>.thumb`) so the
- * vault grid can show real thumbnails without decrypting the whole file. To
- * view an item full-screen we decrypt it on demand into a private cache dir that
- * is wiped whenever the vault locks.
+ * This is a **move-only hide, not encryption** (a deliberate product choice for
+ * speed). Importing simply copies the original bytes, untouched, into
+ * app-private storage under a neutral `<id>.dat` name — invisible to the gallery
+ * / MediaStore / other apps without root. The real name/type lives only in the
+ * index (the metadata JSON). A small JPEG preview (`<id>.thumb`) is generated at
+ * import time so the grid shows thumbnails, and viewing reads the stored file
+ * directly (no decrypt, no copy). Protection against someone who *has* rooted
+ * the device is intentionally minimal: the neutral filename, nothing more.
  */
 class FileLockerStore(private val context: Context) {
     companion object {
+        private const val TAG = "FileLockerStore"
         private const val PREFS = "file_locker_v1"
         private const val META = "files"
-        private const val KEY_ALIAS = "smart_launcher_file_locker_key"
         private const val THUMB_TARGET = 512
         private const val VIEW_CACHE_DIR = "vault_view"
+        // Storage format marker. Items written by the old AES build lack this and
+        // are treated as unreadable (clean slate) so they degrade gracefully.
+        private const val FMT = "raw1"
     }
 
-    /** Encrypts the document at [uri] into the vault and records its metadata. */
+    /** Copies the document at [uri] into the vault and records its metadata. */
     fun importUri(uri: Uri): Map<String, Any?>? {
         val info = queryInfo(uri)
         val mime = context.contentResolver.getType(uri)
         val kind = kindFor(mime, info.first)
         val id = "file_${System.currentTimeMillis()}_${SecureRandom().nextInt(100000)}"
-        val vaultFile = File(vaultDir(), "$id.bin")
+        val vaultFile = File(vaultDir(), "$id.dat")
         context.contentResolver.openInputStream(uri)?.use { input ->
-            encryptToFile(input, vaultFile)
+            FileOutputStream(vaultFile).use { output -> input.copyTo(output) }
         } ?: return null
         val createdAt = System.currentTimeMillis()
-
-        // Best-effort preview; documents (and anything we can't decode) just get
-        // a type icon on the Flutter side.
-        try {
-            val thumb = when (kind) {
-                "image" -> imageThumbnail(uri)
-                "video" -> videoThumbnail(uri)
-                else -> null
-            }
-            if (thumb != null) {
-                encryptToFile(ByteArrayInputStream(thumb), File(vaultDir(), "$id.thumb"))
-            }
-        } catch (_: Exception) {
-        }
 
         val meta = readMeta()
         meta.put(
@@ -83,9 +68,16 @@ class FileLockerStore(private val context: Context) {
                 .put("path", vaultFile.absolutePath)
                 .put("mime", mime ?: "")
                 .put("kind", kind)
+                .put("fmt", FMT)
                 .put("createdAt", createdAt)
         )
         writeMeta(meta)
+
+        // Best-effort preview: prefer the system's cached thumbnail of the source
+        // (instant, no full-file decode), and fall back to decoding our own copy.
+        val thumb = thumbnailFromUri(uri)
+        if (thumb != null) writeThumb(id, thumb) else generateThumbnail(id)
+
         return mapOf(
             "id" to id,
             "name" to info.first,
@@ -98,10 +90,11 @@ class FileLockerStore(private val context: Context) {
 
     fun exportToUri(id: String, uri: Uri): Boolean {
         val meta = findMeta(id) ?: return false
+        if (meta.optString("fmt") != FMT) return false
         val source = File(meta.optString("path"))
         if (!source.exists()) return false
         context.contentResolver.openOutputStream(uri)?.use { output ->
-            decryptToStream(source, output)
+            FileInputStream(source).use { input -> input.copyTo(output) }
         } ?: return false
         return true
     }
@@ -145,41 +138,40 @@ class FileLockerStore(private val context: Context) {
         return result
     }
 
-    /** Decrypted JPEG preview bytes for [id], or null if there is no preview. */
+    /**
+     * JPEG preview bytes for [id]. If no thumbnail exists yet (an older import,
+     * or one whose preview failed to generate) it is built on demand from the
+     * stored file and cached, so the grid is self-healing. Returns null for
+     * files we can't preview (documents) and for legacy/unreadable items.
+     */
     fun thumbnailBytes(id: String): ByteArray? {
         val thumb = File(vaultDir(), "$id.thumb")
-        if (!thumb.exists()) return null
-        return try {
-            val out = ByteArrayOutputStream()
-            decryptToStream(thumb, out)
-            out.toByteArray()
-        } catch (_: Exception) {
-            null
+        if (thumb.exists()) {
+            try {
+                return thumb.readBytes()
+            } catch (e: Exception) {
+                Log.w(TAG, "Stored thumbnail unreadable for $id; regenerating", e)
+                thumb.delete()
+            }
         }
+        return generateThumbnail(id)
     }
 
     /**
-     * Decrypts [id] into a private cache file (keeping its extension so players
-     * recognise the format) and returns its absolute path, or null on failure.
-     * The cache dir is wiped by [clearViewCache] when the vault locks.
+     * Returns the path the viewer should read for [id]. Because the bytes are
+     * stored untouched, this is just the stored file itself — no decrypt, no
+     * copy. Returns null for legacy/unreadable items or missing files. The name
+     * is kept (it used to decrypt to cache) so the Dart channel is unchanged.
      */
     fun decryptToCacheFile(id: String): String? {
         val meta = findMeta(id) ?: return null
+        if (meta.optString("fmt") != FMT) return null
         val source = File(meta.optString("path"))
         if (!source.exists()) return null
-        val ext = meta.optString("name").substringAfterLast('.', "")
-        val dir = File(context.cacheDir, VIEW_CACHE_DIR).apply { mkdirs() }
-        val out = File(dir, if (ext.isEmpty()) id else "$id.$ext")
-        return try {
-            FileOutputStream(out).use { decryptToStream(source, it) }
-            out.absolutePath
-        } catch (_: Exception) {
-            out.delete()
-            null
-        }
+        return source.absolutePath
     }
 
-    /** Removes every decrypted preview file. Called when the vault re-locks. */
+    /** Removes any leftover decrypted/preview temp files. Called on re-lock. */
     fun clearViewCache() {
         File(context.cacheDir, VIEW_CACHE_DIR).deleteRecursively()
     }
@@ -224,29 +216,98 @@ class FileLockerStore(private val context: Context) {
 
     // ---- Thumbnails ---------------------------------------------------------
 
-    private fun imageThumbnail(uri: Uri): ByteArray? {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(uri)?.use {
-            BitmapFactory.decodeStream(it, null, bounds)
+    /** Fast system-provided thumbnail of [uri] (API 29+), or null. */
+    @SuppressLint("NewApi")
+    private fun thumbnailFromUri(uri: Uri): ByteArray? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        return try {
+            val bitmap =
+                context.contentResolver.loadThumbnail(uri, Size(THUMB_TARGET, THUMB_TARGET), null)
+            compress(scaled(bitmap, THUMB_TARGET))
+        } catch (e: Exception) {
+            Log.w(TAG, "loadThumbnail failed for $uri; will decode from stored copy", e)
+            null
+        }
+    }
+
+    /**
+     * Builds and caches the thumbnail for [id] from its stored file, returning
+     * the preview bytes (or null if it can't be previewed). Used as the fallback
+     * at import and lazily by [thumbnailBytes].
+     */
+    private fun generateThumbnail(id: String): ByteArray? {
+        val meta = findMeta(id) ?: return null
+        if (meta.optString("fmt") != FMT) return null
+        val source = File(meta.optString("path"))
+        if (!source.exists()) return null
+        val bytes = try {
+            when (meta.optString("kind").ifEmpty { "file" }) {
+                "image" -> decodeImageThumbnail(source.readBytes())
+                "video" -> videoThumbnailFromFile(source)
+                else -> null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Thumbnail generation failed for $id", e)
+            null
         } ?: return null
+        writeThumb(id, bytes)
+        return bytes
+    }
+
+    private fun writeThumb(id: String, bytes: ByteArray) {
+        try {
+            FileOutputStream(File(vaultDir(), "$id.thumb")).use { it.write(bytes) }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not cache thumbnail for $id", e)
+        }
+    }
+
+    /** Decodes [data] (a full image) into a small JPEG preview. */
+    @SuppressLint("NewApi")
+    private fun decodeImageThumbnail(data: ByteArray): ByteArray? {
+        // ImageDecoder (API 28+) handles JPEG/PNG/WebP/HEIC/GIF and applies EXIF
+        // orientation; it is far more reliable than BitmapFactory.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            try {
+                val src = ImageDecoder.createSource(ByteBuffer.wrap(data))
+                val bitmap = ImageDecoder.decodeBitmap(src) { decoder, info, _ ->
+                    decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                    decoder.isMutableRequired = false
+                    val longest = maxOf(info.size.width, info.size.height)
+                    if (longest > THUMB_TARGET) {
+                        val ratio = THUMB_TARGET.toFloat() / longest
+                        decoder.setTargetSize(
+                            (info.size.width * ratio).toInt().coerceAtLeast(1),
+                            (info.size.height * ratio).toInt().coerceAtLeast(1),
+                        )
+                    }
+                }
+                return compress(bitmap)
+            } catch (e: Exception) {
+                Log.w(TAG, "ImageDecoder failed; falling back to BitmapFactory", e)
+            }
+        }
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(data, 0, data.size, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
         var sample = 1
         val longest = maxOf(bounds.outWidth, bounds.outHeight)
         while (longest / sample > THUMB_TARGET * 2) sample *= 2
         val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-        val bitmap = context.contentResolver.openInputStream(uri)?.use {
-            BitmapFactory.decodeStream(it, null, opts)
-        } ?: return null
+        val bitmap = BitmapFactory.decodeByteArray(data, 0, data.size, opts) ?: return null
         return compress(scaled(bitmap, THUMB_TARGET))
     }
 
-    private fun videoThumbnail(uri: Uri): ByteArray? {
+    private fun videoThumbnailFromFile(source: File): ByteArray? {
+        // The stored file is the untouched video, so point the retriever straight
+        // at it — no temp file, no decrypt.
         val retriever = MediaMetadataRetriever()
         return try {
-            retriever.setDataSource(context, uri)
+            retriever.setDataSource(source.absolutePath)
             val frame = retriever.frameAtTime ?: return null
             compress(scaled(frame, THUMB_TARGET))
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.w(TAG, "Video thumbnail failed", e)
             null
         } finally {
             try {
@@ -275,7 +336,7 @@ class FileLockerStore(private val context: Context) {
         return out.toByteArray()
     }
 
-    // ---- Storage / crypto ---------------------------------------------------
+    // ---- Storage ------------------------------------------------------------
 
     private fun vaultDir(): File {
         val dir = File(context.filesDir, "file_locker")
@@ -294,55 +355,5 @@ class FileLockerStore(private val context: Context) {
             .edit()
             .putString(META, meta.toString())
             .apply()
-    }
-
-    private fun secretKey(): SecretKey {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            throw IllegalStateException("File locker requires Android 6.0+")
-        }
-        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        val existing = keyStore.getEntry(KEY_ALIAS, null) as? KeyStore.SecretKeyEntry
-        if (existing != null) return existing.secretKey
-
-        val keyGenerator =
-            KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-        val spec = KeyGenParameterSpec.Builder(
-            KEY_ALIAS,
-            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-        )
-            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-            .setRandomizedEncryptionRequired(true)
-            .build()
-        keyGenerator.init(spec)
-        return keyGenerator.generateKey()
-    }
-
-    private fun encryptToFile(input: java.io.InputStream, file: File) {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        // AndroidKeyStore keys are created with randomized encryption required, so
-        // the Keystore MUST generate the GCM IV itself. Supplying our own here
-        // throws "Caller-provided IV not permitted" — instead we let init() pick
-        // the IV and read it back (always 12 bytes for GCM) to prefix the file.
-        cipher.init(Cipher.ENCRYPT_MODE, secretKey())
-        val iv = cipher.iv
-        FileOutputStream(file).use { fileOut ->
-            fileOut.write(iv)
-            CipherOutputStream(fileOut, cipher).use { cipherOut ->
-                input.copyTo(cipherOut)
-            }
-        }
-    }
-
-    private fun decryptToStream(file: File, output: java.io.OutputStream) {
-        FileInputStream(file).use { fileIn ->
-            val iv = ByteArray(12)
-            if (fileIn.read(iv) != iv.size) throw IllegalStateException("Bad vault file")
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, secretKey(), GCMParameterSpec(128, iv))
-            CipherInputStream(fileIn, cipher).use { cipherIn ->
-                cipherIn.copyTo(output)
-            }
-        }
     }
 }

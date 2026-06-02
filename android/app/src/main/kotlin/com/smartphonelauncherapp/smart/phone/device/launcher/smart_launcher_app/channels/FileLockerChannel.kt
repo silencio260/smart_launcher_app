@@ -13,13 +13,14 @@ import java.util.concurrent.Executors
  * Method-channel surface for the vault. The actual file picking happens in
  * [FileImportActivity] (a non-`singleTask` activity) because the SAF picker's
  * result is dropped when launched from the `singleTask` MainActivity. All
- * encryption/metadata work lives in [FileLockerStore].
+ * storage/metadata work lives in [FileLockerStore].
  */
 class FileLockerChannel(private val activity: Activity) {
     private val store = FileLockerStore(activity)
 
-    // Thumbnail/decrypt work touches disk + crypto; keep it off the UI thread.
-    private val io = Executors.newSingleThreadExecutor()
+    // Thumbnail/view work touches disk; keep it off the UI thread. A small pool
+    // (not a single thread) lets the grid's thumbnails load in parallel.
+    private val io = Executors.newFixedThreadPool(4)
     private val main = Handler(Looper.getMainLooper())
 
     fun register(messenger: BinaryMessenger) {

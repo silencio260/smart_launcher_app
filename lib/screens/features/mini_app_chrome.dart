@@ -6,6 +6,19 @@ const miniAppSurface2 = Color(0xFF2A2A2D);
 const miniAppAccent = Color(0xFFF5A623);
 const miniAppMuted = Color(0xFF8E8E93);
 
+class MiniAppScrollBehavior extends MaterialScrollBehavior {
+  const MiniAppScrollBehavior();
+
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    return child;
+  }
+}
+
 class MiniAppScaffold extends StatelessWidget {
   final String title;
   final List<Widget> actions;
@@ -28,6 +41,15 @@ class MiniAppScaffold extends StatelessWidget {
         colorScheme: const ColorScheme.dark(
           primary: miniAppAccent,
           surface: miniAppSurface,
+          surfaceTint: Colors.transparent,
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: miniAppBackground,
+          foregroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
         ),
         switchTheme: SwitchThemeData(
           thumbColor: WidgetStateProperty.resolveWith(
@@ -44,7 +66,9 @@ class MiniAppScaffold extends StatelessWidget {
         appBar: AppBar(
           backgroundColor: miniAppBackground,
           foregroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
           elevation: 0,
+          scrolledUnderElevation: 0,
           title: Text(
             title,
             style: const TextStyle(
@@ -56,8 +80,16 @@ class MiniAppScaffold extends StatelessWidget {
           centerTitle: false,
           actions: actions,
         ),
-        body: child,
-        bottomNavigationBar: bottomNavigationBar,
+        body: SafeArea(
+          top: false,
+          child: ScrollConfiguration(
+            behavior: const MiniAppScrollBehavior(),
+            child: child,
+          ),
+        ),
+        bottomNavigationBar: bottomNavigationBar == null
+            ? null
+            : SafeArea(top: false, child: bottomNavigationBar!),
       ),
     );
   }

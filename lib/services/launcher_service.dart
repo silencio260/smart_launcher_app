@@ -328,7 +328,7 @@ class LauncherService {
   }
 
   /// Opens the multi-select system file picker in a standalone activity and
-  /// encrypts the chosen files into the vault. The picker runs in its own task
+  /// hides the chosen files in the vault. The picker runs in its own task
   /// (the launcher is `singleTask`, which drops `onActivityResult`), so this
   /// returns immediately after launching; the caller reconciles the imported
   /// files via [listLockedFiles] once it regains focus.
@@ -349,18 +349,16 @@ class LauncherService {
   static Future<bool> deleteLockedFile(String id) async =>
       await _fileLocker.invokeMethod<bool>('deleteFile', {'id': id}) ?? false;
 
-  /// The decrypted JPEG preview for a vault item, or null when there is none
-  /// (documents and files we couldn't decode have no thumbnail).
+  /// The JPEG preview for a vault item, or null when there is none (documents
+  /// and files we couldn't decode have no thumbnail).
   static Future<Uint8List?> vaultThumbnail(String id) async =>
       _fileLocker.invokeMethod<Uint8List>('thumbnail', {'id': id});
 
-  /// Decrypts a vault item into a private cache file and returns its path, so
-  /// the in-app viewer can display/play it. The cache is wiped on lock via
-  /// [clearVaultViewCache].
+  /// Returns a private vault file path so the in-app viewer can display/play it.
   static Future<String?> vaultDecryptToCache(String id) async =>
       _fileLocker.invokeMethod<String>('decryptToCache', {'id': id});
 
-  /// Removes every decrypted preview file. Called whenever the vault re-locks.
+  /// Removes leftover preview temp files. Called whenever the vault re-locks.
   static Future<void> clearVaultViewCache() async {
     await _fileLocker.invokeMethod<void>('clearViewCache');
   }

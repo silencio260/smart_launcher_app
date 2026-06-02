@@ -159,13 +159,13 @@ class _AppLockLockScreenState extends State<AppLockLockScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Not now',
-                  style: TextStyle(color: miniAppMuted)),
+              child:
+                  const Text('Not now', style: TextStyle(color: miniAppMuted)),
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Enable',
-                  style: TextStyle(color: Colors.white)),
+              child:
+                  const Text('Enable', style: TextStyle(color: Colors.white)),
             ),
           ],
         ),
@@ -227,13 +227,17 @@ class _AppLockLockScreenState extends State<AppLockLockScreen> {
         appBar: AppBar(
           backgroundColor: miniAppBackground,
           foregroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          shadowColor: Colors.transparent,
           elevation: 0,
+          scrolledUnderElevation: 0,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: widget.onCancel,
           ),
         ),
         body: SafeArea(
+          top: false,
           child: Column(
             children: [
               const SizedBox(height: 8),
@@ -255,8 +259,8 @@ class _AppLockLockScreenState extends State<AppLockLockScreen> {
                 ),
               Text(
                 _title,
-                style: const TextStyle(
-                    fontSize: 22, fontWeight: FontWeight.w800),
+                style:
+                    const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 8),
               SizedBox(

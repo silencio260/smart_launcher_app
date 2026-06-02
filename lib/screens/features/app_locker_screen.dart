@@ -33,6 +33,7 @@ class _AppLockerScreenState extends State<AppLockerScreen>
   var _query = '';
   var _accessibility = false;
   var _overlay = false;
+  var _tabIndex = 0;
 
   @override
   void initState() {
@@ -52,12 +53,9 @@ class _AppLockerScreenState extends State<AppLockerScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed || !mounted) return;
     _refreshPermissions();
-    // Auto-lock: re-prompt when we come back from the background, unless a child
-    // route (settings) is on top.
-    final isCurrent = ModalRoute.of(context)?.isCurrent ?? true;
-    if (isCurrent && _unlocked && _sec.isConfigured && !_sec.withinGrace) {
-      setState(() => _unlocked = false);
-    }
+    // Keep the current unlock while this screen is alive. Android also sends
+    // resumed after permission screens, so re-locking here makes normal setup
+    // actions feel random.
   }
 
   Future<void> _refreshPermissions() async {
@@ -121,42 +119,32 @@ class _AppLockerScreenState extends State<AppLockerScreen>
                   final lockedApps = all
                       .where((app) => locked.contains(app.packageName))
                       .toList(growable: false);
-                  return Column(
+                  final tabApps = _tabIndex == 0 ? all : lockedApps;
+                  final emptyHint = _tabIndex == 0
+                      ? 'No apps match your search.'
+                      : locked.isEmpty
+                          ? 'No apps locked yet. Add some from the All apps tab.'
+                          : 'No locked apps match your search.';
+                  return ListView(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                        child: Column(
-                          children: [
-                            _statusCard(locked.length),
-                            const SizedBox(height: 12),
-                            ..._setupRows(),
-                            _searchField(),
-                          ],
-                        ),
-                      ),
-                      const TabBar(
+                      _statusCard(locked.length),
+                      const SizedBox(height: 12),
+                      ..._setupRows(),
+                      _searchField(),
+                      const SizedBox(height: 8),
+                      TabBar(
+                        onTap: (index) => setState(() => _tabIndex = index),
                         labelColor: Colors.white,
                         unselectedLabelColor: miniAppMuted,
                         indicatorColor: Colors.white,
-                        tabs: [
-                          Tab(text: 'Locked'),
+                        tabs: const [
                           Tab(text: 'All apps'),
+                          Tab(text: 'Locked'),
                         ],
                       ),
-                      Expanded(
-                        child: TabBarView(
-                          children: [
-                            _appList(
-                              lockedApps,
-                              locked,
-                              emptyHint: locked.isEmpty
-                                  ? 'No apps locked yet. Add some from the All apps tab.'
-                                  : 'No locked apps match your search.',
-                            ),
-                            _appList(all, locked),
-                          ],
-                        ),
-                      ),
+                      const SizedBox(height: 6),
+                      ..._appListItems(tabApps, locked, emptyHint: emptyHint),
                     ],
                   );
                 },
@@ -175,32 +163,35 @@ class _AppLockerScreenState extends State<AppLockerScreen>
         app.packageName.toLowerCase().contains(q);
   }
 
-  Widget _appList(List<AppInfo> apps, Set<String> locked, {String? emptyHint}) {
-    if (apps.isEmpty && emptyHint != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Text(
-            emptyHint,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: miniAppMuted, height: 1.35),
+  List<Widget> _appListItems(
+    List<AppInfo> apps,
+    Set<String> locked, {
+    required String emptyHint,
+  }) {
+    if (apps.isEmpty) {
+      return [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 48),
+          child: Center(
+            child: Text(
+              emptyHint,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: miniAppMuted, height: 1.35),
+            ),
           ),
         ),
-      );
+      ];
     }
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 6, 20, 120),
-      children: [
-        for (final app in apps)
-          _AppLockTile(
-            app: app,
-            locked: locked.contains(app.packageName),
-            onChanged: (value) => context
-                .read<LauncherFeatureSettingsCubit>()
-                .setAppLocked(app.packageName, value),
-          ),
-      ],
-    );
+    return [
+      for (final app in apps)
+        _AppLockTile(
+          app: app,
+          locked: locked.contains(app.packageName),
+          onChanged: (value) => context
+              .read<LauncherFeatureSettingsCubit>()
+              .setAppLocked(app.packageName, value),
+        ),
+    ];
   }
 
   Widget _statusCard(int lockedCount) {
@@ -296,7 +287,8 @@ class _AppLockerScreenState extends State<AppLockerScreen>
           children: [
             Text(
               'Enable',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+              style:
+                  TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
             ),
             SizedBox(width: 6),
             Icon(Icons.chevron_right, color: miniAppMuted),

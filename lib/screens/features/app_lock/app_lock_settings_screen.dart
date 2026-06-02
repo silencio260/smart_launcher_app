@@ -91,7 +91,8 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen>
         data: clockThemeOf(context),
         child: AlertDialog(
           backgroundColor: miniAppSurface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
           title: const Text('Turn off App Lock?',
               style: TextStyle(fontWeight: FontWeight.w800)),
           content: const Text(
@@ -176,7 +177,7 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen>
               icon: Icons.lock_clock_outlined,
               iconColor: Colors.white,
               title: 'Lock App Lock',
-              subtitle: 'Re-ask for the passcode when you return here',
+              subtitle: 'Re-ask for the passcode when you reopen it',
               trailing: Text(
                 _autoLockSteps[_sec.autoLockMs] ?? 'Immediately',
                 style: const TextStyle(
@@ -190,7 +191,8 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen>
               icon: Icons.accessibility_new,
               iconColor: Colors.white,
               title: 'App Lock service',
-              subtitle: 'Lets the lock screen appear when you open a locked app',
+              subtitle:
+                  'Lets the lock screen appear when you open a locked app',
               trailing: _permTrailing(_accessibility),
               onTap: _accessibility
                   ? null

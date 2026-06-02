@@ -6,10 +6,8 @@ import 'package:video_player/video_player.dart';
 import '../../../services/launcher_service.dart';
 import '../mini_app_chrome.dart';
 
-/// Full-screen, swipeable viewer for vault media. Each item is decrypted to a
-/// private cache file on demand: images zoom, videos play in-app, and other
-/// file types offer an export. The decrypted cache is wiped by the vault when
-/// it re-locks (see [LauncherService.clearVaultViewCache]).
+/// Full-screen, swipeable viewer for vault media. Images zoom, videos play
+/// in-app, and other file types offer an export.
 class VaultViewerScreen extends StatefulWidget {
   final List<Map<String, Object?>> items;
   final int initialIndex;
@@ -35,8 +33,7 @@ class _VaultViewerScreenState extends State<VaultViewerScreen> {
     super.dispose();
   }
 
-  String get _title =>
-      widget.items[_index]['name']?.toString() ?? 'File';
+  String get _title => widget.items[_index]['name']?.toString() ?? 'File';
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +42,10 @@ class _VaultViewerScreenState extends State<VaultViewerScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
         elevation: 0,
+        scrolledUnderElevation: 0,
         title: Text(
           _title,
           maxLines: 1,
@@ -53,19 +53,22 @@ class _VaultViewerScreenState extends State<VaultViewerScreen> {
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
         ),
       ),
-      body: PageView.builder(
-        controller: _controller,
-        itemCount: widget.items.length,
-        onPageChanged: (i) => setState(() => _index = i),
-        itemBuilder: (context, index) {
-          final item = widget.items[index];
-          return _ViewerPage(
-            key: ValueKey(item['id']),
-            id: item['id'].toString(),
-            name: item['name']?.toString() ?? 'File',
-            kind: item['kind']?.toString() ?? 'file',
-          );
-        },
+      body: SafeArea(
+        top: false,
+        child: PageView.builder(
+          controller: _controller,
+          itemCount: widget.items.length,
+          onPageChanged: (i) => setState(() => _index = i),
+          itemBuilder: (context, index) {
+            final item = widget.items[index];
+            return _ViewerPage(
+              key: ValueKey(item['id']),
+              id: item['id'].toString(),
+              name: item['name']?.toString() ?? 'File',
+              kind: item['kind']?.toString() ?? 'file',
+            );
+          },
+        ),
       ),
     );
   }
@@ -186,8 +189,7 @@ class _ViewerPageState extends State<_ViewerPage> {
             ),
           ),
           if (!video.value.isPlaying)
-            const Icon(Icons.play_circle_fill,
-                color: Colors.white70, size: 72),
+            const Icon(Icons.play_circle_fill, color: Colors.white70, size: 72),
           Positioned(
             left: 0,
             right: 0,

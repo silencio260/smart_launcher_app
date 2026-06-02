@@ -117,7 +117,7 @@ class _VaultSettingsScreenState extends State<VaultSettingsScreen> {
               icon: Icons.lock_clock_outlined,
               iconColor: Colors.white,
               title: 'Lock the vault',
-              subtitle: 'Re-ask for the passcode when you return',
+              subtitle: 'Re-ask for the passcode when you reopen it',
               trailing: Text(
                 _autoLockSteps[_sec.autoLockMs] ?? 'Immediately',
                 style: const TextStyle(

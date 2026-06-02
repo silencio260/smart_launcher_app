@@ -24,6 +24,7 @@ class _AppHiderScreenState extends State<AppHiderScreen> {
   final _policy = MiniAppPolicyRepository();
   var _unlocked = false;
   var _query = '';
+  var _tabIndex = 0;
 
   Color get _accent => accentForFeature(_featureId);
 
@@ -48,60 +49,114 @@ class _AppHiderScreenState extends State<AppHiderScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return MiniAppScaffold(
-      title: 'App Hider',
-      child: Theme(
-        data: miniAppThemeOf(context, _accent),
-        child: !_unlocked
-            ? const Center(child: CircularProgressIndicator())
-            : BlocBuilder<AppsCubit, AppsState>(
-                builder: (context, appsState) {
-                  return BlocBuilder<SettingsCubit, dynamic>(
-                    builder: (context, settings) {
-                      final hidden = settings.hiddenApps.toSet();
-                      final visibleApps = appsState.apps
-                          .where((app) =>
-                              !LauncherFeatureCatalog.isFeatureApp(app))
-                          .where((app) =>
-                              _query.isEmpty ||
-                              app.name
-                                  .toLowerCase()
-                                  .contains(_query.toLowerCase()) ||
-                              app.packageName
-                                  .toLowerCase()
-                                  .contains(_query.toLowerCase()))
-                          .toList(growable: false);
-                      return ListView(
-                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
-                        children: [
-                          MiniHeroCard(
-                            featureId: _featureId,
-                            title: 'Hidden Space',
-                            subtitle:
-                                '${hidden.length} app${hidden.length == 1 ? '' : 's'} invisible from drawer and search.',
-                          ),
-                          const SizedBox(height: 18),
-                          const MiniSectionHeader('Disguise icon'),
-                          _buildDisguiseCard(),
-                          const SizedBox(height: 18),
-                          const MiniSectionHeader('Hide apps'),
-                          _searchField(),
-                          const SizedBox(height: 6),
-                          for (final app in visibleApps)
-                            _HiddenSpaceTile(
-                              app: app,
-                              hidden: hidden.contains(app.launcherKey) ||
-                                  hidden.contains(app.packageName),
-                              onChanged: (value) => _setHidden(app, value),
+    return DefaultTabController(
+      length: 2,
+      child: MiniAppScaffold(
+        title: 'App Hider',
+        child: Theme(
+          data: miniAppThemeOf(context, _accent),
+          child: !_unlocked
+              ? const Center(child: CircularProgressIndicator())
+              : BlocBuilder<AppsCubit, AppsState>(
+                  builder: (context, appsState) {
+                    return BlocBuilder<SettingsCubit, dynamic>(
+                      builder: (context, settings) {
+                        final hidden = settings.hiddenApps.toSet();
+                        final allApps = appsState.apps
+                            .where((app) =>
+                                !LauncherFeatureCatalog.isFeatureApp(app))
+                            .where(_matchesQuery)
+                            .toList(growable: false);
+                        final hiddenApps = allApps
+                            .where((app) => _isHidden(app, hidden))
+                            .toList(growable: false);
+                        final tabApps = _tabIndex == 0 ? allApps : hiddenApps;
+                        final emptyHint = _tabIndex == 0
+                            ? 'No apps match your search.'
+                            : hidden.isEmpty
+                                ? 'No apps hidden yet. Add some from the All apps tab.'
+                                : 'No hidden apps match your search.';
+                        return ListView(
+                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+                          children: [
+                            MiniHeroCard(
+                              featureId: _featureId,
+                              title: 'Hidden Space',
+                              subtitle:
+                                  '${hidden.length} app${hidden.length == 1 ? '' : 's'} invisible from drawer and search.',
                             ),
-                        ],
-                      );
-                    },
-                  );
-                },
-              ),
+                            const SizedBox(height: 18),
+                            const MiniSectionHeader('Disguise icon'),
+                            _buildDisguiseCard(),
+                            const SizedBox(height: 18),
+                            _searchField(),
+                            const SizedBox(height: 8),
+                            TabBar(
+                              onTap: (index) =>
+                                  setState(() => _tabIndex = index),
+                              labelColor: Colors.white,
+                              unselectedLabelColor: miniAppMuted,
+                              indicatorColor: _accent,
+                              tabs: const [
+                                Tab(text: 'All apps'),
+                                Tab(text: 'Hidden apps'),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            ..._appListItems(
+                              tabApps,
+                              hidden,
+                              emptyHint: emptyHint,
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                  },
+                ),
+        ),
       ),
     );
+  }
+
+  bool _matchesQuery(AppInfo app) {
+    if (_query.isEmpty) return true;
+    final q = _query.toLowerCase();
+    return app.name.toLowerCase().contains(q) ||
+        app.packageName.toLowerCase().contains(q);
+  }
+
+  bool _isHidden(AppInfo app, Set<String> hidden) {
+    return hidden.contains(app.launcherKey) || hidden.contains(app.packageName);
+  }
+
+  List<Widget> _appListItems(
+    List<AppInfo> apps,
+    Set<String> hidden, {
+    required String emptyHint,
+  }) {
+    if (apps.isEmpty) {
+      return [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 48),
+          child: Center(
+            child: Text(
+              emptyHint,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: miniAppMuted, height: 1.35),
+            ),
+          ),
+        ),
+      ];
+    }
+    return [
+      for (final app in apps)
+        _HiddenSpaceTile(
+          app: app,
+          hidden: _isHidden(app, hidden),
+          onChanged: (value) => _setHidden(app, value),
+        ),
+    ];
   }
 
   Widget _buildDisguiseCard() {

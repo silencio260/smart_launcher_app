@@ -659,11 +659,27 @@ class VaultRepository {
   /// item regardless of its folder.
   List<Map<String, Object?>> itemsIn(String albumId) => albumId == allAlbumId
       ? items()
-      : items().where((item) => item['albumId'] == albumId).toList(growable: false);
+      : items()
+          .where((item) => item['albumId'] == albumId)
+          .toList(growable: false);
 
   int countIn(String albumId) => albumId == allAlbumId
       ? _items.length
-      : _items.values.whereType<Map>().where((e) => e['albumId'] == albumId).length;
+      : _items.values
+          .whereType<Map>()
+          .where((e) => e['albumId'] == albumId)
+          .length;
+
+  /// The newest image/video in [albumId], used as a folder's cover thumbnail.
+  /// Returns null when the folder has no previewable media (cards then show the
+  /// plain folder icon).
+  Map<String, Object?>? coverItem(String albumId) {
+    for (final item in itemsIn(albumId)) {
+      final kind = item['kind']?.toString();
+      if (kind == 'image' || kind == 'video') return item;
+    }
+    return null;
+  }
 
   /// Creates a user folder and returns its generated id.
   Future<String> addAlbum(String name) async {
@@ -694,8 +710,7 @@ class VaultRepository {
 
   /// Moves [ids] into [albumId]. Used by bulk selection.
   Future<void> moveItems(Iterable<String> ids, String albumId) async {
-    final target =
-        _albums.containsKey(albumId) ? albumId : allAlbumId;
+    final target = _albums.containsKey(albumId) ? albumId : allAlbumId;
     for (final id in ids) {
       final raw = _items.get(id);
       if (raw is! Map) continue;
@@ -743,9 +758,8 @@ class VaultRepository {
   /// Returns the number of newly-added items.
   Future<int> reconcileNativeImports(String targetAlbumId) async {
     final native = await LauncherService.listLockedFiles();
-    final target = _albums.containsKey(targetAlbumId)
-        ? targetAlbumId
-        : allAlbumId;
+    final target =
+        _albums.containsKey(targetAlbumId) ? targetAlbumId : allAlbumId;
     var added = 0;
     for (final file in native) {
       final id = file['id']?.toString();
@@ -758,8 +772,7 @@ class VaultRepository {
         'size': file['size'] ?? 0,
         'kind': file['kind']?.toString() ?? 'file',
         'mime': file['mime']?.toString() ?? '',
-        'createdAt':
-            file['createdAt'] ?? DateTime.now().millisecondsSinceEpoch,
+        'createdAt': file['createdAt'] ?? DateTime.now().millisecondsSinceEpoch,
       });
       added++;
     }

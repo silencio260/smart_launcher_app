@@ -111,8 +111,8 @@ class MiniHeroCard extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style:
-                      const TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+                  style: const TextStyle(
+                      fontSize: 19, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 4),
                 Text(subtitle,
@@ -164,8 +164,7 @@ class MiniPillButton extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (icon != null) ...[
-                Icon(icon,
-                    size: 19, color: enabled ? textColor : miniAppMuted),
+                Icon(icon, size: 19, color: enabled ? textColor : miniAppMuted),
                 const SizedBox(width: 8),
               ],
               Text(
@@ -221,8 +220,7 @@ class MiniActionFab extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           for (var i = 0; i < actions.length; i++) ...[
-            if (i > 0)
-              Container(width: 1, height: 30, color: Colors.white24),
+            if (i > 0) Container(width: 1, height: 30, color: Colors.white24),
             Tooltip(
               message: actions[i].tooltip,
               child: InkWell(
@@ -290,7 +288,8 @@ class MiniFeatureRow extends StatelessWidget {
                 if (subtitle != null) ...[
                   const SizedBox(height: 2),
                   Text(subtitle!,
-                      style: const TextStyle(color: miniAppMuted, height: 1.25)),
+                      style:
+                          const TextStyle(color: miniAppMuted, height: 1.25)),
                 ],
               ],
             ),
@@ -449,19 +448,25 @@ class MiniSuccessScreen extends StatelessWidget {
       data: miniAppThemeOf(context, accent),
       child: Scaffold(
         backgroundColor: miniAppBackground,
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _Hero(accent: accent, headline: headline, detail: detail),
-            Expanded(
-              child: sections.isEmpty
-                  ? const SizedBox.shrink()
-                  : ListView(
-                      padding: const EdgeInsets.fromLTRB(20, 22, 20, 40),
-                      children: sections,
-                    ),
+        body: SafeArea(
+          top: false,
+          child: ScrollConfiguration(
+            behavior: const MiniAppScrollBehavior(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _Hero(accent: accent, headline: headline, detail: detail),
+                Expanded(
+                  child: sections.isEmpty
+                      ? const SizedBox.shrink()
+                      : ListView(
+                          padding: const EdgeInsets.fromLTRB(20, 22, 20, 40),
+                          children: sections,
+                        ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -583,7 +588,8 @@ Future<String?> showMiniTextDialog(
                       suffixIcon: controller.text.isEmpty
                           ? null
                           : IconButton(
-                              icon: const Icon(Icons.close, color: miniAppMuted),
+                              icon:
+                                  const Icon(Icons.close, color: miniAppMuted),
                               onPressed: () => setState(controller.clear),
                             ),
                     ),
