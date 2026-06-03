@@ -158,8 +158,11 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Transparent scaffold over an opaque route so the live wallpaper shows
+    // through exactly like the Settings screens (which also use the app's
+    // transparent scaffold theme), rather than a heavy black scrim.
     return Scaffold(
-      backgroundColor: Colors.black.withValues(alpha: 0.88),
+      backgroundColor: Colors.transparent,
       body: SafeArea(
         child: Column(
           children: [

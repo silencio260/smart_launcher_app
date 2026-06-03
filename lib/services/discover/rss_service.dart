@@ -11,7 +11,7 @@ class RssService {
   RssService._();
   static final RssService instance = RssService._();
 
-  static const _ttl = Duration(minutes: 15);
+  static const _ttl = Duration(hours: 1);
   static const _perFeedLimit = 12;
   static const _timeout = Duration(seconds: 10);
 
@@ -95,10 +95,16 @@ class RssService {
           _firstTag(block, 'published') ??
           _firstTag(block, 'updated') ??
           _firstTag(block, 'dc:date'));
+      // Google News wraps each item with a per-article <source> (the original
+      // publisher); prefer it so aggregated feeds credit the real outlet.
+      final itemSource =
+          _clean(_firstTag(block, 'source')) ?? _clean(feedTitle);
       items.add(RssItem(
         title: title,
         link: link ?? feedUrl,
-        source: _clean(feedTitle) ?? _host(feedUrl),
+        source: (itemSource != null && itemSource.isNotEmpty)
+            ? itemSource
+            : _host(feedUrl),
         published: published,
         imageUrl: _extractImage(block),
       ));

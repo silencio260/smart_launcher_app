@@ -1,24 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/discover/rss_source_store.dart';
 
-/// A preset feed the user can add with one tap.
-class _PresetFeed {
-  final String name;
-  final String url;
-  const _PresetFeed(this.name, this.url);
-}
-
-const _kPresets = <_PresetFeed>[
-  _PresetFeed('BBC News', 'https://feeds.bbci.co.uk/news/rss.xml'),
-  _PresetFeed('The Verge', 'https://www.theverge.com/rss/index.xml'),
-  _PresetFeed('Ars Technica', 'https://feeds.arstechnica.com/arstechnica/index'),
-  _PresetFeed('Hacker News', 'https://hnrss.org/frontpage'),
-  _PresetFeed('TechCrunch', 'https://techcrunch.com/feed/'),
-  _PresetFeed('ESPN', 'https://www.espn.com/espn/rss/news'),
-  _PresetFeed('Reuters World', 'https://www.reutersagency.com/feed/'),
-  _PresetFeed('NASA', 'https://www.nasa.gov/rss/dyn/breaking_news.rss'),
-];
-
 /// Manage the Discover feed's RSS sources: add by URL, add a popular preset,
 /// import an OPML document, or remove an existing source.
 class AddNewsSourceScreen extends StatefulWidget {
@@ -149,7 +131,7 @@ class _AddNewsSourceScreenState extends State<AddNewsSourceScreen> {
             spacing: 8,
             runSpacing: 8,
             children: [
-              for (final p in _kPresets)
+              for (final p in RssSourceStore.catalog)
                 ActionChip(
                   avatar: Icon(
                     _sources.contains(p.url) ? Icons.check : Icons.add,

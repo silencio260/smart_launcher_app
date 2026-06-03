@@ -34,8 +34,10 @@ class _DiscoverPageState extends State<DiscoverPage> {
   static const _system = MethodChannel('com.genrevibes.smartlauncher/system');
 
   final _sourceStore = RssSourceStore();
+  final _searchController = TextEditingController();
   List<RssItem> _items = const [];
   bool _loading = true;
+  String _appQuery = '';
 
   @override
   void initState() {
@@ -43,6 +45,12 @@ class _DiscoverPageState extends State<DiscoverPage> {
     _items = RssService.instance.cached;
     // Defer the network fetch a beat so swiping onto the page stays smooth.
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadFeed());
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadFeed({bool force = false}) async {
@@ -71,14 +79,16 @@ class _DiscoverPageState extends State<DiscoverPage> {
   @override
   Widget build(BuildContext context) {
     final hidden = context.watch<SettingsCubit>().state.hiddenApps.toSet();
-    final suggestions = context
+    final visibleApps = context
         .watch<AppsCubit>()
         .state
         .apps
         .where((a) =>
             !hidden.contains(a.launcherKey) && !hidden.contains(a.packageName))
-        .take(8)
         .toList();
+    final suggestions = visibleApps.take(8).toList();
+    final query = _appQuery.trim().toLowerCase();
+    final searching = query.isNotEmpty;
 
     // Solid Google-News-style dark surface so the wallpaper doesn't show through
     // and the feed reads as a content page, not a transparent overlay.
@@ -89,35 +99,62 @@ class _DiscoverPageState extends State<DiscoverPage> {
         onRefresh: () => _loadFeed(force: true),
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           children: [
             _searchBar(),
             const SizedBox(height: 20),
-            if (suggestions.isNotEmpty) ...[
-              _sectionLabel('Suggestions'),
-              const SizedBox(height: 10),
-              _SuggestionsRow(apps: suggestions, onTap: widget.onLaunchApp),
-              const SizedBox(height: 20),
-            ],
-            const _InfoCardsRow(),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(child: _sectionLabel('For you')),
-                TextButton.icon(
-                  onPressed: _manageSources,
-                  icon: const Icon(Icons.tune, size: 16, color: Colors.white70),
-                  label: const Text('Sources',
-                      style: TextStyle(color: Colors.white70)),
-                ),
+            if (searching)
+              ..._buildAppResults(visibleApps, query)
+            else ...[
+              if (suggestions.isNotEmpty) ...[
+                _sectionLabel('Suggestions'),
+                const SizedBox(height: 10),
+                _SuggestionsRow(apps: suggestions, onTap: widget.onLaunchApp),
+                const SizedBox(height: 20),
               ],
-            ),
-            const SizedBox(height: 4),
-            ..._buildFeed(),
+              const _InfoCardsRow(),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(child: _sectionLabel('For you')),
+                  TextButton.icon(
+                    onPressed: _manageSources,
+                    icon: const Icon(Icons.tune,
+                        size: 16, color: Colors.white70),
+                    label: const Text('Sources',
+                        style: TextStyle(color: Colors.white70)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              ..._buildFeed(),
+            ],
           ],
         ),
       ),
       ),
     );
+  }
+
+  List<Widget> _buildAppResults(List<AppInfo> apps, String query) {
+    final matches =
+        apps.where((a) => a.name.toLowerCase().contains(query)).toList();
+    if (matches.isEmpty) {
+      return [
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 40),
+          child: Center(
+            child: Text('No apps found',
+                style: TextStyle(color: Colors.white54)),
+          ),
+        ),
+      ];
+    }
+    return [
+      _sectionLabel('Apps'),
+      const SizedBox(height: 10),
+      _SuggestionsRow(apps: matches, onTap: widget.onLaunchApp),
+    ];
   }
 
   List<Widget> _buildFeed() {
@@ -153,21 +190,32 @@ class _DiscoverPageState extends State<DiscoverPage> {
   }
 
   Widget _searchBar() {
-    return GestureDetector(
-      onTap: widget.onOpenSearch,
-      child: Container(
-        height: 48,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.12),
+    return TextField(
+      controller: _searchController,
+      style: const TextStyle(color: Colors.white, fontSize: 16),
+      textInputAction: TextInputAction.search,
+      onChanged: (value) => setState(() => _appQuery = value),
+      decoration: InputDecoration(
+        isDense: true,
+        hintText: 'Search apps',
+        hintStyle: const TextStyle(color: Colors.white54, fontSize: 16),
+        prefixIcon: const Icon(Icons.search, color: Colors.white54, size: 20),
+        suffixIcon: _appQuery.isEmpty
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.close, color: Colors.white54, size: 20),
+                onPressed: () {
+                  _searchController.clear();
+                  setState(() => _appQuery = '');
+                  FocusScope.of(context).unfocus();
+                },
+              ),
+        filled: true,
+        fillColor: Colors.white.withValues(alpha: 0.12),
+        contentPadding: const EdgeInsets.symmetric(vertical: 12),
+        border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-        ),
-        child: const Row(
-          children: [
-            Icon(Icons.search, color: Colors.white54, size: 20),
-            SizedBox(width: 12),
-            Text('Search', style: TextStyle(color: Colors.white54, fontSize: 16)),
-          ],
+          borderSide: BorderSide.none,
         ),
       ),
     );

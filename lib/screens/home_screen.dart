@@ -591,7 +591,9 @@ class _HomeScreenState extends State<HomeScreen>
     Navigator.push(
       context,
       PageRouteBuilder(
-        opaque: false,
+        // Opaque so it covers the home icons and only the wallpaper shows
+        // behind the transparent scaffold — the same look as Settings.
+        opaque: true,
         pageBuilder: (_, __, ___) => MultiBlocProvider(
           providers: [
             BlocProvider.value(value: context.read<SearchCubit>()),
