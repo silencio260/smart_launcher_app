@@ -19,6 +19,8 @@ import org.xmlpull.v1.XmlPullParser
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executors
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.AppQueryHelper
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.AppLockOverlay
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.AppLockStore
 
 class AppsChannel(private val activity: Activity) {
 
@@ -90,6 +92,7 @@ class AppsChannel(private val activity: Activity) {
                             val intent = activity.packageManager.getLaunchIntentForPackage(pkg)
                             if (intent != null) {
                                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                gateIfLocked(pkg)
                                 activity.startActivity(intent)
                                 result.success(true)
                             } else {
@@ -110,6 +113,7 @@ class AppsChannel(private val activity: Activity) {
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             }
                             try {
+                                gateIfLocked(pkg)
                                 activity.startActivity(intent)
                                 result.success(true)
                             } catch (_: Exception) {
@@ -187,6 +191,23 @@ class AppsChannel(private val activity: Activity) {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    // Instant in-launcher lock: when WE launch a locked app, draw the lock
+    // overlay synchronously here (before the app window paints) so there is no
+    // flash — unlike the [AppLockWatcherService] poller, which only catches
+    // launches that originate outside the launcher. Needs only the overlay
+    // permission; no Usage access / accessibility required for this path.
+    private fun gateIfLocked(pkg: String) {
+        try {
+            if (AppLockStore.isConfigured(activity) &&
+                AppLockStore.isLocked(activity, pkg) &&
+                !AppLockStore.isUnlocked(pkg)
+            ) {
+                AppLockOverlay.show(activity, pkg)
+            }
+        } catch (_: Exception) {
+        }
     }
 
     private fun getShortcuts(pkg: String): List<Map<String, Any?>> {

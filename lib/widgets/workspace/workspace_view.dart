@@ -9,6 +9,7 @@ import '../../services/gestures/widget_resize_gesture_guard.dart';
 import '../../state/workspace_cubit.dart';
 import '../../utils/debug_flags.dart';
 import 'cell_layout.dart';
+import 'home_sections.dart';
 
 class WorkspaceView extends StatefulWidget {
   final LauncherSettings settings;
@@ -21,6 +22,34 @@ class WorkspaceView extends StatefulWidget {
   final void Function(PageController)? onControllerReady;
   final void Function(int page, int slot)? onPickWidgetForStack;
 
+  /// Builders for the flanking, non-editable special pages. When null (or the
+  /// matching settings flag is off) that side has no special page and the pager
+  /// behaves exactly as before. The Discover page sits left of home page 0; the
+  /// App Library sits right of the last home page.
+  final WidgetBuilder? discoverBuilder;
+  final WidgetBuilder? libraryBuilder;
+
+  /// Insets reserved on HOME pages only: [homeTopInset] for the status bar and
+  /// [homeBottomInset] for the dock + Smart-search pill band (which is drawn as
+  /// a separate overlay by the host). Special pages ignore these and fill the
+  /// whole pager cell. Drag-drop geometry subtracts the same insets so resolved
+  /// slots match the padded home grid exactly.
+  final double homeTopInset;
+  final double homeBottomInset;
+
+  /// Fired when the pager settles on a section (home / discover / library).
+  final ValueChanged<HomeSection>? onSectionSettled;
+
+  /// Fired continuously during scroll with the dock/pill "chrome" opacity
+  /// (1.0 across the home band, ramping to 0.0 into a special page). Writes to a
+  /// ValueNotifier in the host — does NOT rebuild the pager subtree.
+  final ValueChanged<double>? onChromeProgress;
+
+  /// Fired continuously with the dock/pill chrome horizontal slide fraction
+  /// (-1..1) so the host can translate the chrome off-screen in step with the
+  /// page swipe instead of having it dissolve in place.
+  final ValueChanged<double>? onChromeSlide;
+
   const WorkspaceView({
     super.key,
     required this.settings,
@@ -31,6 +60,13 @@ class WorkspaceView extends StatefulWidget {
     required this.onPageChanged,
     this.onControllerReady,
     this.onPickWidgetForStack,
+    this.discoverBuilder,
+    this.libraryBuilder,
+    this.homeTopInset = 0,
+    this.homeBottomInset = 0,
+    this.onSectionSettled,
+    this.onChromeProgress,
+    this.onChromeSlide,
   });
 
   @override
@@ -54,14 +90,56 @@ class _WorkspaceViewState extends State<WorkspaceView> {
   Timer? _trailingOffsetTimer;
   WorkspaceState? _lastWorkspaceState;
 
+  int get _leadingCount =>
+      (widget.settings.discoverPageEnabled && widget.discoverBuilder != null)
+          ? 1
+          : 0;
+  int get _trailingCount =>
+      (widget.settings.appLibraryPageEnabled && widget.libraryBuilder != null)
+          ? 1
+          : 0;
+
+  PagerLayout _layoutFor(WorkspaceState state) => PagerLayout(
+        leadingCount: _leadingCount,
+        trailingCount: _trailingCount,
+        homeCount: state.pages.length,
+      );
+
+  // Infinite scrolling is incompatible with fixed flanking pages — a wrap-around
+  // pager has no edges to anchor the specials to.
+  bool get _effectiveInfinite =>
+      widget.settings.infiniteScrolling && _leadingCount + _trailingCount == 0;
+
   @override
   void initState() {
     super.initState();
-    _controller = PageController();
+    // Open on the first HOME page, not on the Discover page (index 0).
+    _controller = PageController(initialPage: _leadingCount);
     _controller.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.onControllerReady?.call(_controller);
     });
+  }
+
+  @override
+  void didUpdateWidget(WorkspaceView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // If the user toggles the Discover page on/off the leading offset shifts, so
+    // re-pin the controller onto the current home page to keep it from sliding.
+    final oldLeading =
+        (oldWidget.settings.discoverPageEnabled && oldWidget.discoverBuilder != null)
+            ? 1
+            : 0;
+    if (oldLeading != _leadingCount && _controller.hasClients) {
+      final state = context.read<WorkspaceCubit>().state;
+      if (state.pages.isNotEmpty) {
+        final target = _leadingCount +
+            state.currentPage.clamp(0, state.pages.length - 1).toInt();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _controller.hasClients) _controller.jumpToPage(target);
+        });
+      }
+    }
   }
 
   @override
@@ -73,10 +151,26 @@ class _WorkspaceViewState extends State<WorkspaceView> {
   }
 
   void _onScroll() {
-    final pages = context.read<WorkspaceCubit>().state.pages.length;
+    final state = context.read<WorkspaceCubit>().state;
+    final pages = state.pages.length;
     if (!_controller.hasClients || pages == 0) return;
-    final page = _controller.page ?? 0;
-    _pendingOffset = pages > 1 ? page / (pages - 1) : 0.0;
+    final layout = _layoutFor(state);
+    final raw = _controller.page ?? 0;
+
+    // Dock/pill chrome opacity + slide — smooth, every frame, no pager rebuild.
+    widget.onChromeProgress?.call(layout.chromeOpacityFor(raw));
+    widget.onChromeSlide?.call(layout.chromeSlideFor(raw));
+
+    // Wallpaper offset — computed over the home band only so parallax freezes at
+    // the edge while swiping into a special page.
+    if (layout.hasSpecials) {
+      final homePos =
+          (raw - layout.leadingCount).clamp(0.0, (pages - 1).toDouble());
+      _pendingOffset = pages > 1 ? homePos / (pages - 1) : 0.0;
+    } else {
+      _pendingOffset = pages > 1 ? raw / (pages - 1) : 0.0;
+    }
+
     final now = DateTime.now();
     if (now.difference(_lastOffsetSentAt) >= _kOffsetThrottle) {
       _flushOffset(now);
@@ -113,16 +207,26 @@ class _WorkspaceViewState extends State<WorkspaceView> {
       return null;
     }
 
+    final layout = _layoutFor(state);
     final rawPage = _controller.hasClients
         ? _controller.page ?? _controller.initialPage.toDouble()
         : state.currentPage.toDouble();
     final roundedRawPage = rawPage.round();
-    final page = widget.settings.infiniteScrolling
-        ? roundedRawPage % state.pages.length
-        : roundedRawPage.clamp(0, state.pages.length - 1).toInt();
+    // A drag that drifts onto a special page resolves onto the nearest real
+    // home page — specials are never drop targets.
+    final page = layout.hasSpecials
+        ? layout.homeIndexFor(roundedRawPage)
+        : (_effectiveInfinite
+            ? roundedRawPage % state.pages.length
+            : roundedRawPage.clamp(0, state.pages.length - 1).toInt());
     final local = box.globalToLocal(globalPosition);
+    // Home pages are padded by homeTopInset/homeBottomInset inside the pager
+    // cell; subtract them so the grid we measure against matches CellLayoutView.
     final gridWidth = box.size.width - _horizontalPadding * 2;
-    final gridHeight = box.size.height - _verticalPadding * 2;
+    final gridHeight = box.size.height -
+        widget.homeTopInset -
+        widget.homeBottomInset -
+        _verticalPadding * 2;
     if (gridWidth <= 0 || gridHeight <= 0) {
       dragDropLog(
         '[WidgetDragDrop][workspace] resolveDropLocation abort=badGrid '
@@ -144,7 +248,8 @@ class _WorkspaceViewState extends State<WorkspaceView> {
     }
 
     final gridX = (local.dx - _horizontalPadding).clamp(0.0, gridWidth);
-    final gridY = (local.dy - _verticalPadding).clamp(0.0, gridHeight);
+    final gridY = (local.dy - widget.homeTopInset - _verticalPadding)
+        .clamp(0.0, gridHeight);
     final col =
         (gridX / (cellWidth + _gridGap)).floor().clamp(0, columns - 1).toInt();
     final row =
@@ -178,26 +283,46 @@ class _WorkspaceViewState extends State<WorkspaceView> {
         current.pages.length > previous.pages.length;
     if (pagesWereAddedDuringDrag) return;
 
+    final layout = _layoutFor(current);
+    final rawPage = _controller.page ?? _controller.initialPage.toDouble();
+    final section = layout.sectionFor(rawPage.round());
+
+    // Parked on a special page without an explicit navigation: keep the user
+    // there. Only re-pin the trailing Library if the home page count shifted
+    // (e.g. an empty page was collapsed after a package removal).
+    if (!currentPageChanged && section != HomeSection.home) {
+      if (section == HomeSection.library && pageCountChanged) {
+        final target = layout.itemCount - 1;
+        if (rawPage.round() != target) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || !_controller.hasClients) return;
+            _controller.jumpToPage(target);
+          });
+        }
+      }
+      return;
+    }
+
     final targetPage =
         current.currentPage.clamp(0, current.pages.length - 1).toInt();
-    final rawPage = _controller.page ?? _controller.initialPage.toDouble();
+    final controllerTarget = layout.homeToController(targetPage);
     final roundedPage = rawPage.round();
-    final controllerOutOfRange = !widget.settings.infiniteScrolling &&
-        roundedPage >= current.pages.length;
-    if (!controllerOutOfRange && roundedPage == targetPage) return;
+    final controllerOutOfRange = roundedPage >= layout.itemCount;
+    if (!controllerOutOfRange && roundedPage == controllerTarget) return;
 
     dragDropLog(
       '[WidgetDragDrop][workspace] syncPageController '
-      'rawPage=${rawPage.toStringAsFixed(3)} target=$targetPage '
+      'rawPage=${rawPage.toStringAsFixed(3)} target=$controllerTarget '
       'pages=${previous.pages.length}->${current.pages.length} '
       'statePage=${previous.currentPage}->${current.currentPage}',
     );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_controller.hasClients || current.pages.isEmpty) return;
+      final l = _layoutFor(current);
       final safeTarget =
           current.currentPage.clamp(0, current.pages.length - 1).toInt();
-      _controller.jumpToPage(safeTarget);
+      _controller.jumpToPage(l.homeToController(safeTarget));
       _pendingOffset = current.pages.length > 1
           ? safeTarget / (current.pages.length - 1)
           : 0;
@@ -221,6 +346,7 @@ class _WorkspaceViewState extends State<WorkspaceView> {
         if (state.pages.isEmpty) {
           return const SizedBox.shrink();
         }
+        final layout = _layoutFor(state);
         return ValueListenableBuilder<bool>(
           valueListenable: WidgetResizeGestureGuard.isResizingNotifier,
           builder: (context, isResizing, _) {
@@ -233,32 +359,66 @@ class _WorkspaceViewState extends State<WorkspaceView> {
               physics: isResizing
                   ? const NeverScrollableScrollPhysics()
                   : const BouncingScrollPhysics(),
-              onPageChanged: (i) =>
-                  context.read<WorkspaceCubit>().setCurrentPage(
-                        i % state.pages.length,
-                      ),
-              itemCount:
-                  widget.settings.infiniteScrolling ? null : state.pages.length,
+              onPageChanged: (i) {
+                if (_effectiveInfinite) {
+                  context
+                      .read<WorkspaceCubit>()
+                      .setCurrentPage(i % state.pages.length);
+                  widget.onSectionSettled?.call(HomeSection.home);
+                  return;
+                }
+                final section = layout.sectionFor(i);
+                if (section == HomeSection.home) {
+                  context
+                      .read<WorkspaceCubit>()
+                      .setCurrentPage(layout.homeIndexFor(i));
+                }
+                widget.onSectionSettled?.call(section);
+              },
+              itemCount: _effectiveInfinite ? null : layout.itemCount,
               itemBuilder: (context, rawIndex) {
-                final i = rawIndex % state.pages.length;
-                return CellLayoutView(
-                  page: state.pages[i],
-                  pageIndex: i,
-                  settings: widget.settings,
-                  dragController: widget.dragController,
-                  onAppTap: widget.onAppTap,
-                  onAppLongPress: (app, slot, center) =>
-                      widget.onAppLongPress(app, i, slot, center),
-                  onBackgroundLongPress: widget.onBackgroundLongPress,
-                  onPickWidgetForStack: widget.onPickWidgetForStack,
-                  resolveDropLocation: (globalPosition) =>
-                      _resolveDropLocation(globalPosition, state),
-                );
+                if (_effectiveInfinite) {
+                  final i = rawIndex % state.pages.length;
+                  return _buildHomePage(context, state, i);
+                }
+                switch (layout.sectionFor(rawIndex)) {
+                  case HomeSection.discover:
+                    return widget.discoverBuilder!(context);
+                  case HomeSection.library:
+                    return widget.libraryBuilder!(context);
+                  case HomeSection.home:
+                    return _buildHomePage(
+                        context, state, layout.homeIndexFor(rawIndex));
+                }
               },
             );
           },
         );
       },
+    );
+  }
+
+  Widget _buildHomePage(BuildContext context, WorkspaceState state, int i) {
+    final cell = CellLayoutView(
+      page: state.pages[i],
+      pageIndex: i,
+      settings: widget.settings,
+      dragController: widget.dragController,
+      onAppTap: widget.onAppTap,
+      onAppLongPress: (app, slot, center) =>
+          widget.onAppLongPress(app, i, slot, center),
+      onBackgroundLongPress: widget.onBackgroundLongPress,
+      onPickWidgetForStack: widget.onPickWidgetForStack,
+      resolveDropLocation: (globalPosition) =>
+          _resolveDropLocation(globalPosition, state),
+    );
+    if (widget.homeTopInset == 0 && widget.homeBottomInset == 0) return cell;
+    return Padding(
+      padding: EdgeInsets.only(
+        top: widget.homeTopInset,
+        bottom: widget.homeBottomInset,
+      ),
+      child: cell,
     );
   }
 }

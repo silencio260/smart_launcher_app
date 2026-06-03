@@ -18,8 +18,9 @@ import 'mini_app_kit.dart';
 
 /// App Lock: a monochrome (alarm-themed) per-app locker. Gates on entry behind
 /// its own PIN/pattern + fingerprint (see [AppLockLockScreen]) exactly like the
-/// Vault, then lists apps under Locked / All tabs. Enforcement is native: the
-/// accessibility service shows a lock overlay over any locked app, device-wide.
+/// Vault, then lists apps under Locked / All tabs. Enforcement is native: apps
+/// launched from the launcher lock instantly, and a Usage-access watcher covers
+/// apps opened anywhere else, device-wide.
 class AppLockerScreen extends StatefulWidget {
   const AppLockerScreen({super.key});
 
@@ -32,7 +33,7 @@ class _AppLockerScreenState extends State<AppLockerScreen>
   final _sec = AppLockSecurityRepository();
   var _unlocked = false;
   var _query = '';
-  var _accessibility = false;
+  var _usageAccess = false;
   var _overlay = false;
   var _tabIndex = 0;
 
@@ -60,16 +61,18 @@ class _AppLockerScreenState extends State<AppLockerScreen>
   }
 
   Future<void> _refreshPermissions() async {
-    final accessibility = await LauncherService.isAccessibilityServiceEnabled();
+    final usageAccess = await LauncherService.isUsageAccessEnabled();
     final overlay = await LauncherService.canDrawOverlays();
     if (!mounted) return;
     setState(() {
-      _accessibility = accessibility;
+      _usageAccess = usageAccess;
       _overlay = overlay;
     });
   }
 
-  bool get _ready => _accessibility && _overlay;
+  // Overlay draws the lock; Usage access adds the outside-launcher fallback.
+  // Both granted ⇒ fully protected device-wide.
+  bool get _ready => _overlay && _usageAccess;
 
   void _openGuide() {
     Navigator.of(context)
@@ -244,10 +247,18 @@ class _AppLockerScreenState extends State<AppLockerScreen>
     );
   }
 
-  /// Shown while the service/overlay are missing: an unmissable warning that
-  /// locked apps are NOT protected, tapping into the guided setup flow.
+  /// Shown until protection is complete. If the overlay alone is granted, apps
+  /// opened from the launcher already lock — so it shifts to an "almost there"
+  /// nudge to add app detection; with neither, a full OFF warning. Tapping
+  /// opens the guided setup flow.
   Widget _offBanner() {
     final warn = accentForFeature('app_locker');
+    final partial = _overlay && !_usageAccess;
+    final title = partial ? 'Almost protected' : 'App Lock is OFF';
+    final subtitle = partial
+        ? 'Apps you open from your home screen are locked. Turn on app detection '
+            'to also lock apps opened elsewhere.'
+        : 'Your locked apps are NOT protected. Tap to turn on protection.';
     return RoundCard(
       onTap: _openGuide,
       child: Row(
@@ -267,14 +278,14 @@ class _AppLockerScreenState extends State<AppLockerScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'App Lock is OFF',
+                  title,
                   style: TextStyle(
                       fontSize: 18, fontWeight: FontWeight.w800, color: warn),
                 ),
                 const SizedBox(height: 4),
-                const Text(
-                  'Your locked apps are NOT protected. Tap to turn on protection.',
-                  style: TextStyle(color: miniAppMuted, height: 1.3),
+                Text(
+                  subtitle,
+                  style: const TextStyle(color: miniAppMuted, height: 1.3),
                 ),
               ],
             ),

@@ -37,6 +37,11 @@ class LauncherSettings extends Equatable {
   final bool lockHomeScreen;
   final bool autoAddShortcuts;
   final bool infiniteScrolling;
+  // Flanking "special" pages: a Discover feed left of home page 0 and an
+  // App Library right of the last home page. They are NOT part of the editable
+  // workspace page list and never appear in the edit-mode page manager.
+  final bool discoverPageEnabled;
+  final bool appLibraryPageEnabled;
   final bool showGridDebugOverlay;
   final bool showWidgetDebugLogs;
   final bool showWidgetDragDebugLogs;
@@ -109,6 +114,8 @@ class LauncherSettings extends Equatable {
     this.lockHomeScreen = false,
     this.autoAddShortcuts = true,
     this.infiniteScrolling = false,
+    this.discoverPageEnabled = true,
+    this.appLibraryPageEnabled = true,
     this.showGridDebugOverlay = false,
     this.showWidgetDebugLogs = false,
     this.showWidgetDragDebugLogs = false,
@@ -172,6 +179,8 @@ class LauncherSettings extends Equatable {
     bool? lockHomeScreen,
     bool? autoAddShortcuts,
     bool? infiniteScrolling,
+    bool? discoverPageEnabled,
+    bool? appLibraryPageEnabled,
     bool? showGridDebugOverlay,
     bool? showWidgetDebugLogs,
     bool? showWidgetDragDebugLogs,
@@ -235,6 +244,9 @@ class LauncherSettings extends Equatable {
       lockHomeScreen: lockHomeScreen ?? this.lockHomeScreen,
       autoAddShortcuts: autoAddShortcuts ?? this.autoAddShortcuts,
       infiniteScrolling: infiniteScrolling ?? this.infiniteScrolling,
+      discoverPageEnabled: discoverPageEnabled ?? this.discoverPageEnabled,
+      appLibraryPageEnabled:
+          appLibraryPageEnabled ?? this.appLibraryPageEnabled,
       showGridDebugOverlay: showGridDebugOverlay ?? this.showGridDebugOverlay,
       showWidgetDebugLogs: showWidgetDebugLogs ?? this.showWidgetDebugLogs,
       showWidgetDragDebugLogs:
@@ -309,6 +321,8 @@ class LauncherSettings extends Equatable {
         lockHomeScreen,
         autoAddShortcuts,
         infiniteScrolling,
+        discoverPageEnabled,
+        appLibraryPageEnabled,
         showGridDebugOverlay,
         showWidgetDebugLogs,
         showWidgetDragDebugLogs,

@@ -22,11 +22,13 @@ class AppLockProtectionGuide extends StatefulWidget {
 
 class _AppLockProtectionGuideState extends State<AppLockProtectionGuide>
     with WidgetsBindingObserver {
-  var _accessibility = false;
+  var _usageAccess = false;
   var _overlay = false;
   var _battery = true; // assume exempt until known; this step is non-blocking.
 
-  bool get _ready => _accessibility && _overlay;
+  // Overlay actually draws the lock (both the instant in-launcher path and the
+  // watcher need it); Usage access powers the outside-launcher fallback.
+  bool get _ready => _overlay && _usageAccess;
 
   @override
   void initState() {
@@ -48,19 +50,21 @@ class _AppLockProtectionGuideState extends State<AppLockProtectionGuide>
   }
 
   Future<void> _refresh() async {
-    final accessibility = await LauncherService.isAccessibilityServiceEnabled();
+    final usageAccess = await LauncherService.isUsageAccessEnabled();
     final overlay = await LauncherService.canDrawOverlays();
     final battery = await LauncherService.isIgnoringBatteryOptimizations();
+    // Bring the watcher up/down to match whatever the user just granted.
+    await LauncherService.syncAppLockWatcher();
     if (!mounted) return;
     setState(() {
-      _accessibility = accessibility;
+      _usageAccess = usageAccess;
       _overlay = overlay;
       _battery = battery;
     });
   }
 
-  Future<void> _openAccessibility() async {
-    await LauncherService.requestAccessibilityAccess();
+  Future<void> _openUsageAccess() async {
+    await LauncherService.requestUsageAccess();
     await _refresh();
   }
 
@@ -88,21 +92,24 @@ class _AppLockProtectionGuideState extends State<AppLockProtectionGuide>
             const SizedBox(height: 18),
             const MiniSectionHeader('Required'),
             _stepRow(
-              icon: Icons.accessibility_new,
-              title: 'App Lock service',
+              icon: Icons.layers_outlined,
+              title: 'Display over apps',
               subtitle:
-                  'Find “Smart Launcher Accessibility” and turn it ON. This lets the '
-                  'lock screen appear over any locked app, anywhere on your phone.',
-              granted: _accessibility,
-              onTap: _openAccessibility,
+                  'Lets the passcode screen cover a locked app. Apps you open from '
+                  'your home screen lock instantly once this is on.',
+              granted: _overlay,
+              onTap: _openOverlay,
             ),
             const SizedBox(height: 12),
             _stepRow(
-              icon: Icons.layers_outlined,
-              title: 'Display over apps',
-              subtitle: 'Lets the unlock screen show on top of locked apps.',
-              granted: _overlay,
-              onTap: _openOverlay,
+              icon: Icons.apps_outlined,
+              title: 'App detection',
+              subtitle:
+                  'Find “Smart Launcher” under Usage access and allow it. Lets App '
+                  'Lock also catch locked apps opened outside the launcher — from '
+                  'recents, links or notifications.',
+              granted: _usageAccess,
+              onTap: _openUsageAccess,
             ),
             const SizedBox(height: 18),
             const MiniSectionHeader('Recommended'),

@@ -36,11 +36,16 @@ import '../widgets/edit_mode/edit_mode_scope.dart';
 import '../widgets/drag/drag_layer.dart';
 import '../widgets/workspace/route_coverage_scope.dart';
 import '../widgets/workspace/home_widget_stack_view.dart';
+import '../widgets/workspace/home_sections.dart';
 import '../widgets/workspace/workspace_touch_listener.dart';
 import '../widgets/workspace/workspace_view.dart';
+import '../widgets/dock/smart_search_pill.dart';
 import '../services/drag/drag_controller.dart';
 import '../services/gestures/widget_resize_gesture_guard.dart';
 import 'search_overlay_screen.dart';
+import 'smart_search_screen.dart';
+import 'discover_page.dart';
+import 'app_library_page.dart';
 import 'settings/general_settings_screen.dart';
 import 'settings/settings_root_screen.dart';
 import 'settings/widget_picker_screen.dart';
@@ -66,6 +71,20 @@ class _HomeScreenState extends State<HomeScreen>
   bool _defaultSeedResolved = false;
   bool _normalizingDock = false;
   PageController? _pageController;
+  // Dock + Smart-search pill "chrome": faded out as the pager scrolls into a
+  // flanking special page (Discover / App Library). Driven by WorkspaceView at
+  // scroll cadence via a ValueNotifier so the pager subtree never rebuilds.
+  final ValueNotifier<double> _chromeOpacity = ValueNotifier<double>(1.0);
+  // Horizontal slide fraction (-1..1) for the chrome so it travels off-screen
+  // with the home content as a special page slides in (no "floating" dissolve).
+  final ValueNotifier<double> _chromeSlide = ValueNotifier<double>(0.0);
+  final ValueNotifier<HomeSection> _activeSection =
+      ValueNotifier<HomeSection>(HomeSection.home);
+  // Measured height of the bottom chrome band (dock + pill + safe area). Fed
+  // back as WorkspaceView.homeBottomInset so home pages reserve exactly that
+  // much space and the bottom grid row isn't hidden behind the dock.
+  final GlobalKey _bottomChromeKey = GlobalKey();
+  double _bottomChromeHeight = 132;
   Timer? _drawerPrewarmTimer;
   bool _drawerPrewarmRunning = false;
   int _drawerPrewarmGeneration = 0;
@@ -154,6 +173,9 @@ class _HomeScreenState extends State<HomeScreen>
     WidgetsBinding.instance.removeObserver(this);
     _dragController.removeListener(_onDragChange);
     _dragController.dispose();
+    _chromeOpacity.dispose();
+    _chromeSlide.dispose();
+    _activeSection.dispose();
     super.dispose();
   }
 
@@ -220,7 +242,9 @@ class _HomeScreenState extends State<HomeScreen>
     final rawPage = _pageController?.hasClients == true
         ? _pageController!.page ?? _pageController!.initialPage.toDouble()
         : workspace.state.currentPage.toDouble();
-    final visiblePage = rawPage.round() % pageCount;
+    // rawPage is in pager (controller) space; convert back to a home index.
+    final visiblePage =
+        (rawPage.round() - _leadingCount()).clamp(0, pageCount - 1).toInt();
     if (workspace.state.currentPage != visiblePage) {
       workspace.setCurrentPage(visiblePage);
     }
@@ -246,7 +270,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _pageController?.animateToPage(
-        placement.page,
+        _toControllerPage(placement.page),
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
@@ -276,7 +300,7 @@ class _HomeScreenState extends State<HomeScreen>
     final page = placement.page;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _pageController?.animateToPage(
-        page,
+        _toControllerPage(page),
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
@@ -294,7 +318,7 @@ class _HomeScreenState extends State<HomeScreen>
   void _addWidgetToHomeScreen(LauncherWidgetInfo widget, int page) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _pageController?.animateToPage(
-        page,
+        _toControllerPage(page),
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
@@ -558,6 +582,30 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  // The richer Smart-search screen opened by the permanent home pill: app
+  // search + suggested/frequent apps + recent searches + settings shortcuts +
+  // a web fallback.
+  void _openSmartSearch() {
+    if (!mounted) return;
+    final settings = context.read<SettingsCubit>().state;
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        opaque: false,
+        pageBuilder: (_, __, ___) => MultiBlocProvider(
+          providers: [
+            BlocProvider.value(value: context.read<SearchCubit>()),
+            BlocProvider.value(
+                value: context.read<LauncherFeatureSettingsCubit>()),
+            BlocProvider.value(value: context.read<AppsCubit>()),
+            BlocProvider.value(value: context.read<SettingsCubit>()),
+          ],
+          child: SmartSearchScreen(iconShape: settings.iconShape),
+        ),
+      ),
+    );
+  }
+
   void _openSettings() {
     Navigator.push(
       context,
@@ -734,6 +782,7 @@ class _HomeScreenState extends State<HomeScreen>
             // whole tree would rebuild DragLayer, the touch listener, and every
             // AndroidView host view subtree on each badge event. Instead, each
             // leaf that actually consumes appsState subscribes locally.
+            _scheduleMeasureBottomChrome();
             return Scaffold(
               backgroundColor: Colors.transparent,
               extendBody: true,
@@ -753,122 +802,83 @@ class _HomeScreenState extends State<HomeScreen>
                       child: WorkspaceTouchListener(
                         settings: settings,
                         dragController: _dragController,
+                        activeSection: _activeSection,
                         onDoubleTap: () =>
                             _handleGesture(settings.doubleTapAction),
                         onSwipeUp: () => _handleGesture(settings.swipeUpAction),
                         onSwipeDown: () =>
                             _handleGesture(settings.swipeDownAction),
                         onLongPress: _enterEditMode,
-                        child: Column(
-                          children: [
-                            SizedBox(
-                                height: MediaQuery.of(context).padding.top + 8),
-                            Expanded(
-                              child: Visibility(
-                                // Reveal workspace when dragging from drawer so
-                                // drop targets are reachable behind the drawer.
-                                // Hidden in edit mode so the wallpaper shows
-                                // through behind the One UI–style overlay.
-                                visible:
-                                    (!_drawerOpen || _drawerDraggingToHome) &&
-                                        !_editMode,
-                                maintainState: true,
-                                maintainAnimation: true,
-                                maintainSize: true,
-                                // No BlocBuilder<AppsCubit> here — leaves
-                                // (BubbleTextView/FolderIconView via BlocSelector
-                                // in CellLayoutView) subscribe individually, so
-                                // notification badge updates don't rebuild the
-                                // entire PageView + AndroidView subtree.
-                                child: WorkspaceView(
-                                  dragController: _dragController,
-                                  settings: settings,
-                                  onAppTap: (app) =>
-                                      FeatureLaunchDispatcher.launch(
-                                          context, app),
-                                  onAppLongPress: (app, page, slot, center) =>
-                                      _showAppInfoTooltip(app, center),
-                                  onBackgroundLongPress: _enterEditMode,
-                                  onPickWidgetForStack:
-                                      _openWidgetPickerForStack,
-                                  onPageChanged: (offset) {
-                                    const MethodChannel(
-                                            'com.genrevibes.smartlauncher/wallpaper')
-                                        .invokeMethod('setWallpaperOffset',
-                                            {'xOffset': offset});
-                                  },
-                                  onControllerReady: (ctrl) =>
-                                      setState(() => _pageController = ctrl),
-                                ),
-                              ),
-                            ),
-                            if (settings.showDock)
-                              ValueListenableBuilder<(int, int)?>(
-                                valueListenable:
-                                    HomeWidgetStackView.suppressedAt,
-                                builder: (context, suppressedStack, child) {
-                                  return Visibility(
-                                    visible: suppressedStack == null &&
-                                        (!_drawerOpen ||
-                                            _drawerDraggingToHome) &&
-                                        !_editMode,
-                                    maintainState: true,
-                                    child: child!,
-                                  );
-                                },
-                                child: Padding(
-                                  padding: EdgeInsets.only(
-                                    left: 12,
-                                    right: 12,
-                                    bottom:
-                                        MediaQuery.of(context).padding.bottom +
-                                            12,
-                                  ),
-                                  // Outer selector watches only the apps list
-                                  // (not loading / badge fields) so badge pushes
-                                  // and loading toggles don't rebuild the dock.
-                                  child: BlocSelector<AppsCubit, AppsState,
-                                      List<AppInfo>>(
-                                    selector: (s) => s.apps,
-                                    builder: (context, _) {
-                                      final appsState =
-                                          context.read<AppsCubit>().state;
-                                      return BlocSelector<
-                                          WorkspaceCubit,
-                                          WorkspaceState,
-                                          Map<String, FolderInfo>>(
-                                        selector: (s) => s.folders,
-                                        builder: (context, _) {
-                                          final workspaceState = context
-                                              .read<WorkspaceCubit>()
-                                              .state;
-                                          return HotseatView(
-                                            apps: _resolveDockItems(
-                                              appsState,
-                                              workspaceState,
-                                              settings,
-                                            ),
-                                            settings: settings,
-                                            dragController: _dragController,
-                                            onSwipeUp: () => _handleGesture(
-                                                settings.swipeUpAction),
-                                            onAppTap: (app) =>
-                                                FeatureLaunchDispatcher.launch(
-                                                    context, app),
-                                            onAppLongPress: (app, center) =>
-                                                _showAppInfoTooltip(
-                                                    app, center),
-                                          );
-                                        },
-                                      );
-                                    },
-                                  ),
-                                ),
-                              ),
-                          ],
+                        // The pager now fills the whole body so the flanking
+                        // special pages (Discover / App Library) are full-screen.
+                        // The dock + Smart-search pill moved to a bottom overlay
+                        // (see _buildBottomChrome). Home pages reserve the status
+                        // bar + chrome band via homeTopInset/homeBottomInset.
+                        child: Visibility(
+                          // Reveal workspace when dragging from drawer so drop
+                          // targets are reachable behind the drawer. Hidden in
+                          // edit mode so the wallpaper shows through behind the
+                          // One UI–style overlay.
+                          visible: (!_drawerOpen || _drawerDraggingToHome) &&
+                              !_editMode,
+                          maintainState: true,
+                          maintainAnimation: true,
+                          maintainSize: true,
+                          // No BlocBuilder<AppsCubit> here — leaves
+                          // (BubbleTextView/FolderIconView via BlocSelector in
+                          // CellLayoutView) subscribe individually, so
+                          // notification badge updates don't rebuild the entire
+                          // PageView + AndroidView subtree.
+                          child: WorkspaceView(
+                            dragController: _dragController,
+                            settings: settings,
+                            onAppTap: (app) =>
+                                FeatureLaunchDispatcher.launch(context, app),
+                            onAppLongPress: (app, page, slot, center) =>
+                                _showAppInfoTooltip(app, center),
+                            onBackgroundLongPress: _enterEditMode,
+                            onPickWidgetForStack: _openWidgetPickerForStack,
+                            onPageChanged: (offset) {
+                              const MethodChannel(
+                                      'com.genrevibes.smartlauncher/wallpaper')
+                                  .invokeMethod(
+                                      'setWallpaperOffset', {'xOffset': offset});
+                            },
+                            onControllerReady: (ctrl) =>
+                                setState(() => _pageController = ctrl),
+                            homeTopInset:
+                                MediaQuery.of(context).padding.top + 8,
+                            homeBottomInset: _bottomChromeHeight,
+                            discoverBuilder: settings.discoverPageEnabled
+                                ? (ctx) => DiscoverPage(
+                                      onOpenSearch: _openSmartSearch,
+                                      onLaunchApp: (app) =>
+                                          FeatureLaunchDispatcher.launch(
+                                              ctx, app),
+                                    )
+                                : null,
+                            libraryBuilder: settings.appLibraryPageEnabled
+                                ? (ctx) => AppLibraryPage(
+                                      onLaunchApp: (app) =>
+                                          FeatureLaunchDispatcher.launch(
+                                              ctx, app),
+                                    )
+                                : null,
+                            onSectionSettled: (s) => _activeSection.value = s,
+                            onChromeProgress: (v) => _chromeOpacity.value = v,
+                            onChromeSlide: (v) => _chromeSlide.value = v,
+                          ),
                         ),
                       ),
                     ),
+                  ),
+                  // Dock + Smart-search pill band — drawn over the workspace,
+                  // visible only on home pages (faded out on the special pages).
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: _buildBottomChrome(context, settings),
                   ),
                   if (_drawerOpen)
                     AllAppsContainer(
@@ -909,11 +919,118 @@ class _HomeScreenState extends State<HomeScreen>
                       },
                       onPageSelected: (page) {
                         context.read<WorkspaceCubit>().setCurrentPage(page);
-                        _pageController?.jumpToPage(page);
+                        _pageController?.jumpToPage(_toControllerPage(page));
                       },
                     ),
                 ],
               ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  // Number of flanking pages before home page 0 in the pager. The Discover page
+  // (when enabled) occupies pager index 0, so every home-index jump must offset
+  // by this. Mirrors WorkspaceView._leadingCount.
+  int _leadingCount() =>
+      context.read<SettingsCubit>().state.discoverPageEnabled ? 1 : 0;
+
+  // Converts a 0-based home page index into a pager (controller) index.
+  int _toControllerPage(int homeIndex) => _leadingCount() + homeIndex;
+
+  // Measures the bottom chrome band (dock + pill + safe area) and feeds it back
+  // as WorkspaceView.homeBottomInset so home pages reserve exactly its height.
+  void _scheduleMeasureBottomChrome() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final box =
+          _bottomChromeKey.currentContext?.findRenderObject() as RenderBox?;
+      if (box == null || !box.hasSize) return;
+      final h = box.size.height;
+      if ((h - _bottomChromeHeight).abs() > 0.5) {
+        setState(() => _bottomChromeHeight = h);
+      }
+    });
+  }
+
+  // Bottom overlay: the dock and the permanent Smart-search pill. Always mounted
+  // (so its height stays measurable) but faded out and non-interactive on the
+  // flanking special pages, in edit mode, and while the drawer is open.
+  Widget _buildBottomChrome(BuildContext context, LauncherSettings settings) {
+    final width = MediaQuery.of(context).size.width;
+    return ValueListenableBuilder<double>(
+      valueListenable: _chromeSlide,
+      builder: (context, slide, child) => Transform.translate(
+        offset: Offset(slide * width, 0),
+        child: child,
+      ),
+      child: ValueListenableBuilder<double>(
+        valueListenable: _chromeOpacity,
+        builder: (context, opacity, child) {
+          final hidden = _editMode || (_drawerOpen && !_drawerDraggingToHome);
+          final effective = hidden ? 0.0 : opacity;
+          return IgnorePointer(
+            ignoring: effective < 0.5,
+            child: Opacity(opacity: effective, child: child),
+          );
+        },
+        child: Container(
+          key: _bottomChromeKey,
+          padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).padding.bottom + 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (settings.showDock) _buildDock(context, settings),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                child: SmartSearchPill(onTap: _openSmartSearch),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDock(BuildContext context, LauncherSettings settings) {
+    return ValueListenableBuilder<(int, int)?>(
+      valueListenable: HomeWidgetStackView.suppressedAt,
+      builder: (context, suppressedStack, child) {
+        return Visibility(
+          visible: suppressedStack == null,
+          maintainState: true,
+          maintainAnimation: true,
+          maintainSize: true,
+          child: child!,
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        // Outer selector watches only the apps list (not loading / badge
+        // fields) so badge pushes and loading toggles don't rebuild the dock.
+        child: BlocSelector<AppsCubit, AppsState, List<AppInfo>>(
+          selector: (s) => s.apps,
+          builder: (context, _) {
+            final appsState = context.read<AppsCubit>().state;
+            return BlocSelector<WorkspaceCubit, WorkspaceState,
+                Map<String, FolderInfo>>(
+              selector: (s) => s.folders,
+              builder: (context, _) {
+                final workspaceState = context.read<WorkspaceCubit>().state;
+                return HotseatView(
+                  apps: _resolveDockItems(appsState, workspaceState, settings),
+                  settings: settings,
+                  dragController: _dragController,
+                  onSwipeUp: () => _handleGesture(settings.swipeUpAction),
+                  onAppTap: (app) =>
+                      FeatureLaunchDispatcher.launch(context, app),
+                  onAppLongPress: (app, center) =>
+                      _showAppInfoTooltip(app, center),
+                );
+              },
             );
           },
         ),

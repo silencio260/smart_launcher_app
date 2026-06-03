@@ -24,7 +24,7 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen>
     with WidgetsBindingObserver {
   final _sec = AppLockSecurityRepository();
 
-  var _accessibility = false;
+  var _usageAccess = false;
   var _overlay = false;
 
   static const _autoLockSteps = <int, String>{
@@ -53,16 +53,16 @@ class _AppLockSettingsScreenState extends State<AppLockSettingsScreen>
   }
 
   Future<void> _refreshPermissions() async {
-    final accessibility = await LauncherService.isAccessibilityServiceEnabled();
+    final usageAccess = await LauncherService.isUsageAccessEnabled();
     final overlay = await LauncherService.canDrawOverlays();
     if (!mounted) return;
     setState(() {
-      _accessibility = accessibility;
+      _usageAccess = usageAccess;
       _overlay = overlay;
     });
   }
 
-  bool get _ready => _accessibility && _overlay;
+  bool get _ready => _overlay && _usageAccess;
 
   void _openGuide() {
     Navigator.of(context)

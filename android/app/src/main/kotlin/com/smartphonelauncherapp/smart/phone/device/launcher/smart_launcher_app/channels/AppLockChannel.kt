@@ -4,6 +4,7 @@ import android.content.Context
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.AppLockStore
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.services.AppLockWatcherService
 
 /// Mirrors the App Lock credential from Dart into native [AppLockStore] so the
 /// device-wide lock overlay (which runs with no Flutter engine) can verify it.
@@ -29,6 +30,8 @@ class AppLockChannel(private val context: Context) {
                     }
                     "clearAppLockCredential" -> {
                         AppLockStore.clearCredential(context)
+                        // App Lock is no longer configured → stop the watcher.
+                        AppLockWatcherService.syncFromPolicy(context)
                         result.success(true)
                     }
                     else -> result.notImplemented()

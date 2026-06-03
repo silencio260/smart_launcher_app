@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../../models/launcher_settings.dart';
 import '../../services/drag/drag_controller.dart';
 import '../../services/gestures/widget_resize_gesture_guard.dart';
+import 'home_sections.dart';
 
 class WorkspaceTouchListener extends StatefulWidget {
   final Widget child;
@@ -13,6 +15,12 @@ class WorkspaceTouchListener extends StatefulWidget {
   final VoidCallback onDoubleTap;
   final VoidCallback onLongPress;
 
+  /// The pager section currently in view. The launcher gestures (swipe-up to
+  /// drawer, long-press to edit, etc.) belong to the HOME pages only — on the
+  /// flanking special pages (Discover / App Library) they must stand down so
+  /// those pages' own scrollable content can take the vertical drag.
+  final ValueListenable<HomeSection> activeSection;
+
   const WorkspaceTouchListener({
     super.key,
     required this.child,
@@ -22,6 +30,7 @@ class WorkspaceTouchListener extends StatefulWidget {
     required this.onSwipeDown,
     required this.onDoubleTap,
     required this.onLongPress,
+    required this.activeSection,
   });
 
   @override
@@ -67,6 +76,10 @@ class _WorkspaceTouchListenerState extends State<WorkspaceTouchListener>
 
   bool get _blocked =>
       WidgetResizeGestureGuard.isResizing || widget.dragController.isDragging;
+
+  // True only when a real home page is in view. On the flanking special pages
+  // the launcher gestures stand down so the page's own ListView gets the drag.
+  bool get _onHome => widget.activeSection.value == HomeSection.home;
 
   void _onLongPressStart(LongPressStartDetails _) {
     if (_blocked) return;
@@ -127,6 +140,12 @@ class _WorkspaceTouchListenerState extends State<WorkspaceTouchListener>
     // the drawer.
     final crossed = dy.abs() >= _fireThreshold && dy.abs() > dx.abs();
     if (!crossed) return;
+    // Special pages own their vertical scroll — never fire the drawer gesture
+    // there. Mark the track fired so we stop re-checking it for this gesture.
+    if (!_onHome) {
+      t.fired = true;
+      return;
+    }
     // While a widget is in edit mode any swipe must dismiss the
     // selection rather than fire onSwipeUp/onSwipeDown. We still mark
     // the track as fired so we don't keep re-broadcasting on every
@@ -162,49 +181,62 @@ class _WorkspaceTouchListenerState extends State<WorkspaceTouchListener>
 
   @override
   Widget build(BuildContext context) {
-    return Listener(
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: _onPointerDown,
-      onPointerMove: _onPointerMove,
-      onPointerUp: _onPointerUp,
-      onPointerCancel: _onPointerCancel,
-      child: RawGestureDetector(
-        behavior: HitTestBehavior.translucent,
-        gestures: <Type, GestureRecognizerFactory>{
-          _TolerantLongPressGestureRecognizer:
-              GestureRecognizerFactoryWithHandlers<
-                  _TolerantLongPressGestureRecognizer>(
-            () => _TolerantLongPressGestureRecognizer(),
-            (r) => r..onLongPressStart = _onLongPressStart,
-          ),
-          _ResponsiveVerticalDragGestureRecognizer:
-              GestureRecognizerFactoryWithHandlers<
-                  _ResponsiveVerticalDragGestureRecognizer>(
-            () => _ResponsiveVerticalDragGestureRecognizer(),
-            (r) => r
-              ..onUpdate = _onVerticalDragUpdate
-              ..onEnd = _onVerticalDragEnd
-              ..onCancel = _onVerticalDragCancel,
-          ),
-          DoubleTapGestureRecognizer:
-              GestureRecognizerFactoryWithHandlers<DoubleTapGestureRecognizer>(
-            () => DoubleTapGestureRecognizer(),
-            (r) => r..onDoubleTap = _onDoubleTap,
-          ),
+    // Rebuild the recognizer set when the section changes: on the special pages
+    // we register NO launcher recognizers so the vertical drag falls through to
+    // the page's own ListView instead of being stolen by the workspace.
+    return ValueListenableBuilder<HomeSection>(
+      valueListenable: widget.activeSection,
+      child: ValueListenableBuilder<double>(
+        valueListenable: _verticalOffset,
+        child: widget.child,
+        builder: (context, dy, child) {
+          if (dy == 0) return child!;
+          return Transform.translate(
+            offset: Offset(0, dy),
+            transformHitTests: false,
+            child: child,
+          );
         },
-        child: ValueListenableBuilder<double>(
-          valueListenable: _verticalOffset,
-          child: widget.child,
-          builder: (context, dy, child) {
-            if (dy == 0) return child!;
-            return Transform.translate(
-              offset: Offset(0, dy),
-              transformHitTests: false,
-              child: child,
-            );
-          },
-        ),
       ),
+      builder: (context, section, child) {
+        final onHome = section == HomeSection.home;
+        return Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: _onPointerDown,
+          onPointerMove: _onPointerMove,
+          onPointerUp: _onPointerUp,
+          onPointerCancel: _onPointerCancel,
+          child: RawGestureDetector(
+            behavior: HitTestBehavior.translucent,
+            gestures: onHome
+                ? <Type, GestureRecognizerFactory>{
+                    _TolerantLongPressGestureRecognizer:
+                        GestureRecognizerFactoryWithHandlers<
+                            _TolerantLongPressGestureRecognizer>(
+                      () => _TolerantLongPressGestureRecognizer(),
+                      (r) => r..onLongPressStart = _onLongPressStart,
+                    ),
+                    _ResponsiveVerticalDragGestureRecognizer:
+                        GestureRecognizerFactoryWithHandlers<
+                            _ResponsiveVerticalDragGestureRecognizer>(
+                      () => _ResponsiveVerticalDragGestureRecognizer(),
+                      (r) => r
+                        ..onUpdate = _onVerticalDragUpdate
+                        ..onEnd = _onVerticalDragEnd
+                        ..onCancel = _onVerticalDragCancel,
+                    ),
+                    DoubleTapGestureRecognizer:
+                        GestureRecognizerFactoryWithHandlers<
+                            DoubleTapGestureRecognizer>(
+                      () => DoubleTapGestureRecognizer(),
+                      (r) => r..onDoubleTap = _onDoubleTap,
+                    ),
+                  }
+                : const <Type, GestureRecognizerFactory>{},
+            child: child,
+          ),
+        );
+      },
     );
   }
 }

@@ -220,29 +220,46 @@ class _EdgePageZoneState extends State<_EdgePageZone> {
         );
         return;
       }
+      final workspace = context.read<WorkspaceCubit>();
+      final workspaceState = workspace.state;
+      // The Discover special page (when enabled) occupies pager index 0, so the
+      // controller index is offset from the home page index by this. Specials
+      // are never icon-drop targets, so edge navigation is confined to real
+      // home pages.
+      final leadingCount =
+          context.read<SettingsCubit>().state.discoverPageEnabled ? 1 : 0;
+      int toController(int homeIndex) => leadingCount + homeIndex;
+      final currentHomePage =
+          ((pc.page?.round() ?? (workspaceState.currentPage + leadingCount)) -
+                  leadingCount)
+              .clamp(0, workspaceState.pages.length - 1)
+              .toInt();
       bool triggered = false;
       if (widget.direction < 0) {
-        dragDropLog(
-          '[WidgetDragDrop][edge -1] trigger previous '
-          'page=${pc.page?.toStringAsFixed(3)}',
-        );
-        _refreshDropPreviewAfterNavigation(
-          pc.previousPage(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeInOut),
-        );
-        triggered = true;
+        // Refuse to cross from home page 0 into the Discover page during a drag.
+        if (currentHomePage > 0) {
+          dragDropLog(
+            '[WidgetDragDrop][edge -1] trigger previous '
+            'page=${pc.page?.toStringAsFixed(3)} home=$currentHomePage',
+          );
+          _refreshDropPreviewAfterNavigation(
+            pc.previousPage(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut),
+          );
+          triggered = true;
+        } else {
+          dragDropLog(
+              '[WidgetDragDrop][edge -1] triggerAbort reason=atFirstHomePage');
+        }
       } else {
-        final workspace = context.read<WorkspaceCubit>();
-        final workspaceState = workspace.state;
-        final currentPage = pc.page?.round() ?? workspaceState.currentPage;
         final lastPageIndex = workspaceState.pages.length - 1;
         dragDropLog(
           '[WidgetDragDrop][edge 1] triggerCheck '
-          'page=${pc.page?.toStringAsFixed(3)} current=$currentPage '
+          'page=${pc.page?.toStringAsFixed(3)} home=$currentHomePage '
           'last=$lastPageIndex lastEmpty=${workspace.isPageEmpty(lastPageIndex)}',
         );
-        if (currentPage < lastPageIndex) {
+        if (currentHomePage < lastPageIndex) {
           dragDropLog('[WidgetDragDrop][edge 1] trigger next');
           _refreshDropPreviewAfterNavigation(
             pc.nextPage(
@@ -263,7 +280,7 @@ class _EdgePageZoneState extends State<_EdgePageZone> {
               'newLast=$newLastIndex',
             );
             _refreshDropPreviewAfterNavigation(
-              pc.animateToPage(newLastIndex,
+              pc.animateToPage(toController(newLastIndex),
                   duration: const Duration(milliseconds: 300),
                   curve: Curves.easeInOut),
             );

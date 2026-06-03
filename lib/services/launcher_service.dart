@@ -307,6 +307,14 @@ class LauncherService {
     await _system.invokeMethod<void>('requestUsageAccess');
   }
 
+  /// Starts or stops the native App Lock watcher to match the current policy
+  /// (App Lock configured + at least one locked app). Call after the user
+  /// grants Usage access so the device-wide fallback comes up immediately
+  /// rather than waiting for the next app launch.
+  static Future<void> syncAppLockWatcher() async {
+    await _system.invokeMethod<void>('syncAppLockWatcher');
+  }
+
   static Future<bool> isAccessibilityServiceEnabled() async =>
       await _system.invokeMethod<bool>('isAccessibilityServiceEnabled') ??
       false;

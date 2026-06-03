@@ -17,6 +17,7 @@ import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.ContactsChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.InstallAssistantChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.overlay.AfterCallOverlay
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.services.AppLockWatcherService
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.FileLockerChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.NotificationChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.SecurityChannel
@@ -45,6 +46,9 @@ class MainActivity : FlutterActivity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
         appWidgetHost.startListening()
+        // Make sure the App Lock watcher is running whenever the launcher opens
+        // (covers first install / after a force-stop, before any settings change).
+        AppLockWatcherService.syncFromPolicy(this)
         handleAfterCallIntent(intent)
         handleFeatureIntent(intent)
     }

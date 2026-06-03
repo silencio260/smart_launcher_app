@@ -14,6 +14,7 @@ import android.provider.Settings
 import android.text.TextUtils
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.services.AppLockWatcherService
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.services.LauncherAccessibilityService
 
 class SystemChannel(private val activity: Activity) {
@@ -116,7 +117,11 @@ class SystemChannel(private val activity: Activity) {
                             .edit()
                             .putStringSet(KEY_LOCKED_PACKAGES, packageNames.toSet())
                             .apply()
-                        LauncherAccessibilityService.reloadPolicy(activity)
+                        AppLockWatcherService.syncFromPolicy(activity)
+                        result.success(true)
+                    }
+                    "syncAppLockWatcher" -> {
+                        AppLockWatcherService.syncFromPolicy(activity)
                         result.success(true)
                     }
                     "isUsageAccessEnabled" -> {
@@ -176,9 +181,30 @@ class SystemChannel(private val activity: Activity) {
                             result.error("INVALID_URL", "URL is null", null)
                         }
                     }
+                    "openSettingsAction" -> {
+                        val action = call.argument<String>("action")
+                        result.success(openSettingsAction(action))
+                    }
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    // Opens a system Settings screen by its android.provider.Settings action
+    // string (e.g. ACTION_WIFI_SETTINGS). Falls back to the top-level Settings
+    // app if the specific action can't be resolved on this device.
+    private fun openSettingsAction(action: String?): Boolean {
+        return try {
+            val resolved = if (action.isNullOrEmpty()) Settings.ACTION_SETTINGS else action
+            var intent = Intent(resolved).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (intent.resolveActivity(activity.packageManager) == null) {
+                intent = Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            activity.startActivity(intent)
+            true
+        } catch (e: Exception) {
+            false
+        }
     }
 
     private fun isDefaultLauncher(): Boolean {

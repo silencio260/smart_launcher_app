@@ -91,6 +91,24 @@ class HomeScreenSettingsScreen extends StatelessWidget {
                 onChanged: (v) =>
                     cubit.update(s.copyWith(infiniteScrolling: v)),
               ),
+              _SectionHeader('Special pages'),
+              SwitchListTile(
+                title: const Text('Discover page'),
+                subtitle: const Text('A feed page left of the first home page'),
+                secondary: const Icon(Icons.explore_outlined),
+                value: s.discoverPageEnabled,
+                onChanged: (v) =>
+                    cubit.update(s.copyWith(discoverPageEnabled: v)),
+              ),
+              SwitchListTile(
+                title: const Text('App Library page'),
+                subtitle:
+                    const Text('Category folders right of the last home page'),
+                secondary: const Icon(Icons.grid_view_outlined),
+                value: s.appLibraryPageEnabled,
+                onChanged: (v) =>
+                    cubit.update(s.copyWith(appLibraryPageEnabled: v)),
+              ),
               _SectionHeader('Status Bar'),
               SwitchListTile(
                 title: const Text('Show Status Bar'),

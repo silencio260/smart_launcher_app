@@ -3,6 +3,9 @@
     <!-- App discovery -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
 
+    <!-- Discover RSS feed fetching -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <!-- Contacts search in search overlay -->
     <uses-permission android:name="android.permission.READ_CONTACTS"/>
 
@@ -24,6 +27,9 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+    <!-- App Lock's foreground watcher (Usage-access polling) — no standard FGS
+         category fits "lock apps", so it runs as specialUse (Android 14+). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"/>
@@ -206,6 +212,18 @@
             android:name=".services.AlarmRingService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback"/>
+
+        <!-- Device-wide App Lock watcher: polls Usage access for the foreground
+             app and draws the lock overlay for apps opened outside the launcher.
+             specialUse FGS (no other category fits app locking). -->
+        <service
+            android:name=".services.AppLockWatcherService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Locks apps device-wide by detecting the foreground app via Usage access and covering locked apps with a passcode screen."/>
+        </service>
 
         <!-- Transparent trampoline that hosts the vault's system file picker.
              MainActivity is singleTask, which drops SAF results, so the picker
