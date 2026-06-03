@@ -857,6 +857,7 @@ class _HomeScreenState extends State<HomeScreen>
                                       onLaunchApp: (app) =>
                                           FeatureLaunchDispatcher.launch(
                                               ctx, app),
+                                      activeSection: _activeSection,
                                     )
                                 : null,
                             libraryBuilder: settings.appLibraryPageEnabled

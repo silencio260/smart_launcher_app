@@ -45,14 +45,22 @@ class RssService {
     client.connectionTimeout = _timeout;
     final all = <RssItem>[];
     try {
-      for (final url in sources) {
+      // Fetch every feed concurrently instead of one-after-another, so the
+      // merged list is ready in roughly the time of the slowest single feed
+      // rather than the sum of all of them — the difference between a snappy
+      // first load and waiting through eight sequential round-trips.
+      final results = await Future.wait(sources.map((url) async {
         try {
           final body = await _get(client, url);
-          if (body == null) continue;
-          all.addAll(_parse(body, url));
+          if (body == null) return const <RssItem>[];
+          return _parse(body, url);
         } catch (_) {
-          // Skip feeds that fail; the rest still render.
+          // Skip feeds that fail/time out; the rest still render.
+          return const <RssItem>[];
         }
+      }));
+      for (final list in results) {
+        all.addAll(list);
       }
     } finally {
       client.close(force: true);

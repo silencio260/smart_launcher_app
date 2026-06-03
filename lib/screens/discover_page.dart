@@ -1,4 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -11,6 +12,7 @@ import '../state/apps_cubit.dart';
 import '../state/settings_cubit.dart';
 import '../widgets/icons/feature_icon.dart';
 import '../widgets/icons/shaped_icon.dart';
+import '../widgets/workspace/home_sections.dart';
 import 'add_news_source_screen.dart';
 
 /// The far-left "Discover" special page: a launcher-native scaffold (search,
@@ -21,10 +23,16 @@ class DiscoverPage extends StatefulWidget {
   final VoidCallback onOpenSearch;
   final void Function(AppInfo app) onLaunchApp;
 
+  /// Which pager section is currently settled. Discover stays alive off-screen,
+  /// so it watches this to silently re-organise its feed the moment the user
+  /// swipes away — they land on a freshly shuffled list next time they return.
+  final ValueListenable<HomeSection>? activeSection;
+
   const DiscoverPage({
     super.key,
     required this.onOpenSearch,
     required this.onLaunchApp,
+    this.activeSection,
   });
 
   @override
@@ -43,15 +51,49 @@ class _DiscoverPageState extends State<DiscoverPage> {
   @override
   void initState() {
     super.initState();
-    _items = List<RssItem>.from(RssService.instance.cached)..shuffle();
+    _items = _arrange(RssService.instance.cached);
     // Defer the network fetch a beat so swiping onto the page stays smooth.
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadFeed());
+    widget.activeSection?.addListener(_onSectionChanged);
   }
 
   @override
   void dispose() {
+    widget.activeSection?.removeListener(_onSectionChanged);
     _searchController.dispose();
     super.dispose();
+  }
+
+  /// Orders the feed for display: articles that carry an image float to the top
+  /// (shuffled among themselves), text-only stories sink to the bottom (also
+  /// shuffled). Shuffling within each tier is what makes every visit read as a
+  /// fresh feed; the image-first split is a stable priority on top of that. The
+  /// service's cached list stays untouched (date-sorted) underneath.
+  List<RssItem> _arrange(Iterable<RssItem> source) {
+    final withImage = <RssItem>[];
+    final withoutImage = <RssItem>[];
+    for (final item in source) {
+      (item.imageUrl != null ? withImage : withoutImage).add(item);
+    }
+    withImage.shuffle();
+    withoutImage.shuffle();
+    return <RssItem>[...withImage, ...withoutImage];
+  }
+
+  HomeSection? _lastSection;
+
+  void _onSectionChanged() {
+    final section = widget.activeSection?.value;
+    // Re-organise the moment Discover stops being the active page. The widget
+    // is kept alive off-screen, so this setState is invisible now and the user
+    // simply arrives to a reshuffled, image-first feed on their next swipe in.
+    if (_lastSection == HomeSection.discover &&
+        section != HomeSection.discover &&
+        _items.isNotEmpty &&
+        mounted) {
+      setState(() => _items = _arrange(_items));
+    }
+    _lastSection = section;
   }
 
   Future<void> _loadFeed({bool force = false}) async {
@@ -59,10 +101,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
     final items = await RssService.instance.fetch(sources, force: force);
     if (mounted) {
       setState(() {
-        // Shuffle a copy on each load so every visit reads as a fresh feed
-        // rather than the same date-sorted order. The service keeps the
-        // canonical sorted list in its cache untouched.
-        _items = List<RssItem>.from(items)..shuffle();
+        _items = _arrange(items);
         _loading = false;
       });
     }
