@@ -185,8 +185,11 @@ class RssService {
   String? _clean(String? raw) {
     if (raw == null) return null;
     var s = raw;
-    // Unwrap CDATA.
-    s = s.replaceAll(RegExp(r'<!\[CDATA\[([\s\S]*?)\]\]>'), r'$1');
+    // Unwrap CDATA. Must use replaceAllMapped — replaceAll treats the
+    // replacement as a literal, so "$1" would be inserted verbatim instead of
+    // the captured inner text.
+    s = s.replaceAllMapped(
+        RegExp(r'<!\[CDATA\[([\s\S]*?)\]\]>'), (m) => m.group(1) ?? '');
     // Strip any leftover tags.
     s = s.replaceAll(RegExp(r'<[^>]+>'), '');
     // Decode the few common entities.
