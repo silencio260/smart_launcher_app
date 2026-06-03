@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -404,12 +405,23 @@ class _ArticleCard extends StatelessWidget {
                 const SizedBox(width: 12),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: Image.network(
-                    item.imageUrl!,
+                  child: CachedNetworkImage(
+                    imageUrl: item.imageUrl!,
                     width: 84,
                     height: 84,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    fadeInDuration: const Duration(milliseconds: 200),
+                    // Decode at roughly the painted size (84dp ≈ 2x cap) instead
+                    // of the feed's full-resolution image — far less to download,
+                    // decode and hold in memory.
+                    memCacheWidth: 220,
+                    memCacheHeight: 220,
+                    placeholder: (_, __) => Container(
+                      width: 84,
+                      height: 84,
+                      color: Colors.white.withValues(alpha: 0.06),
+                    ),
+                    errorWidget: (_, __, ___) => const SizedBox.shrink(),
                   ),
                 ),
               ],
