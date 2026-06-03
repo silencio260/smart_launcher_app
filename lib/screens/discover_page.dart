@@ -42,7 +42,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
   @override
   void initState() {
     super.initState();
-    _items = RssService.instance.cached;
+    _items = List<RssItem>.from(RssService.instance.cached)..shuffle();
     // Defer the network fetch a beat so swiping onto the page stays smooth.
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadFeed());
   }
@@ -58,7 +58,10 @@ class _DiscoverPageState extends State<DiscoverPage> {
     final items = await RssService.instance.fetch(sources, force: force);
     if (mounted) {
       setState(() {
-        _items = items;
+        // Shuffle a copy on each load so every visit reads as a fresh feed
+        // rather than the same date-sorted order. The service keeps the
+        // canonical sorted list in its cache untouched.
+        _items = List<RssItem>.from(items)..shuffle();
         _loading = false;
       });
     }

@@ -11,8 +11,10 @@ class RssService {
   RssService._();
   static final RssService instance = RssService._();
 
-  static const _ttl = Duration(hours: 1);
-  static const _perFeedLimit = 12;
+  static const _ttl = Duration(hours: 24);
+  // Grab essentially everything each feed publishes; merged across many sources
+  // this gives a deep, varied pool to shuffle from.
+  static const _perFeedLimit = 60;
   static const _timeout = Duration(seconds: 10);
 
   List<RssItem> _cache = const [];

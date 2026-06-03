@@ -12,6 +12,9 @@ class RssPreset {
 class RssSourceStore {
   static const _key = 'discover_rss_sources_v1';
   static const _seededKey = 'discover_rss_seeded_v1';
+  // Bumped when the default set expands; unions the new defaults into existing
+  // installs once (non-destructive — keeps feeds the user added themselves).
+  static const _defaultsV2Key = 'discover_rss_defaults_v2';
 
   /// A broad, categorized catalog of popular feeds offered as one-tap presets.
   static const List<RssPreset> catalog = <RssPreset>[
@@ -34,6 +37,7 @@ class RssSourceStore {
     RssPreset('Android Police', 'https://www.androidpolice.com/feed/'),
     RssPreset('9to5Google', 'https://9to5google.com/feed/'),
     RssPreset('MacRumors', 'https://feeds.macrumors.com/MacRumors-All'),
+    RssPreset('The Verge', 'https://www.theverge.com/rss/index.xml'),
     // Business & finance
     RssPreset(
         'CNBC', 'https://www.cnbc.com/id/100003114/device/rss/rss.html'),
@@ -57,11 +61,17 @@ class RssSourceStore {
         'Medical News Today', 'https://www.medicalnewstoday.com/rss'),
   ];
 
-  /// The feeds seeded on first run: BBC News, TechCrunch and IGN.
+  /// The feeds seeded on first run, spanning world news, tech, sports and
+  /// business so the merged feed is varied out of the box.
   static const List<String> defaults = <String>[
-    'https://feeds.bbci.co.uk/news/rss.xml',
-    'https://techcrunch.com/feed/',
-    'https://feeds.ign.com/ign/all',
+    'https://feeds.bbci.co.uk/news/rss.xml', // BBC News
+    'https://www.aljazeera.com/xml/rss/all.xml', // Al Jazeera
+    'https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml', // New York Times
+    'https://feeds.ign.com/ign/all', // IGN
+    'https://techcrunch.com/feed/', // TechCrunch
+    'https://www.espn.com/espn/rss/news', // ESPN
+    'https://www.skysports.com/rss/12040', // Sky Sports
+    'https://www.forbes.com/business/feed/', // Forbes
   ];
 
   Future<List<String>> load() async {
@@ -77,6 +87,15 @@ class RssSourceStore {
     // an offered source, so it shouldn't linger in existing installs.
     final cleaned =
         stored.where((u) => !u.contains('news.google.com')).toList();
+    // One-time: union the expanded default set into existing installs so users
+    // pick up the new outlets (Al Jazeera, NYT, ESPN, Sky Sports, Forbes…)
+    // without losing any feed they added themselves.
+    if (prefs.getBool(_defaultsV2Key) != true) {
+      for (final url in defaults) {
+        if (!cleaned.contains(url)) cleaned.add(url);
+      }
+      await prefs.setBool(_defaultsV2Key, true);
+    }
     if (cleaned.length != stored.length) {
       await prefs.setStringList(_key, cleaned);
     }
