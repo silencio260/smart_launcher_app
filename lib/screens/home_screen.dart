@@ -49,6 +49,7 @@ import 'features/good_morning_screen.dart';
 import 'discover_page.dart';
 import 'app_library_page.dart';
 import 'settings/general_settings_screen.dart';
+import 'settings/settings_appearance.dart';
 import 'settings/settings_root_screen.dart';
 import 'settings/widget_picker_screen.dart';
 
@@ -694,7 +695,7 @@ class _HomeScreenState extends State<HomeScreen>
                 value: context.read<LauncherFeatureSettingsCubit>()),
             BlocProvider.value(value: context.read<AppsCubit>()),
           ],
-          child: const GeneralSettingsScreen(),
+          child: const SettingsAppearance(child: GeneralSettingsScreen()),
         ),
       ),
     );
@@ -712,7 +713,9 @@ class _HomeScreenState extends State<HomeScreen>
             BlocProvider.value(value: context.read<AppsCubit>()),
             BlocProvider.value(value: context.read<WorkspaceCubit>()),
           ],
-          child: WidgetPickerScreen(onWidgetAdded: _addWidgetToHomeScreen),
+          child: SettingsAppearance(
+            child: WidgetPickerScreen(onWidgetAdded: _addWidgetToHomeScreen),
+          ),
         ),
       ),
     );

@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/launcher_settings.dart';
 import '../../state/settings_cubit.dart';
 import 'icon_shape_picker_screen.dart';
+import 'settings_appearance.dart';
 
 class FolderSettingsScreen extends StatelessWidget {
   const FolderSettingsScreen({super.key});
@@ -25,13 +26,13 @@ class FolderSettingsScreen extends StatelessWidget {
                 onTap: () async {
                   final shape = await Navigator.push<String>(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          IconShapePickerScreen(current: s.folderIconShape),
+                    settingsRoute(
+                      IconShapePickerScreen(current: s.folderIconShape),
                     ),
                   );
-                  if (shape != null)
+                  if (shape != null) {
                     cubit.update(s.copyWith(folderIconShape: shape));
+                  }
                 },
               ),
               ListTile(

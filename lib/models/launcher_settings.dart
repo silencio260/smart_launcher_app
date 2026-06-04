@@ -3,6 +3,8 @@ import 'package:equatable/equatable.dart';
 
 enum ThemeMode2 { system, light, dark }
 
+enum SettingsBackgroundMode { black, white, system, theme, wallpaper }
+
 enum TextColorMode { auto, light, dark }
 
 enum TimeFormat { h12, h24 }
@@ -25,6 +27,7 @@ enum GestureAction {
 class LauncherSettings extends Equatable {
   // General
   final ThemeMode2 themeMode;
+  final SettingsBackgroundMode settingsBackgroundMode;
   final String iconShape;
   final String iconPackPackage;
   final bool themedIconsEnabled;
@@ -104,6 +107,7 @@ class LauncherSettings extends Equatable {
 
   const LauncherSettings({
     this.themeMode = ThemeMode2.system,
+    this.settingsBackgroundMode = SettingsBackgroundMode.black,
     this.iconShape = 'squircle',
     this.iconPackPackage = '',
     this.themedIconsEnabled = false,
@@ -169,6 +173,7 @@ class LauncherSettings extends Equatable {
 
   LauncherSettings copyWith({
     ThemeMode2? themeMode,
+    SettingsBackgroundMode? settingsBackgroundMode,
     String? iconShape,
     String? iconPackPackage,
     bool? themedIconsEnabled,
@@ -233,6 +238,8 @@ class LauncherSettings extends Equatable {
   }) {
     return LauncherSettings(
       themeMode: themeMode ?? this.themeMode,
+      settingsBackgroundMode:
+          settingsBackgroundMode ?? this.settingsBackgroundMode,
       iconShape: iconShape ?? this.iconShape,
       iconPackPackage: iconPackPackage ?? this.iconPackPackage,
       themedIconsEnabled: themedIconsEnabled ?? this.themedIconsEnabled,
@@ -311,6 +318,7 @@ class LauncherSettings extends Equatable {
   @override
   List<Object?> get props => [
         themeMode,
+        settingsBackgroundMode,
         iconShape,
         iconPackPackage,
         themedIconsEnabled,

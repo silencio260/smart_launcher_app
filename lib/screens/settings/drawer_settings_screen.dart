@@ -4,6 +4,7 @@ import '../../models/launcher_settings.dart';
 import '../../state/apps_cubit.dart';
 import '../../state/settings_cubit.dart';
 import 'hidden_apps_screen.dart';
+import 'settings_appearance.dart';
 
 class DrawerSettingsScreen extends StatelessWidget {
   const DrawerSettingsScreen({super.key});
@@ -33,8 +34,8 @@ class DrawerSettingsScreen extends StatelessWidget {
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => BlocProvider.value(
+                  settingsRoute(
+                    BlocProvider.value(
                       value: context.read<AppsCubit>(),
                       child: const HiddenAppsScreen(),
                     ),

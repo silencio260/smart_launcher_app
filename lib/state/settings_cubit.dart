@@ -46,6 +46,7 @@ class SettingsCubit extends Cubit<LauncherSettings> {
 
   Map<String, dynamic> _toJson(LauncherSettings s) => {
         'themeMode': s.themeMode.index,
+        'settingsBackgroundMode': s.settingsBackgroundMode.index,
         'iconShape': s.iconShape,
         'iconPackPackage': s.iconPackPackage,
         'themedIconsEnabled': s.themedIconsEnabled,
@@ -117,6 +118,8 @@ class SettingsCubit extends Cubit<LauncherSettings> {
 
     return LauncherSettings(
       themeMode: enumAt(ThemeMode2.values, 'themeMode', ThemeMode2.system),
+      settingsBackgroundMode: enumAt(SettingsBackgroundMode.values,
+          'settingsBackgroundMode', SettingsBackgroundMode.black),
       iconShape: j['iconShape'] as String? ?? 'squircle',
       iconPackPackage: j['iconPackPackage'] as String? ?? '',
       themedIconsEnabled: j['themedIconsEnabled'] as bool? ?? false,

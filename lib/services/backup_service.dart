@@ -97,6 +97,7 @@ class BackupService {
 
   Map<String, dynamic> _serializeSettings(LauncherSettings s) => {
         'themeMode': s.themeMode.index,
+        'settingsBackgroundMode': s.settingsBackgroundMode.index,
         'iconShape': s.iconShape,
         'iconPackPackage': s.iconPackPackage,
         'themedIconsEnabled': s.themedIconsEnabled,
@@ -158,6 +159,8 @@ class BackupService {
 
     return LauncherSettings(
       themeMode: enumAt(ThemeMode2.values, 'themeMode', ThemeMode2.system),
+      settingsBackgroundMode: enumAt(SettingsBackgroundMode.values,
+          'settingsBackgroundMode', SettingsBackgroundMode.black),
       iconShape: d['iconShape'] as String? ?? 'squircle',
       iconPackPackage: d['iconPackPackage'] as String? ?? '',
       themedIconsEnabled: d['themedIconsEnabled'] as bool? ?? false,

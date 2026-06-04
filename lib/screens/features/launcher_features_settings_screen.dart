@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/launcher_feature_settings.dart';
 import '../../services/launcher_service.dart';
 import '../../state/launcher_feature_cubit.dart';
+import '../settings/settings_appearance.dart';
 import 'after_call_settings_screen.dart';
 import 'install_uninstall_assistant_screen.dart';
 
@@ -42,9 +43,7 @@ class LauncherFeaturesSettingsScreen extends StatelessWidget {
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const AfterCallSettingsScreen(),
-                  ),
+                  settingsRoute(const AfterCallSettingsScreen()),
                 ),
               ),
               ListTile(
@@ -55,9 +54,7 @@ class LauncherFeaturesSettingsScreen extends StatelessWidget {
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => const InstallUninstallAssistantScreen(),
-                  ),
+                  settingsRoute(const InstallUninstallAssistantScreen()),
                 ),
               ),
             ],

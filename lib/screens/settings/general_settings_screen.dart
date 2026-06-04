@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/launcher_settings.dart';
 import '../../state/settings_cubit.dart';
 import 'icon_shape_picker_screen.dart';
+import 'settings_appearance.dart';
 
 class GeneralSettingsScreen extends StatelessWidget {
   const GeneralSettingsScreen({super.key});
@@ -24,6 +25,14 @@ class GeneralSettingsScreen extends StatelessWidget {
                 onTap: () => _pickTheme(context, cubit, s),
               ),
               ListTile(
+                title: const Text('Settings background'),
+                subtitle: Text(_settingsBackgroundLabel(
+                  s.settingsBackgroundMode,
+                )),
+                leading: const Icon(Icons.contrast_outlined),
+                onTap: () => _pickSettingsBackground(context, cubit, s),
+              ),
+              ListTile(
                 title: const Text('Icon Shape'),
                 subtitle: Text(s.iconShape.replaceAll('_', ' ')),
                 leading: const Icon(Icons.category_outlined),
@@ -31,10 +40,7 @@ class GeneralSettingsScreen extends StatelessWidget {
                 onTap: () async {
                   final shape = await Navigator.push<String>(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          IconShapePickerScreen(current: s.iconShape),
-                    ),
+                    settingsRoute(IconShapePickerScreen(current: s.iconShape)),
                   );
                   if (shape != null) cubit.update(s.copyWith(iconShape: shape));
                 },
@@ -77,6 +83,15 @@ class GeneralSettingsScreen extends StatelessWidget {
         ThemeMode2.dark => 'Dark',
       };
 
+  String _settingsBackgroundLabel(SettingsBackgroundMode mode) =>
+      switch (mode) {
+        SettingsBackgroundMode.black => 'Black',
+        SettingsBackgroundMode.white => 'White',
+        SettingsBackgroundMode.system => 'Follow system',
+        SettingsBackgroundMode.theme => 'Follow launcher theme',
+        SettingsBackgroundMode.wallpaper => 'Use wallpaper',
+      };
+
   void _pickTheme(
       BuildContext context, SettingsCubit cubit, LauncherSettings s) {
     showDialog(
@@ -90,6 +105,34 @@ class GeneralSettingsScreen extends StatelessWidget {
                   groupValue: s.themeMode,
                   onChanged: (v) {
                     if (v != null) cubit.update(s.copyWith(themeMode: v));
+                    Navigator.pop(context);
+                  },
+                ))
+            .toList(),
+      ),
+    );
+  }
+
+  void _pickSettingsBackground(
+    BuildContext context,
+    SettingsCubit cubit,
+    LauncherSettings s,
+  ) {
+    showDialog(
+      context: context,
+      builder: (_) => SimpleDialog(
+        title: const Text('Settings background'),
+        children: SettingsBackgroundMode.values
+            .map((mode) => RadioListTile<SettingsBackgroundMode>(
+                  title: Text(_settingsBackgroundLabel(mode)),
+                  value: mode,
+                  groupValue: s.settingsBackgroundMode,
+                  onChanged: (value) {
+                    if (value != null) {
+                      cubit.update(
+                        s.copyWith(settingsBackgroundMode: value),
+                      );
+                    }
                     Navigator.pop(context);
                   },
                 ))
