@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../models/launcher_settings.dart';
 import '../../models/launcher_widget_info.dart';
+import '../../data/mini_app_repositories.dart';
 import '../../services/after_call_service.dart';
 import '../../services/install_assistant_service.dart';
 import '../../services/launcher_service.dart';
@@ -253,6 +255,7 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                 ),
             if (kDebugMode) (_) => const _AfterCallDebugPanel(),
             if (kDebugMode) (_) => const _InstallAssistantDebugPanel(),
+            if (kDebugMode) (_) => const _AlarmDebugPanel(),
             (_) => const _SubSectionHeader(
                   icon: Icons.article_outlined,
                   title: 'Logs',
@@ -640,6 +643,106 @@ class _InstallAssistantDebugPanelState
                     _busy ? null : () => _showAssistantOverlay(removed: true),
                 icon: const Icon(Icons.delete_outline),
                 label: const Text('Show uninstall modal'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Debug-only controls for exercising the native alarm full-screen flow from
+/// the main launcher settings instead of the Clock mini-app toolbar.
+class _AlarmDebugPanel extends StatefulWidget {
+  const _AlarmDebugPanel();
+
+  @override
+  State<_AlarmDebugPanel> createState() => _AlarmDebugPanelState();
+}
+
+class _AlarmDebugPanelState extends State<_AlarmDebugPanel> {
+  bool _busy = false;
+
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..removeCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _scheduleTestAlarm({
+    required bool goodMorning,
+  }) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      if (!await LauncherService.canScheduleExactAlarms()) {
+        await LauncherService.requestExactAlarmAccess();
+      }
+      final notif = await Permission.notification.status;
+      if (!notif.isGranted && !notif.isPermanentlyDenied) {
+        await Permission.notification.request();
+      }
+      final trigger = DateTime.now().add(const Duration(seconds: 5));
+      final ok = await LauncherService.scheduleSmartAlarm(
+        id: goodMorning
+            ? ClockRepository.goodMorningTestAlarmId
+            : ClockRepository.testAlarmId,
+        triggerAtMillis: trigger.millisecondsSinceEpoch,
+        label: goodMorning ? 'Good morning test alarm' : 'Test alarm',
+        hour: trigger.hour,
+        minute: trigger.minute,
+        vibrate: true,
+        autoSilenceMinutes: 1,
+        kind: 'alarm',
+      );
+      _toast(
+        ok
+            ? goodMorning
+                ? 'Good Morning test rings in 5s — dismiss it to open the dashboard.'
+                : 'Test alarm rings in 5s — lock the phone to see the full-screen ring.'
+            : 'Could not schedule. Allow exact alarms, then try again.',
+      );
+    } catch (e) {
+      _toast('Could not schedule test alarm: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'ALARM TESTER',
+            style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Schedule throwaway alarms through the real native ring service.',
+            style: TextStyle(fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilledButton.tonalIcon(
+                onPressed:
+                    _busy ? null : () => _scheduleTestAlarm(goodMorning: false),
+                icon: const Icon(Icons.alarm),
+                label: const Text('Test alarm'),
+              ),
+              FilledButton.tonalIcon(
+                onPressed:
+                    _busy ? null : () => _scheduleTestAlarm(goodMorning: true),
+                icon: const Icon(Icons.wb_sunny_outlined),
+                label: const Text('Good Morning test'),
               ),
             ],
           ),

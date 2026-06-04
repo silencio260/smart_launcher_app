@@ -20,7 +20,10 @@ import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.alarm.AlarmScheduler
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.alarm.AlarmSpec
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.alarm.AlarmStore
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.MainActivity
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.SystemChannel
 import org.json.JSONObject
+import java.util.Calendar
 
 /**
  * Foreground service that owns the ringing experience: looping alarm-stream
@@ -43,6 +46,10 @@ class AlarmRingService : Service() {
         const val EXTRA_ID = "alarm_id"
         const val EXTRA_SPEC = "alarm_spec"
 
+        private const val FLUTTER_PREFS = "FlutterSharedPreferences"
+        private const val GOOD_MORNING_ENABLED = "flutter.good_morning_enabled"
+        private const val TEST_ALARM_ID = "__alarm_test__"
+        private const val GOOD_MORNING_TEST_ALARM_ID = "__alarm_good_morning_test__"
         private const val WAKE_TAG = "smartlauncher:alarm_ring"
         private const val RAMP_STEP_MS = 3000L
     }
@@ -223,8 +230,35 @@ class AlarmRingService : Service() {
                 AlarmStore.remove(this, spec.id)
             }
         }
+        maybeLaunchGoodMorning(spec)
         finishRing()
     }
+
+    private fun maybeLaunchGoodMorning(spec: AlarmSpec?) {
+        if (spec == null || spec.kind != "alarm") return
+        val isGoodMorningTest = spec.id == GOOD_MORNING_TEST_ALARM_ID
+        if ((spec.id == TEST_ALARM_ID || spec.id.endsWith(AlarmScheduler.SNOOZE_SUFFIX)) &&
+            !isGoodMorningTest
+        ) {
+            return
+        }
+        if (!isGoodMorningTest && !isGoodMorningEnabled()) return
+        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        if (!isGoodMorningTest && hour !in 5..8) return
+
+        SystemChannel.deliverFeatureRoute("morning_dashboard")
+        try {
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            )
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun isGoodMorningEnabled(): Boolean =
+        getSharedPreferences(FLUTTER_PREFS, Context.MODE_PRIVATE)
+            .getBoolean(GOOD_MORNING_ENABLED, true)
 
     private fun baseId(id: String): String =
         if (id.endsWith(AlarmScheduler.SNOOZE_SUFFIX)) {

@@ -134,20 +134,20 @@ class ClockRepository {
   /// is never persisted as a saved alarm and is skipped by the fired-alarm
   /// sync, so it never shows up in the list or disables a real alarm.
   static const String testAlarmId = '__alarm_test__';
+  static const String goodMorningTestAlarmId = '__alarm_good_morning_test__';
 
   Box get _alarms => FeatureHiveStore.box(FeatureHiveBoxes.clockAlarms);
   Box get _cities => FeatureHiveStore.box(FeatureHiveBoxes.clockWorldCities);
   Box get _timers => FeatureHiveStore.box(FeatureHiveBoxes.clockTimerPresets);
 
-  List<ClockAlarmRecord> alarms() =>
-      _alarms.values
-          .whereType<Map>()
-          .map(ClockAlarmRecord.fromMap)
-          .where((a) => a.id != testAlarmId)
-          .toList()
-        ..sort((a, b) => a.hour == b.hour
-            ? a.minute.compareTo(b.minute)
-            : a.hour.compareTo(b.hour));
+  List<ClockAlarmRecord> alarms() => _alarms.values
+      .whereType<Map>()
+      .map(ClockAlarmRecord.fromMap)
+      .where((a) => a.id != testAlarmId)
+      .toList()
+    ..sort((a, b) => a.hour == b.hour
+        ? a.minute.compareTo(b.minute)
+        : a.hour.compareTo(b.hour));
 
   ClockAlarmRecord? alarm(String id) {
     final raw = _alarms.get(id);
@@ -240,9 +240,11 @@ class ClockRepository {
     try {
       final fired = await LauncherService.consumeFiredAlarms();
       for (final id in fired) {
-        if (id == testAlarmId) continue;
+        if (id == testAlarmId || id == goodMorningTestAlarmId) continue;
         final existing = alarm(id);
-        if (existing != null && existing.repeatDays.isEmpty && existing.enabled) {
+        if (existing != null &&
+            existing.repeatDays.isEmpty &&
+            existing.enabled) {
           await saveAlarm(existing.copyWith(enabled: false));
         }
       }
@@ -373,7 +375,8 @@ class CountdownTimerState {
   /// Live seconds remaining, computed from the wall clock when running.
   int remainingSeconds({DateTime? now}) {
     if (running && endsAtEpochMs != null) {
-      final ms = endsAtEpochMs! - (now ?? DateTime.now()).millisecondsSinceEpoch;
+      final ms =
+          endsAtEpochMs! - (now ?? DateTime.now()).millisecondsSinceEpoch;
       return ms <= 0 ? 0 : (ms / 1000).ceil();
     }
     return pausedRemainingSeconds;
@@ -421,8 +424,7 @@ class TimerRepository {
   Future<void> _save(CountdownTimerState s) => _box.put('state', s.toMap());
 
   Future<void> start(Duration duration, String label) async {
-    final endsAt =
-        DateTime.now().add(duration).millisecondsSinceEpoch;
+    final endsAt = DateTime.now().add(duration).millisecondsSinceEpoch;
     await _save(CountdownTimerState(
       durationSeconds: duration.inSeconds,
       endsAtEpochMs: endsAt,
@@ -553,7 +555,9 @@ class StopwatchRepository {
 
   StopwatchStateData state() {
     final raw = _box.get('state');
-    return raw is Map ? StopwatchStateData.fromMap(raw) : StopwatchStateData.idle;
+    return raw is Map
+        ? StopwatchStateData.fromMap(raw)
+        : StopwatchStateData.idle;
   }
 
   Future<void> _save(StopwatchStateData s) => _box.put('state', s.toMap());
@@ -805,7 +809,8 @@ class VaultSecurityRepository {
 
   /// Grace window in ms during which re-opening the vault skips the prompt.
   /// 0 = always lock immediately.
-  int get autoLockMs => (_box.get('autoLockMs', defaultValue: 0) as num).toInt();
+  int get autoLockMs =>
+      (_box.get('autoLockMs', defaultValue: 0) as num).toInt();
 
   bool get withinGrace {
     final grace = autoLockMs;
@@ -831,8 +836,7 @@ class VaultSecurityRepository {
     return _constantTimeEquals(_hash(code, salt), hash);
   }
 
-  Future<void> setBiometricEnabled(bool value) =>
-      _box.put('biometric', value);
+  Future<void> setBiometricEnabled(bool value) => _box.put('biometric', value);
 
   Future<void> setRemoveOriginals(bool value) =>
       _box.put('removeOriginals', value);
@@ -885,7 +889,8 @@ class AppLockSecurityRepository {
 
   /// Grace window in ms during which re-opening App Lock skips the prompt.
   /// 0 = always lock immediately.
-  int get autoLockMs => (_box.get('autoLockMs', defaultValue: 0) as num).toInt();
+  int get autoLockMs =>
+      (_box.get('autoLockMs', defaultValue: 0) as num).toInt();
 
   bool get withinGrace {
     final grace = autoLockMs;
@@ -982,7 +987,8 @@ class AppHiderSecurityRepository {
 
   /// Grace window in ms during which re-opening App Hider skips the prompt.
   /// 0 = always lock immediately.
-  int get autoLockMs => (_box.get('autoLockMs', defaultValue: 0) as num).toInt();
+  int get autoLockMs =>
+      (_box.get('autoLockMs', defaultValue: 0) as num).toInt();
 
   bool get withinGrace {
     final grace = autoLockMs;

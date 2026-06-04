@@ -45,6 +45,7 @@ import '../services/drag/drag_controller.dart';
 import '../services/gestures/widget_resize_gesture_guard.dart';
 import 'search_overlay_screen.dart';
 import 'smart_search_screen.dart';
+import 'features/good_morning_screen.dart';
 import 'discover_page.dart';
 import 'app_library_page.dart';
 import 'settings/general_settings_screen.dart';
@@ -474,7 +475,27 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _consumeFeatureRoute() async {
     final featureId = await LauncherService.consumePendingFeatureId();
     if (!mounted || featureId == null || featureId.isEmpty) return;
+    if (featureId == 'morning_dashboard') {
+      _openGoodMorning();
+      return;
+    }
     FeatureLaunchDispatcher.openFeature(context, featureId);
+  }
+
+  void _openGoodMorning() {
+    _prepareHomeForSmartSearch();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MultiBlocProvider(
+          providers: [
+            BlocProvider.value(value: context.read<AppsCubit>()),
+            BlocProvider.value(value: context.read<SettingsCubit>()),
+          ],
+          child: const GoodMorningScreen(),
+        ),
+      ),
+    );
   }
 
   // The install/uninstall card is a native system overlay. Actions that mutate

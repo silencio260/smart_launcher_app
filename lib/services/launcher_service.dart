@@ -21,6 +21,8 @@ class LauncherService {
   static const _system = MethodChannel('com.genrevibes.smartlauncher/system');
   static const _widgets = MethodChannel('com.genrevibes.smartlauncher/widgets');
   static const _alarm = MethodChannel('com.genrevibes.smartlauncher/alarm');
+  static const _location =
+      MethodChannel('com.genrevibes.smartlauncher/location');
   static const _security =
       MethodChannel('com.genrevibes.smartlauncher/security');
   static const _fileLocker =
@@ -90,7 +92,8 @@ class LauncherService {
   /// app could handle the intent.
   static Future<bool> launchUrl(String url) async {
     try {
-      final result = await _system.invokeMethod<bool>('launchUrl', {'url': url});
+      final result =
+          await _system.invokeMethod<bool>('launchUrl', {'url': url});
       return result ?? false;
     } catch (_) {
       return false;
@@ -231,8 +234,8 @@ class LauncherService {
   /// Opens the document picker for a custom audio file, persisting read access.
   /// Returns the chosen `{uri, title}` or null if cancelled.
   static Future<Map<String, String>?> pickCustomAudio() async {
-    final raw = await _alarm
-        .invokeMethod<Map<dynamic, dynamic>>('pickCustomAudio');
+    final raw =
+        await _alarm.invokeMethod<Map<dynamic, dynamic>>('pickCustomAudio');
     if (raw == null) return null;
     return {
       'uri': raw['uri']?.toString() ?? '',
@@ -284,6 +287,16 @@ class LauncherService {
 
   static Future<String?> consumePendingFeatureId() async {
     return _system.invokeMethod<String>('consumePendingFeatureRoute');
+  }
+
+  static Future<Map<String, dynamic>?> getDeviceLocation() async {
+    final raw = await _location
+        .invokeMethod<Map<dynamic, dynamic>>('getDeviceLocation');
+    return raw?.cast<String, dynamic>();
+  }
+
+  static Future<void> requestLocationPermission() async {
+    await _location.invokeMethod<void>('requestLocationPermission');
   }
 
   static Future<void> setDeviceLockedApps(List<String> packageNames) async {

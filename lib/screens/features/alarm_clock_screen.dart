@@ -5,6 +5,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/mini_app_repositories.dart';
 import '../../services/clock_service.dart';
@@ -39,6 +40,9 @@ class _AlarmClockScreenState extends State<AlarmClockScreen>
   bool _notifications = true;
   bool _fullScreen = true;
   bool _battery = true;
+  bool _goodMorningEnabled = true;
+
+  static const _goodMorningSettingsKey = 'good_morning_enabled';
 
   // Only auto-prompt for notifications once per app session.
   static bool _notificationPromptShown = false;
@@ -47,8 +51,7 @@ class _AlarmClockScreenState extends State<AlarmClockScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _pickerDuration =
-        Duration(seconds: _timerRepo.state().durationSeconds);
+    _pickerDuration = Duration(seconds: _timerRepo.state().durationSeconds);
     _ticker = Timer.periodic(const Duration(milliseconds: 100), (_) {
       if (mounted) setState(() {});
     });
@@ -56,6 +59,7 @@ class _AlarmClockScreenState extends State<AlarmClockScreen>
       if (mounted) setState(() {});
     });
     _loadPermissions();
+    _loadGoodMorningSetting();
     _maybePromptNotifications();
   }
 
@@ -107,6 +111,20 @@ class _AlarmClockScreenState extends State<AlarmClockScreen>
   bool get _needsSetup =>
       !_exactAlarm || !_notifications || !_fullScreen || !_battery;
 
+  Future<void> _loadGoodMorningSetting() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _goodMorningEnabled = prefs.getBool(_goodMorningSettingsKey) ?? true;
+    });
+  }
+
+  Future<void> _setGoodMorningEnabled(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_goodMorningSettingsKey, value);
+    if (mounted) setState(() => _goodMorningEnabled = value);
+  }
+
   @override
   Widget build(BuildContext context) {
     final titles = ['Alarm', 'World clock', 'Stopwatch', 'Timer'];
@@ -115,19 +133,13 @@ class _AlarmClockScreenState extends State<AlarmClockScreen>
       actions: [
         if (_tab == 0)
           IconButton(
-            tooltip: 'Test alarm in 5s',
-            icon: const Icon(Icons.play_circle_outline, color: clockAccent),
-            onPressed: _testAlarm,
-          ),
-        if (_tab == 0)
-          IconButton(
             icon: const Icon(Icons.add, color: clockAccent),
             onPressed: () => _openEditor(null),
           ),
         if (_tab == 1)
           IconButton(
-            icon: const Icon(Icons.add_location_alt_outlined,
-                color: clockAccent),
+            icon:
+                const Icon(Icons.add_location_alt_outlined, color: clockAccent),
             onPressed: _addCity,
           ),
       ],
@@ -183,44 +195,16 @@ class _AlarmClockScreenState extends State<AlarmClockScreen>
     if (mounted) setState(() {});
   }
 
-  /// Fires a throwaway alarm ~5s out through the real native path so the user
-  /// can verify the full notification → full-screen → Snooze/Dismiss flow (and
-  /// be prompted for any missing permission) without scheduling and waiting.
-  Future<void> _testAlarm() async {
-    if (!await LauncherService.canScheduleExactAlarms()) {
-      await LauncherService.requestExactAlarmAccess();
-    }
-    final notif = await Permission.notification.status;
-    if (!notif.isGranted && !notif.isPermanentlyDenied) {
-      await Permission.notification.request();
-    }
-    await _loadPermissions();
-    final trigger = DateTime.now().add(const Duration(seconds: 5));
-    final ok = await LauncherService.scheduleSmartAlarm(
-      id: ClockRepository.testAlarmId,
-      triggerAtMillis: trigger.millisecondsSinceEpoch,
-      label: 'Test alarm',
-      hour: trigger.hour,
-      minute: trigger.minute,
-      vibrate: true,
-      autoSilenceMinutes: 1,
-      kind: 'alarm',
-    );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(ok
-            ? 'Test alarm rings in 5s — lock the phone to see the full-screen ring.'
-            : 'Could not schedule. Allow exact alarms, then try again.'),
-      ),
-    );
-  }
-
   Widget _buildAlarms() {
     final alarms = _clock.alarms();
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
       children: [
+        _MorningDashboardSetting(
+          enabled: _goodMorningEnabled,
+          onChanged: _setGoodMorningEnabled,
+        ),
+        const SizedBox(height: 18),
         if (_needsSetup) ...[
           _SetupCard(
             exactAlarm: _exactAlarm,
@@ -573,11 +557,8 @@ class _AlarmClockScreenState extends State<AlarmClockScreen>
   Widget _lapRow(int index, List<int> laps, {int? fastest, int? slowest}) {
     final total = laps[index];
     final split = _lapSplit(index, laps);
-    final color = index == slowest
-        ? miniAppMuted
-        : Colors.white;
-    final weight =
-        index == fastest ? FontWeight.w700 : FontWeight.w400;
+    final color = index == slowest ? miniAppMuted : Colors.white;
+    final weight = index == fastest ? FontWeight.w700 : FontWeight.w400;
     final style = TextStyle(color: color, fontWeight: weight, fontSize: 16);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -823,6 +804,59 @@ class _AlarmClockScreenState extends State<AlarmClockScreen>
 
 // ---- Setup card ------------------------------------------------------------
 
+class _MorningDashboardSetting extends StatelessWidget {
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+
+  const _MorningDashboardSetting({
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ClockCard(
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: miniAppSurface2,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white10),
+            ),
+            child: const Icon(Icons.wb_sunny_outlined, color: Colors.white),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Good Morning screen',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Show after dismissing alarms from 5 am to 9 am',
+                  style: TextStyle(color: miniAppMuted, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Switch(value: enabled, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+}
+
 class _SetupCard extends StatelessWidget {
   final bool exactAlarm;
   final bool notifications;
@@ -862,8 +896,8 @@ class _SetupCard extends StatelessWidget {
               SizedBox(width: 10),
               Expanded(
                 child: Text('Make alarms reliable',
-                    style: TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w700)),
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               ),
             ],
           ),
@@ -878,12 +912,10 @@ class _SetupCard extends StatelessWidget {
             _NotificationBanner(onAllow: onFixNotifications),
           ],
           const SizedBox(height: 8),
-          if (!exactAlarm)
-            _SetupRow('Exact alarms', 'Fix', onFixExact),
+          if (!exactAlarm) _SetupRow('Exact alarms', 'Fix', onFixExact),
           if (!fullScreen)
             _SetupRow('Full-screen alarms', 'Allow', onFixFullScreen),
-          if (!battery)
-            _SetupRow('Ignore battery saver', 'Open', onFixBattery),
+          if (!battery) _SetupRow('Ignore battery saver', 'Open', onFixBattery),
         ],
       ),
     );
@@ -929,8 +961,7 @@ class _NotificationBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.notifications_off_outlined,
-              color: Colors.redAccent),
+          const Icon(Icons.notifications_off_outlined, color: Colors.redAccent),
           const SizedBox(width: 10),
           const Expanded(
             child: Text(
@@ -1007,8 +1038,8 @@ class _LapHeader extends StatelessWidget {
           Expanded(flex: 2, child: Text('Lap', style: style)),
           Expanded(
               flex: 3,
-              child: Text('Lap times',
-                  textAlign: TextAlign.center, style: style)),
+              child:
+                  Text('Lap times', textAlign: TextAlign.center, style: style)),
           Expanded(
               flex: 3,
               child: Text('Overall time',
@@ -1086,8 +1117,8 @@ class _DurationWheelState extends State<_DurationWheel> {
     super.dispose();
   }
 
-  void _report() => widget.onChanged(
-      Duration(hours: _h, minutes: _m, seconds: _s));
+  void _report() =>
+      widget.onChanged(Duration(hours: _h, minutes: _m, seconds: _s));
 
   Widget _label(String text) => Expanded(
         child: Center(
@@ -1133,8 +1164,7 @@ class _DurationWheelState extends State<_DurationWheel> {
                 i.toString().padLeft(2, '0'),
                 style: TextStyle(
                   fontSize: i == selected ? 37 : 24,
-                  fontWeight:
-                      i == selected ? FontWeight.w500 : FontWeight.w300,
+                  fontWeight: i == selected ? FontWeight.w500 : FontWeight.w300,
                   color: i == selected ? Colors.white : miniAppMuted,
                 ),
               ),
@@ -1368,8 +1398,7 @@ class _RingPainter extends CustomPainter {
         ..strokeWidth = stroke
         ..strokeCap = StrokeCap.round
         ..color = color;
-      canvas.drawArc(
-          rect, -math.pi / 2, 2 * math.pi * progress, false, arc);
+      canvas.drawArc(rect, -math.pi / 2, 2 * math.pi * progress, false, arc);
     }
   }
 
