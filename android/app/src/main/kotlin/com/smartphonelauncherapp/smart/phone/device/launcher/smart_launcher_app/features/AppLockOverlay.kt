@@ -19,6 +19,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.R
@@ -156,12 +157,14 @@ private class AppLockView(
             textSize = 26f
             gravity = Gravity.CENTER
         })
+        column.addView(spacer(dp(16)))
+        column.addView(buildAppIcon(context))
         column.addView(TextView(context).apply {
             text = appLabel(context)
             setTextColor(muted)
             textSize = 15f
             gravity = Gravity.CENTER
-            setPadding(0, dp(6), 0, dp(20))
+            setPadding(0, dp(10), 0, dp(20))
         })
 
         errorView = TextView(context).apply {
@@ -308,6 +311,23 @@ private class AppLockView(
 
     private fun blankKey(context: Context): View = View(context)
 
+    private fun buildAppIcon(context: Context): View =
+        FrameLayout(context).apply {
+            background = GradientDrawable().apply {
+                cornerRadius = dp(18).toFloat()
+                setColor(surface2)
+            }
+            addView(
+                ImageView(context).apply {
+                    setImageDrawable(appIcon(context))
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    contentDescription = appLabel(context)
+                },
+                FrameLayout.LayoutParams(dp(48), dp(48), Gravity.CENTER),
+            )
+            layoutParams = LinearLayout.LayoutParams(dp(72), dp(72))
+        }
+
     private fun onDigit(d: String) {
         if (pin.length >= 4) return
         performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -378,6 +398,12 @@ private class AppLockView(
         pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
     } catch (_: Exception) {
         pkg
+    }
+
+    private fun appIcon(context: Context) = try {
+        context.packageManager.getApplicationIcon(pkg)
+    } catch (_: Exception) {
+        context.applicationInfo.loadIcon(context.packageManager)
     }
 
     private fun spacer(height: Int): View =
