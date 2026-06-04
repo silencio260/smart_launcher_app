@@ -452,15 +452,26 @@ class _SearchRow extends StatelessWidget {
           const SizedBox(width: 8),
           GestureDetector(
             onTap: onDismiss,
+            // The whole drawer is wrapped in a vertical drag-to-dismiss
+            // GestureDetector. Without claiming vertical drags here, a tap on
+            // this button shares the gesture arena with that parent drag — and
+            // the slightest finger movement let the parent's drag recognizer
+            // win and swallow the tap, so the button felt dead. Absorbing
+            // vertical drags on the button keeps the tap reliably ours; a
+            // downward fumble just dismisses too, which is what this button
+            // does anyway.
+            behavior: HitTestBehavior.opaque,
+            onVerticalDragStart: (_) {},
+            onVerticalDragEnd: (_) => onDismiss(),
             child: Container(
-              width: 36,
-              height: 36,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.keyboard_arrow_down,
-                  color: Colors.white70, size: 22),
+                  color: Colors.white70, size: 24),
             ),
           ),
         ],

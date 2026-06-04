@@ -118,9 +118,20 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
     if (mounted) setState(() => _recents = updated);
   }
 
+  /// Dismisses the search screen. Drops keyboard focus first so the soft
+  /// keyboard isn't still sliding down (dragging the bottom inset with it) at
+  /// the moment the route is torn off — that lingering IME animation is what
+  /// made tapping the X read as a transition, even though the route itself now
+  /// pops instantly. Mirrors how the system back button dismisses the keyboard
+  /// before it pops.
+  void _close() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    Navigator.pop(context);
+  }
+
   void _launchApp(SearchResult result) {
     _rememberQuery(_query);
-    Navigator.pop(context);
+    _close();
     if (result.componentName != null) {
       FeatureLaunchDispatcher.launchKey(context, result.componentName!);
     } else if (result.packageName != null) {
@@ -130,7 +141,7 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
 
   void _launchWeb() {
     _rememberQuery(_query);
-    Navigator.pop(context);
+    _close();
     final url =
         'https://www.google.com/search?q=${Uri.encodeComponent(_query)}';
     _system.invokeMethod('launchUrl', {'url': url});
@@ -163,6 +174,13 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
     // transparent scaffold theme), rather than a heavy black scrim.
     return Scaffold(
       backgroundColor: Colors.transparent,
+      // Don't reflow the body for the keyboard. The search field is pinned to
+      // the top of the Column, so it never needs to dodge the IME, and letting
+      // the layout react means the content slides as the keyboard animates —
+      // and that slide keeps playing as the route pops on X, which read as a
+      // trippy transition. With this off the keyboard is a pure overlay: tapping
+      // X just unfocuses and pops with nothing on screen moving.
+      resizeToAvoidBottomInset: false,
       body: SafeArea(
         child: Column(
           children: [
@@ -179,30 +197,53 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
   Widget _buildSearchField() {
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: TextField(
-        controller: _controller,
-        focusNode: _focusNode,
-        style: const TextStyle(color: Colors.white, fontSize: 18),
-        textInputAction: TextInputAction.search,
-        onSubmitted: (_) {
-          if (_query.trim().isNotEmpty) _launchWeb();
-        },
-        decoration: InputDecoration(
-          hintText: 'Search apps and the web…',
-          hintStyle: const TextStyle(color: Colors.white38),
-          prefixIcon: const Icon(Icons.search, color: Colors.white54),
-          suffixIcon: IconButton(
-            icon: const Icon(Icons.close, color: Colors.white54),
-            onPressed: () => Navigator.pop(context),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _controller,
+              focusNode: _focusNode,
+              style: const TextStyle(color: Colors.white, fontSize: 18),
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) {
+                if (_query.trim().isNotEmpty) _launchWeb();
+              },
+              decoration: InputDecoration(
+                hintText: 'Search apps and the web…',
+                hintStyle: const TextStyle(color: Colors.white38),
+                prefixIcon: const Icon(Icons.search, color: Colors.white54),
+                filled: true,
+                fillColor: Colors.white.withValues(alpha: 0.12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+              onChanged: _onQueryChanged,
+            ),
           ),
-          filled: true,
-          fillColor: Colors.white.withValues(alpha: 0.12),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide.none,
+          // Keep the close button OUT of the TextField (it used to be the
+          // suffixIcon). Inside the field, the icon shares the TextField's
+          // gesture arena, so with the keyboard up a tap is contested between
+          // the field's own tap recognizer (which just re-affirms focus — a
+          // no-op) and the button. The field won the arena intermittently, so
+          // the first tap did nothing and you had to tap X again. As its own
+          // sibling it has an independent hit target and closes on the first
+          // tap every time.
+          const SizedBox(width: 4),
+          // A plain opaque GestureDetector rather than an IconButton: it fires
+          // the tap directly with no InkWell splash-confirmation step, so the
+          // close is immediate. The 48x48 box is a comfortable hit target.
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _close,
+            child: const SizedBox(
+              width: 48,
+              height: 48,
+              child: Icon(Icons.close, color: Colors.white70, size: 28),
+            ),
           ),
-        ),
-        onChanged: _onQueryChanged,
+        ],
       ),
     );
   }

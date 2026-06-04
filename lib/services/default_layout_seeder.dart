@@ -14,13 +14,14 @@ import 'app_categories.dart';
 /// Layout produced (4 columns × 5 rows):
 ///  - Page 1: clock widget (added by [WorkspaceCubit.ensureDefaultClockWidget]),
 ///            a "Google" folder (YouTube, Chrome, Mail + the rest of the Google
-///            suite), and a pinned row of YouTube, Chrome, Mail, one calculator
-///            and two productivity apps.
+///            suite), a pinned row of YouTube, Chrome, Mail, one calculator and
+///            two productivity apps, and the mini-apps (File Locker, App Hider,
+///            App Locker) on the bottom row, just above the dock.
 ///  - Page 2: social-media apps, filling the grid.
 ///  - Page 3: utility apps, filling the grid.
 ///  - Page 4: one folder per non-empty category (Social, Google, Utility, …).
 ///  - Page 5: intentionally empty (a blank scratch page).
-///  - Dock:   Dialer, Camera, Clock, Message.
+///  - Dock:   Dialer, Camera, Clock (our mini Clock mini-app), Message.
 class DefaultLayoutSeeder {
   DefaultLayoutSeeder._();
 
@@ -84,12 +85,11 @@ class DefaultLayoutSeeder {
         const ['com.google.android.calculator', 'com.android.calculator2'],
         const ['calculator']);
 
+    // Rows 0-1 are reserved for the clock widget; the bottom row is filled with
+    // the mini-apps (just above the dock), so the Google folder and the pinned
+    // loose icons live in the rows in between.
+    final bottomRowStart = columns * (rows - 1);
     var nextPage1Slot = columns * 2;
-    for (final feature in LauncherFeatureCatalog.homeFeatures) {
-      if (nextPage1Slot >= capacity) break;
-      page1Slots[nextPage1Slot] = AppSlot(feature.toWorkspaceItem(screenId: 0));
-      nextPage1Slot++;
-    }
 
     var folderSlotIndex = -1;
     if (googleApps.isNotEmpty) {
@@ -134,9 +134,20 @@ class DefaultLayoutSeeder {
     ];
     var pinSlot = nextPage1Slot;
     for (final app in pinned) {
-      if (pinSlot >= capacity) break;
+      if (pinSlot >= bottomRowStart) break;
       page1Slots[pinSlot] = AppSlot(_toItem(app));
       pinSlot++;
+    }
+
+    // ---- Mini-apps on the bottom row, just above the dock ----
+    // The Clock mini-app lives in the dock (seeded below), so it's excluded
+    // here; the rest are laid out left-to-right on the last row.
+    var miniSlot = bottomRowStart;
+    for (final feature in LauncherFeatureCatalog.homeFeatures) {
+      if (feature.id == LauncherFeatureCatalog.alarmClock.id) continue;
+      if (miniSlot >= capacity) break;
+      page1Slots[miniSlot] = AppSlot(feature.toWorkspaceItem(screenId: 0));
+      miniSlot++;
     }
 
     // ---- Pages 2 & 3: loose apps ----
@@ -181,7 +192,7 @@ class DefaultLayoutSeeder {
     // which runs after the home screen's one-shot clock seed has already fired).
     workspace.ensureDefaultClockWidget(columns, rows);
 
-    // ---- Dock: dialer, camera, clock, message ----
+    // ---- Dock: dialer, camera, our Clock mini-app, message ----
     final dock = <String>[
       _resolve(apps, const [
         'com.google.android.dialer',
@@ -199,14 +210,9 @@ class DefaultLayoutSeeder {
       ], const [
         'camera'
       ]),
-      _resolve(apps, const [
-        'com.google.android.deskclock',
-        'com.android.deskclock',
-        'com.sec.android.app.clockpackage',
-      ], const [
-        'clock',
-        'deskclock'
-      ]),
+      // Our own Clock mini-app, not the system clock. Stored as its feature
+      // component (a mini-app's launcherKey) so resolveRef maps it back.
+      LauncherFeatureCatalog.alarmClock.componentName,
       _resolve(apps, const [
         'com.google.android.apps.messaging',
         'com.android.messaging',

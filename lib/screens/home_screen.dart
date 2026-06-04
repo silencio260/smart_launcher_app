@@ -594,6 +594,14 @@ class _HomeScreenState extends State<HomeScreen>
         // Opaque so it covers the home icons and only the wallpaper shows
         // behind the transparent scaffold — the same look as Settings.
         opaque: true,
+        // Swap instantly both ways. The default 300ms duration (with no
+        // transitionsBuilder) leaves the home route painting underneath this
+        // transparent scaffold for the whole window, so the home icons ghost
+        // behind the search field and then pop out the moment the animation
+        // ends — and again in reverse on the way back. Zero-duration removes
+        // that double-paint window entirely, so the overlay just appears.
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
         pageBuilder: (_, __, ___) => MultiBlocProvider(
           providers: [
             BlocProvider.value(value: context.read<SearchCubit>()),
@@ -788,6 +796,11 @@ class _HomeScreenState extends State<HomeScreen>
             return Scaffold(
               backgroundColor: Colors.transparent,
               extendBody: true,
+              // The launcher never hosts a text field, so it should never reflow
+              // for the soft keyboard. Without this, popping back from Smart
+              // search while its keyboard is mid-dismiss makes the home body
+              // resize as the inset shrinks — read as a jarring transition.
+              resizeToAvoidBottomInset: false,
               body: Stack(
                 children: [
                   // Workspace subtree sits under EditModeScope so its
