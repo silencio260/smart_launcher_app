@@ -7,8 +7,10 @@ import '../../services/feature_launch_dispatcher.dart';
 import '../../services/drag/drag_controller.dart';
 import '../../services/launcher_service.dart';
 import '../../state/apps_cubit.dart';
+import '../../state/launcher_feature_cubit.dart';
 import '../../state/search_cubit.dart';
 import '../../state/settings_cubit.dart';
+import '../app_menu/app_context_menu.dart';
 import 'all_apps_recycler.dart';
 import 'all_apps_search_bar.dart';
 
@@ -210,9 +212,64 @@ class _AllAppsContainerState extends State<AllAppsContainer>
   }
 
   Widget _buildMenuCard(double screenW, double screenH) {
-    const menuW = 188.0;
-    const menuH = 128.0;
+    final app = _menuApp!;
+    const menuW = 224.0;
     const gap = 10.0;
+
+    final actions = <AppMenuAction>[
+      AppMenuAction(
+        icon: Icons.add_to_home_screen,
+        label: 'Add to home',
+        onTap: () {
+          _dismissMenu();
+          _dismiss();
+          widget.onAddToHome(app);
+        },
+      ),
+      AppMenuAction(
+        icon: Icons.info_outline,
+        label: 'App info',
+        onTap: () {
+          _dismissMenu();
+          final featureId = LauncherFeatureCatalog.idForApp(app);
+          if (featureId != null) {
+            FeatureLaunchDispatcher.openFeature(context, featureId);
+          } else {
+            LauncherService.openAppSettings(app.packageName);
+          }
+        },
+      ),
+      AppMenuAction(
+        icon: Icons.visibility_off_outlined,
+        label: 'Hide app',
+        onTap: () {
+          _dismissMenu();
+          final hidden = widget.settings.hiddenApps.toSet()
+            ..add(app.launcherKey);
+          context.read<SettingsCubit>().update(
+                widget.settings.copyWith(hiddenApps: hidden.toList()..sort()),
+              );
+        },
+      ),
+      if (!app.isInternalFeature)
+        AppMenuAction(
+          icon: _isLocked(app)
+              ? Icons.lock_open_outlined
+              : Icons.lock_outline,
+          label: _isLocked(app) ? 'Unlock app' : 'Lock app',
+          onTap: () {
+            final locked = _isLocked(app);
+            _dismissMenu();
+            context
+                .read<LauncherFeatureSettingsCubit>()
+                .setAppLocked(app.packageName, !locked);
+          },
+        ),
+    ];
+
+    // Estimate height so the card can be flipped above the icon when it would
+    // overflow the bottom edge. Title block + divider + one row per action.
+    final menuH = 60.0 + actions.length * 44.0;
     final x = (_menuPos.dx - menuW / 2).clamp(8.0, screenW - menuW - 8);
     // _menuPos.dy is the bottom edge of the icon; prefer showing below
     final belowY = _menuPos.dy + gap;
@@ -226,36 +283,15 @@ class _AllAppsContainerState extends State<AllAppsContainer>
     return Positioned(
       left: x,
       top: y,
-      child: _AppContextMenu(
-        app: _menuApp!,
-        onAddToHome: () {
-          final app = _menuApp!;
-          _dismissMenu();
-          _dismiss();
-          widget.onAddToHome(app);
-        },
-        onAppInfo: () {
-          final app = _menuApp!;
-          _dismissMenu();
-          final featureId = LauncherFeatureCatalog.idForApp(app);
-          if (featureId != null) {
-            FeatureLaunchDispatcher.openFeature(context, featureId);
-          } else {
-            LauncherService.openAppSettings(app.packageName);
-          }
-        },
-        onHideIcon: () {
-          final app = _menuApp!;
-          _dismissMenu();
-          final hidden = widget.settings.hiddenApps.toSet()
-            ..add(app.launcherKey);
-          context.read<SettingsCubit>().update(
-                widget.settings.copyWith(hiddenApps: hidden.toList()..sort()),
-              );
-        },
-      ),
+      child: AppContextMenu(title: app.name, actions: actions),
     );
   }
+
+  bool _isLocked(AppInfo app) => context
+      .read<LauncherFeatureSettingsCubit>()
+      .state
+      .lockedApps
+      .contains(app.packageName);
 
   Widget _buildBody() {
     return BlocBuilder<SearchCubit, SearchState>(
@@ -337,101 +373,6 @@ class _AllAppsContainerState extends State<AllAppsContainer>
           widget.onDragCancelled?.call();
         }
       },
-    );
-  }
-}
-
-// ─── Context menu ─────────────────────────────────────────────────────────────
-
-class _AppContextMenu extends StatelessWidget {
-  final AppInfo app;
-  final VoidCallback onAddToHome;
-  final VoidCallback onAppInfo;
-  final VoidCallback onHideIcon;
-
-  const _AppContextMenu({
-    required this.app,
-    required this.onAddToHome,
-    required this.onAppInfo,
-    required this.onHideIcon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: Container(
-        width: 188,
-        decoration: BoxDecoration(
-          color: Colors.grey[850]!.withValues(alpha: 0.97),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: const [
-            BoxShadow(
-                color: Colors.black54, blurRadius: 14, offset: Offset(0, 4))
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 13, 16, 8),
-              child: Text(
-                app.name,
-                style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const Divider(color: Colors.white12, height: 1, thickness: 1),
-            _ContextMenuItem(
-                icon: Icons.add_to_home_screen,
-                label: 'Add to Home',
-                onTap: onAddToHome),
-            if (app.isInternalFeature)
-              _ContextMenuItem(
-                  icon: Icons.visibility_off_outlined,
-                  label: 'Hide Icon',
-                  onTap: onHideIcon)
-            else
-              _ContextMenuItem(
-                  icon: Icons.info_outline,
-                  label: 'App Info',
-                  onTap: onAppInfo),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ContextMenuItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _ContextMenuItem(
-      {required this.icon, required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-        child: Row(
-          children: [
-            Icon(icon, color: Colors.white70, size: 18),
-            const SizedBox(width: 10),
-            Text(label,
-                style: const TextStyle(color: Colors.white, fontSize: 14)),
-          ],
-        ),
-      ),
     );
   }
 }

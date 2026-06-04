@@ -30,6 +30,7 @@ import '../state/search_cubit.dart';
 import '../state/settings_cubit.dart';
 import '../state/workspace_cubit.dart';
 import '../widgets/allapps/all_apps_container.dart';
+import '../widgets/app_menu/app_context_menu.dart';
 import '../widgets/dock/hotseat_view.dart';
 import '../widgets/edit_mode/edit_mode_overlay.dart';
 import '../widgets/edit_mode/edit_mode_scope.dart';
@@ -726,15 +727,19 @@ class _HomeScreenState extends State<HomeScreen>
     workspace.addWidgetToStackSlot(target.page, target.slot, picked);
   }
 
-  void _showAppInfoTooltip(AppInfo app, Offset iconCenter) {
+  void _showAppInfoTooltip(AppInfo app, Offset iconCenter,
+      {int? page, int? slot}) {
     _dismissAppInfoTooltip();
     final overlay = Overlay.of(context);
-    _appInfoTooltip = OverlayEntry(
-      builder: (_) => _AppInfoTooltip(
-        app: app,
-        iconCenter: iconCenter,
-        onDismiss: _dismissAppInfoTooltip,
-        onAppInfo: () {
+
+    final isFeature = app.isInternalFeature;
+    final locked = !isFeature && _isAppLocked(app);
+
+    final actions = <AppMenuAction>[
+      AppMenuAction(
+        icon: Icons.info_outline,
+        label: 'App info',
+        onTap: () {
           _dismissAppInfoTooltip();
           final featureId = LauncherFeatureCatalog.idForApp(app);
           if (featureId != null) {
@@ -744,8 +749,93 @@ class _HomeScreenState extends State<HomeScreen>
           }
         },
       ),
+      AppMenuAction(
+        icon: Icons.visibility_off_outlined,
+        label: 'Hide app',
+        onTap: () {
+          _dismissAppInfoTooltip();
+          _hideApp(app);
+        },
+      ),
+      if (!isFeature)
+        AppMenuAction(
+          icon: locked ? Icons.lock_open_outlined : Icons.lock_outline,
+          label: locked ? 'Unlock app' : 'Lock app',
+          onTap: () {
+            _dismissAppInfoTooltip();
+            context
+                .read<LauncherFeatureSettingsCubit>()
+                .setAppLocked(app.packageName, !locked);
+          },
+        ),
+      AppMenuAction(
+        icon: Icons.remove_circle_outline,
+        label: 'Remove from home',
+        onTap: () {
+          _dismissAppInfoTooltip();
+          _removeFromHome(app, page, slot);
+        },
+      ),
+      if (!isFeature)
+        AppMenuAction(
+          icon: Icons.delete_outline,
+          label: 'Uninstall',
+          destructive: true,
+          onTap: () {
+            _dismissAppInfoTooltip();
+            LauncherService.uninstallApp(app.packageName);
+          },
+        ),
+    ];
+
+    _appInfoTooltip = OverlayEntry(
+      builder: (_) => _AppInfoTooltip(
+        app: app,
+        iconCenter: iconCenter,
+        actions: actions,
+        onDismiss: _dismissAppInfoTooltip,
+      ),
     );
     overlay.insert(_appInfoTooltip!);
+  }
+
+  bool _isAppLocked(AppInfo app) => context
+      .read<LauncherFeatureSettingsCubit>()
+      .state
+      .lockedApps
+      .contains(app.packageName);
+
+  void _hideApp(AppInfo app) {
+    final settings = context.read<SettingsCubit>().state;
+    final hidden = settings.hiddenApps.toSet()..add(app.launcherKey);
+    context
+        .read<SettingsCubit>()
+        .update(settings.copyWith(hiddenApps: hidden.toList()..sort()));
+  }
+
+  void _removeFromHome(AppInfo app, int? page, int? slot) {
+    // Workspace icons carry their page+slot, so remove them directly.
+    if (page != null && slot != null) {
+      context.read<WorkspaceCubit>().removeItem(page, slot);
+      return;
+    }
+    // Dock icons have no slot — drop the matching ref from the persisted dock
+    // list. Blank the entry (rather than shift) so other dock icons keep their
+    // positions, matching how _resolveDockRefs treats empty strings.
+    final settings = context.read<SettingsCubit>().state;
+    final appsState = context.read<AppsCubit>().state;
+    final keys = <String>{
+      app.launcherKey,
+      app.packageName,
+      app.appComponentName,
+    };
+    final refs = settings.dockPackages.isNotEmpty
+        ? List<String>.from(settings.dockPackages)
+        : _resolveDockRefs(appsState, settings);
+    final idx = refs.indexWhere(keys.contains);
+    if (idx < 0) return;
+    refs[idx] = '';
+    context.read<SettingsCubit>().update(settings.copyWith(dockPackages: refs));
   }
 
   void _dismissAppInfoTooltip() {
@@ -877,7 +967,8 @@ class _HomeScreenState extends State<HomeScreen>
                             onAppTap: (app) =>
                                 FeatureLaunchDispatcher.launch(context, app),
                             onAppLongPress: (app, page, slot, center) =>
-                                _showAppInfoTooltip(app, center),
+                                _showAppInfoTooltip(app, center,
+                                    page: page, slot: slot),
                             onBackgroundLongPress: _enterEditMode,
                             onPickWidgetForStack: _openWidgetPickerForStack,
                             onPageChanged: (offset) {
@@ -1377,75 +1468,53 @@ class _HomeScreenState extends State<HomeScreen>
   }
 }
 
-// ─── App Info tooltip (non-blocking, dismisses on drag) ──────────────────────
+// ─── App long-press menu (dismisses on tap-away or drag) ─────────────────────
 
 class _AppInfoTooltip extends StatelessWidget {
   final AppInfo app;
   final Offset iconCenter;
+  final List<AppMenuAction> actions;
   final VoidCallback onDismiss;
-  final VoidCallback onAppInfo;
 
   const _AppInfoTooltip({
     required this.app,
     required this.iconCenter,
+    required this.actions,
     required this.onDismiss,
-    required this.onAppInfo,
   });
 
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
-    const tooltipW = 160.0;
-    const tooltipH = 48.0;
+    const menuW = 224.0;
+    const gap = 12.0;
+    // Title block + divider + one row per action (see AppContextMenu layout).
+    final menuH = 60.0 + actions.length * 44.0;
 
-    // Position above the icon; clamp to screen bounds
-    double left = (iconCenter.dx - tooltipW / 2)
-        .clamp(8.0, screenSize.width - tooltipW - 8);
-    double top = (iconCenter.dy - tooltipH - 12)
-        .clamp(8.0, screenSize.height - tooltipH - 8);
+    final left =
+        (iconCenter.dx - menuW / 2).clamp(8.0, screenSize.width - menuW - 8);
+    // Prefer placing the menu above the icon; fall back below when it would run
+    // off the top of the screen.
+    final aboveTop = iconCenter.dy - menuH - gap;
+    final top = (aboveTop >= 8.0 ? aboveTop : iconCenter.dy + gap)
+        .clamp(8.0, screenSize.height - menuH - 8);
 
     return Stack(
       children: [
-        // Tap-outside dismisses
+        // Full-screen barrier: a tap, or the start of any drag/swipe, dismisses
+        // the menu. Opaque so the press never falls through to the workspace
+        // underneath (which would launch an app or start a page swipe).
         Positioned.fill(
-            child: GestureDetector(
-                onTap: onDismiss, behavior: HitTestBehavior.translucent)),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onDismiss,
+            onPanStart: (_) => onDismiss(),
+          ),
+        ),
         Positioned(
           left: left,
           top: top,
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              width: tooltipW,
-              height: tooltipH,
-              decoration: BoxDecoration(
-                color: Colors.grey[850]!.withValues(alpha: 0.96),
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                      color: Colors.black45,
-                      blurRadius: 8,
-                      offset: Offset(0, 3))
-                ],
-              ),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: onAppInfo,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.info_outline,
-                        color: Colors.white70, size: 18),
-                    const SizedBox(width: 8),
-                    Text(app.name,
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 13),
-                        overflow: TextOverflow.ellipsis),
-                  ],
-                ),
-              ),
-            ),
-          ),
+          child: AppContextMenu(title: app.name, actions: actions),
         ),
       ],
     );
