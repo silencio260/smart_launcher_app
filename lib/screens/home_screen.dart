@@ -45,6 +45,7 @@ import '../services/drag/drag_controller.dart';
 import '../services/gestures/widget_resize_gesture_guard.dart';
 import 'search_overlay_screen.dart';
 import 'smart_search_screen.dart';
+import 'features/after_call_settings_screen.dart';
 import 'features/good_morning_screen.dart';
 import 'discover_page.dart';
 import 'app_library_page.dart';
@@ -470,6 +471,8 @@ class _HomeScreenState extends State<HomeScreen>
         FeatureLaunchDispatcher.openFeature(context, 'file_locker');
       case 'note':
         _openSearch();
+      case 'settings':
+        _openAfterCallSettings();
     }
   }
 
@@ -492,8 +495,26 @@ class _HomeScreenState extends State<HomeScreen>
           providers: [
             BlocProvider.value(value: context.read<AppsCubit>()),
             BlocProvider.value(value: context.read<SettingsCubit>()),
+            BlocProvider.value(
+                value: context.read<LauncherFeatureSettingsCubit>()),
           ],
           child: const GoodMorningScreen(),
+        ),
+      ),
+    );
+  }
+
+  void _openAfterCallSettings() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MultiBlocProvider(
+          providers: [
+            BlocProvider.value(value: context.read<SettingsCubit>()),
+            BlocProvider.value(
+                value: context.read<LauncherFeatureSettingsCubit>()),
+          ],
+          child: const SettingsAppearance(child: AfterCallSettingsScreen()),
         ),
       ),
     );

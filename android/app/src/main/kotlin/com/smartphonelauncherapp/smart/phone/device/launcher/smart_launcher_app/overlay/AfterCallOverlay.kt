@@ -1,10 +1,13 @@
 package com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.overlay
 
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
@@ -20,34 +23,33 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.MainActivity
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.R
 
 /**
- * The post-call card. A single floating window drawn over whatever is on screen
+ * The post-call panel. A single native window drawn over whatever is on screen
  * when a call ends (normally the dialer), using SYSTEM_ALERT_WINDOW — the same
- * mechanism a dedicated after-call app uses. No second Flutter engine: the card
+ * mechanism a dedicated after-call app uses. No second Flutter engine: the panel
  * is plain Android views, so it is cheap and instant.
  *
  * Dismissal is deliberately easy and covers every way out:
- *  - the card's own close button,
- *  - a tap anywhere outside the card (the dimmed scrim),
+ *  - the panel's own close button,
  *  - the Back button/gesture (the window is focusable, so it receives the key),
- *  - Home / Recents / any "close system dialogs" event,
- *  - and a safety auto-dismiss timer.
+ *  - Home / Recents / any "close system dialogs" event.
  *
- * Actions the card can do natively (calendar) run from here; app-specific actions
+ * Actions the panel can do natively (calendar) run from here; app-specific actions
  * (the private vault, quick note) launch [MainActivity] with an `after_call_action`
  * extra that the Dart side routes. Holding SYSTEM_ALERT_WINDOW also exempts us
  * from background-activity-start limits, so those launches work from the overlay.
  */
 object AfterCallOverlay {
 
-    private const val AUTO_DISMISS_MS = 12_000L
     const val EXTRA_ACTION = "after_call_action"
     const val ACTION_VAULT = "vault"
     const val ACTION_NOTE = "note"
+    const val ACTION_SETTINGS = "settings"
 
     private val main = Handler(Looper.getMainLooper())
     private var view: View? = null
@@ -57,7 +59,6 @@ object AfterCallOverlay {
     private var appContextRef: Context? = null
     // Fires when Home/Recents is pressed (system broadcast) so we can dismiss.
     private var homeWatcher: BroadcastReceiver? = null
-    private val autoDismiss = Runnable { dismiss() }
 
     fun show(context: Context) {
         val appContext = context.applicationContext
@@ -76,7 +77,6 @@ object AfterCallOverlay {
 
     /** Tear down the current card. Must run on the main thread. */
     private fun removeCard() {
-        main.removeCallbacks(autoDismiss)
         unregisterHomeWatcher()
         val v = view ?: return
         try {
@@ -103,29 +103,32 @@ object AfterCallOverlay {
             @Suppress("DEPRECATION")
             WindowManager.LayoutParams.TYPE_PHONE
         }
-        // Full-screen, focusable, modal: focusable so it receives the Back key,
-        // full-screen+modal so a tap outside the card lands on the scrim. No
-        // FLAG_NOT_FOCUSABLE / FLAG_NOT_TOUCH_MODAL here — that was what made the
-        // old card impossible to dismiss. FLAG_DIM_BEHIND dims the app underneath.
+        // Full-screen and focusable so it receives Back. No caller identity or
+        // call-log details are shown, keeping the feature as a privacy-light
+        // post-call launcher action center.
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             type,
-            WindowManager.LayoutParams.FLAG_DIM_BEHIND,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS,
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
-            dimAmount = 0.45f
             gravity = Gravity.TOP
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
         }
 
         val root = buildRoot(appContext)
         try {
             wm.addView(root, params)
+            root.requestFocus()
             view = root
             windowManager = wm
             registerHomeWatcher(appContext)
-            main.removeCallbacks(autoDismiss)
-            main.postDelayed(autoDismiss, AUTO_DISMISS_MS)
         } catch (_: Exception) {
             view = null
             windowManager = null
@@ -188,32 +191,44 @@ object AfterCallOverlay {
                 ViewGroup.LayoutParams.MATCH_PARENT,
             )
             isClickable = true
-            // Tap on the dimmed area (anywhere off the card) closes the overlay.
-            setOnClickListener { dismiss() }
+            isFocusable = true
+            isFocusableInTouchMode = true
+            systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            setBackgroundColor(Color.BLACK)
         }
 
-        val cardParams = FrameLayout.LayoutParams(
+        val contentParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.MATCH_PARENT,
         ).apply {
             gravity = Gravity.TOP
-            val side = dp(ctx, 12f)
-            setMargins(side, statusBarHeight(ctx) + dp(ctx, 8f), side, side)
         }
-        root.addView(buildCard(ctx), cardParams)
+        root.addView(buildPanel(ctx), contentParams)
+
+        val navHeight = navigationBarHeight(ctx)
+        if (navHeight > 0) {
+            root.addView(
+                View(ctx).apply { setBackgroundColor(Color.BLACK) },
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    navHeight,
+                ).apply { gravity = Gravity.BOTTOM },
+            )
+        }
         return root
     }
 
-    private fun buildCard(ctx: Context): View {
-        val pad = dp(ctx, 18f)
-        val card = LinearLayout(ctx).apply {
+    private fun buildPanel(ctx: Context): View {
+        val panel = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad, pad, pad)
-            background = GradientDrawable().apply {
-                cornerRadius = dp(ctx, 22f).toFloat()
-                setColor(Color.parseColor("#1C1C1E"))
-            }
-            // Swallow taps so they don't fall through to the scrim and dismiss.
+            setPadding(
+                dp(ctx, 16f),
+                statusBarHeight(ctx) + dp(ctx, 8f),
+                dp(ctx, 16f),
+                navigationBarHeight(ctx) + dp(ctx, 24f),
+            )
             isClickable = true
         }
 
@@ -221,47 +236,75 @@ object AfterCallOverlay {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
+        header.addView(closeButton(ctx))
         header.addView(
             TextView(ctx).apply {
-                text = "Call ended"
+                text = "After Call"
+                gravity = Gravity.CENTER
                 setTextColor(Color.WHITE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+                setTypeface(typeface, Typeface.BOLD)
             },
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
         )
-        header.addView(closeButton(ctx))
-        card.addView(header)
+        header.addView(settingsButton(ctx))
+        panel.addView(header)
 
-        card.addView(
+        panel.addView(
             TextView(ctx).apply {
-                text = "Quick actions"
-                setTextColor(Color.parseColor("#8E8E93"))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-                setPadding(0, dp(ctx, 4f), 0, dp(ctx, 16f))
+                text = "Quick actions after your call"
+                gravity = Gravity.CENTER
+                setTextColor(Color.parseColor("#9A9A9A"))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                setPadding(0, dp(ctx, 8f), 0, dp(ctx, 18f))
             },
         )
 
-        val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-        row.addView(actionItem(ctx, R.drawable.ic_after_call_alarm, "Alarm", "#F5A623") {
+        val scroller = ScrollView(ctx).apply {
+            isFillViewport = true
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
+        val body = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        body.addView(summaryCard(ctx))
+
+        val rowOne = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(ctx, 18f), 0, 0)
+        }
+        rowOne.addView(actionItem(ctx, featureIcon(ctx, "features.ClockActivity", R.drawable.ic_feature_clock_foreground), "Alarm") {
             launchFeature(ctx, "features.ClockActivity")
             dismiss()
         })
-        row.addView(actionItem(ctx, R.drawable.ic_after_call_calendar, "Calendar", "#3B82F6") {
+        rowOne.addView(actionItem(ctx, calendarIcon(ctx), "Calendar") {
             openCalendar(ctx)
             dismiss()
         })
-        row.addView(actionItem(ctx, R.drawable.ic_after_call_vault, "Vault", "#14B8A6") {
+        body.addView(rowOne)
+
+        val rowTwo = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(ctx, 12f), 0, 0)
+        }
+        rowTwo.addView(actionItem(ctx, featureIcon(ctx, "features.FileLockerActivity", R.drawable.ic_feature_file_locker_foreground), "Vault") {
             launchApp(ctx, ACTION_VAULT)
             dismiss()
         })
-        row.addView(actionItem(ctx, R.drawable.ic_after_call_note, "Note", "#8B5CF6") {
+        rowTwo.addView(actionItem(ctx, featureIcon(ctx, "features.NotesVaultActivity", R.drawable.ic_feature_notes_foreground), "Note") {
             launchApp(ctx, ACTION_NOTE)
             dismiss()
         })
-        card.addView(row)
+        body.addView(rowTwo)
 
-        return card
+        scroller.addView(body)
+        panel.addView(scroller, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            0,
+            1f,
+        ))
+
+        return panel
     }
 
     private fun closeButton(ctx: Context): View {
@@ -269,10 +312,10 @@ object AfterCallOverlay {
         return ImageView(ctx).apply {
             setImageResource(R.drawable.ic_after_call_close)
             scaleType = ImageView.ScaleType.FIT_CENTER
-            setPadding(dp(ctx, 9f), dp(ctx, 9f), dp(ctx, 9f), dp(ctx, 9f))
+            setPadding(dp(ctx, 7f), dp(ctx, 7f), dp(ctx, 7f), dp(ctx, 7f))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#2A2A2D"))
+                setColor(Color.TRANSPARENT)
             }
             layoutParams = LinearLayout.LayoutParams(size, size)
             isClickable = true
@@ -281,44 +324,103 @@ object AfterCallOverlay {
         }
     }
 
-    private fun actionItem(
-        ctx: Context,
-        iconRes: Int,
-        label: String,
-        circleColor: String,
-        onTap: () -> Unit,
-    ): View {
-        val circleSize = dp(ctx, 52f)
-        val circle = ImageView(ctx).apply {
-            setImageResource(iconRes)
+    private fun settingsButton(ctx: Context): View {
+        val size = dp(ctx, 36f)
+        return ImageView(ctx).apply {
+            setImageResource(R.drawable.ic_after_call_settings)
+            setColorFilter(Color.WHITE)
             scaleType = ImageView.ScaleType.FIT_CENTER
-            setPadding(dp(ctx, 8f), dp(ctx, 8f), dp(ctx, 8f), dp(ctx, 8f))
+            setPadding(dp(ctx, 7f), dp(ctx, 7f), dp(ctx, 7f), dp(ctx, 7f))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.parseColor(circleColor))
+                setColor(Color.TRANSPARENT)
             }
+            layoutParams = LinearLayout.LayoutParams(size, size)
+            isClickable = true
+            contentDescription = "After Call settings"
+            setOnClickListener {
+                launchApp(ctx, ACTION_SETTINGS)
+                dismiss()
+            }
+        }
+    }
+
+    private fun summaryCard(ctx: Context): View {
+        val card = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(ctx, 20f), dp(ctx, 20f), dp(ctx, 20f), dp(ctx, 20f))
+            background = roundedRect(ctx, "#111111", "#2A2A2A")
+        }
+        card.addView(
+            TextView(ctx).apply {
+                text = "Call ended"
+                setTextColor(Color.WHITE)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 28f)
+                setTypeface(typeface, Typeface.BOLD)
+            },
+        )
+        card.addView(
+            TextView(ctx).apply {
+                text = "Choose what you want to do next."
+                setTextColor(Color.parseColor("#BDBDBD"))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                setPadding(0, dp(ctx, 8f), 0, 0)
+            },
+        )
+        return card
+    }
+
+    private fun actionItem(
+        ctx: Context,
+        icon: Drawable,
+        label: String,
+        onTap: () -> Unit,
+    ): View {
+        val circleSize = dp(ctx, 58f)
+        val circle = ImageView(ctx).apply {
+            setImageDrawable(icon)
+            clearColorFilter()
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            adjustViewBounds = true
+            setPadding(0, 0, 0, 0)
+            background = null
         }
         val caption = TextView(ctx).apply {
             text = label
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTypeface(typeface, Typeface.BOLD)
             setPadding(0, dp(ctx, 6f), 0, 0)
         }
         return LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             isClickable = true
+            setPadding(dp(ctx, 10f), dp(ctx, 18f), dp(ctx, 10f), dp(ctx, 18f))
+            background = roundedRect(ctx, "#000000", "#FFFFFF")
             setOnClickListener { onTap() }
             addView(circle, LinearLayout.LayoutParams(circleSize, circleSize))
             addView(caption)
             layoutParams = LinearLayout.LayoutParams(
                 0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
+                dp(ctx, 144f),
                 1f,
-            )
+            ).apply { setMargins(dp(ctx, 4f), 0, dp(ctx, 4f), 0) }
         }
     }
+
+    private fun roundedRect(
+        ctx: Context,
+        fill: String,
+        stroke: String,
+        radiusDp: Float = 18f,
+    ): GradientDrawable =
+        GradientDrawable().apply {
+            cornerRadius = dp(ctx, radiusDp).toFloat()
+            setColor(Color.parseColor(fill))
+            setStroke(dp(ctx, 1f), Color.parseColor(stroke))
+        }
 
     // --- actions --------------------------------------------------------------
 
@@ -355,9 +457,42 @@ object AfterCallOverlay {
 
     // --- helpers --------------------------------------------------------------
 
+    private fun featureIcon(ctx: Context, alias: String, fallbackRes: Int): Drawable {
+        val pm = ctx.packageManager
+        return try {
+            pm.getActivityIcon(ComponentName(ctx.packageName, "${ctx.packageName}.$alias"))
+        } catch (_: Exception) {
+            resourceIcon(ctx, fallbackRes)
+        }
+    }
+
+    private fun calendarIcon(ctx: Context): Drawable {
+        val pm = ctx.packageManager
+        val intent = Intent(Intent.ACTION_INSERT).setData(CalendarContract.Events.CONTENT_URI)
+        return try {
+            intent.resolveActivity(pm)?.let { pm.getActivityIcon(it) }
+                ?: resourceIcon(ctx, R.drawable.ic_after_call_calendar)
+        } catch (_: Exception) {
+            resourceIcon(ctx, R.drawable.ic_after_call_calendar)
+        }
+    }
+
+    private fun resourceIcon(ctx: Context, resId: Int): Drawable =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            ctx.resources.getDrawable(resId, ctx.theme)
+        } else {
+            @Suppress("DEPRECATION")
+            ctx.resources.getDrawable(resId)
+        }
+
     private fun statusBarHeight(ctx: Context): Int {
         val id = ctx.resources.getIdentifier("status_bar_height", "dimen", "android")
         return if (id > 0) ctx.resources.getDimensionPixelSize(id) else dp(ctx, 24f)
+    }
+
+    private fun navigationBarHeight(ctx: Context): Int {
+        val id = ctx.resources.getIdentifier("navigation_bar_height", "dimen", "android")
+        return if (id > 0) ctx.resources.getDimensionPixelSize(id) else 0
     }
 
     private fun dp(ctx: Context, value: Float): Int =

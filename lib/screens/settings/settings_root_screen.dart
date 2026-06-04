@@ -10,6 +10,7 @@ import '../../services/install_assistant_service.dart';
 import '../../services/launcher_service.dart';
 import '../../state/apps_cubit.dart';
 import '../../state/settings_cubit.dart';
+import '../../state/workspace_cubit.dart';
 import '../../utils/debug_flags.dart';
 import 'general_settings_screen.dart';
 import 'home_screen_settings_screen.dart';
@@ -17,12 +18,9 @@ import 'settings_appearance.dart';
 import 'smartspace_settings_screen.dart';
 import 'dock_settings_screen.dart';
 import 'drawer_settings_screen.dart';
-import 'search_settings_screen.dart';
 import 'folder_settings_screen.dart';
 import 'gesture_settings_screen.dart';
 import 'recents_settings_screen.dart';
-import 'backup_restore_screen.dart';
-import 'about_screen.dart';
 import 'help_feedback_screen.dart';
 import 'widget_picker_screen.dart';
 import '../../config/support_links.dart';
@@ -52,6 +50,39 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
       debugPrint('SettingsLog SettingsRootScreen closed');
     }
     super.dispose();
+  }
+
+  /// Clears all settings and home-screen layout back to defaults. Moved here
+  /// from the (now removed) Backup & Restore screen so the destructive reset
+  /// lives behind Developer Options.
+  void _confirmReset(BuildContext context) {
+    final settingsCubit = context.read<SettingsCubit>();
+    final workspaceCubit = context.read<WorkspaceCubit>();
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reset to Defaults'),
+        content: const Text(
+          'This will clear all your settings and home screen layout. '
+          'This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            onPressed: () {
+              settingsCubit.reset();
+              workspaceCubit.loadLayout();
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -130,15 +161,6 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                     ),
                   ),
               (c) => _Tile(
-                    icon: Icons.search,
-                    title: 'Search',
-                    subtitle: 'Search bar and suggestions',
-                    onTap: () => Navigator.push(
-                      c,
-                      settingsRoute(const SearchSettingsScreen()),
-                    ),
-                  ),
-              (c) => _Tile(
                     icon: Icons.folder_outlined,
                     title: 'Folders',
                     subtitle: 'Folder style and grid size',
@@ -163,25 +185,6 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                     onTap: () => Navigator.push(
                       c,
                       settingsRoute(const RecentsSettingsScreen()),
-                    ),
-                  ),
-              (_) => const Divider(),
-              (c) => _Tile(
-                    icon: Icons.backup_outlined,
-                    title: 'Backup & Restore',
-                    subtitle: 'Export or import settings',
-                    onTap: () => Navigator.push(
-                      c,
-                      settingsRoute(const BackupRestoreScreen()),
-                    ),
-                  ),
-              (c) => _Tile(
-                    icon: Icons.info_outline,
-                    title: 'About',
-                    subtitle: 'Version and credits',
-                    onTap: () => Navigator.push(
-                      c,
-                      settingsRoute(const AboutScreen()),
                     ),
                   ),
               (_) => const Divider(),
@@ -219,6 +222,17 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
               (_) => const _SectionHeader(
                     icon: Icons.science_outlined,
                     title: 'Developer Options',
+                  ),
+              (_) => const _SubSectionHeader(
+                    icon: Icons.build_outlined,
+                    title: 'Maintenance',
+                  ),
+              (c) => ListTile(
+                    leading: const Icon(Icons.restore, color: Colors.red),
+                    title: const Text('Reset to Defaults',
+                        style: TextStyle(color: Colors.red)),
+                    subtitle: const Text('Clear all settings and layout'),
+                    onTap: () => _confirmReset(c),
                   ),
               (_) => const _SubSectionHeader(
                     icon: Icons.visibility_outlined,
