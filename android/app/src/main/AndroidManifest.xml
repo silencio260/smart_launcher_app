@@ -93,6 +93,13 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".features.AppLockBiometricActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:theme="@style/AppLockBiometricTheme" />
+
         <activity-alias
             android:name=".features.ClockActivity"
             android:enabled="true"

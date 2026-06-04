@@ -300,6 +300,23 @@ class LauncherService {
     } catch (_) {}
   }
 
+  /// Draws the native App Lock overlay (PIN/pattern + optional fingerprint
+  /// button) over the foreground for [packageName]. Used when the launcher
+  /// itself opens a locked app, so it's gated by the same screen the watcher
+  /// shows for out-of-launcher launches — no device-credential prompt. Returns
+  /// false (and shows nothing) when the package is already unlocked this session
+  /// or App Lock isn't configured.
+  static Future<bool> showAppLockOverlay(String packageName) async {
+    try {
+      return await _appLock.invokeMethod<bool>('showAppLockOverlay', {
+            'packageName': packageName,
+          }) ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Future<bool> isUsageAccessEnabled() async =>
       await _system.invokeMethod<bool>('isUsageAccessEnabled') ?? false;
 

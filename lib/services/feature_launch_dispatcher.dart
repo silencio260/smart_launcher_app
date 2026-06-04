@@ -24,11 +24,10 @@ class FeatureLaunchDispatcher {
 
     final featureSettings = context.read<LauncherFeatureSettingsCubit>().state;
     if (featureSettings.lockedApps.contains(app.packageName)) {
-      final unlocked = await LauncherService.authenticateDevice(
-        title: 'Unlock ${app.name}',
-        description: 'Confirm your device lock to open this app',
-      );
-      if (!unlocked) return;
+      // Show the App Lock overlay (PIN/pattern + tap-to-use fingerprint) and let
+      // the app launch behind it; the overlay verifies natively and dismisses
+      // itself on unlock. No device-credential prompt up front.
+      await LauncherService.showAppLockOverlay(app.packageName);
     }
     if (app.appComponentName.contains('/')) {
       await LauncherService.launchComponent(

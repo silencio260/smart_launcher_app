@@ -196,7 +196,10 @@ class AppLockWatcherService : Service() {
         }
         lastForeground = pkg
 
-        if (pkg == packageName) return
+        if (pkg == packageName) {
+            AppLockStore.clearSession()
+            return
+        }
         if (!AppLockStore.isLocked(this, pkg)) return
         if (AppLockStore.isUnlocked(pkg)) return
 

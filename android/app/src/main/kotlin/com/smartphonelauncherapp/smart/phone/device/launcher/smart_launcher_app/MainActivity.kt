@@ -24,6 +24,7 @@ import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.SystemChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.WallpaperChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.WidgetsChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.AppLockStore
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.widget.LauncherAppWidgetHost
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.widget.WidgetHostViewFactory
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.widget.WidgetHostViewRegistry
@@ -59,6 +60,14 @@ class MainActivity : FlutterActivity() {
         setIntent(intent)
         handleAfterCallIntent(intent)
         handleFeatureIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Returning to home means any app that was unlocked has been left.
+        // Clear native overlay sessions here as a direct lifecycle signal, so
+        // re-locking does not depend solely on UsageStats foreground events.
+        AppLockStore.clearSession()
     }
 
     private fun handleAfterCallIntent(intent: Intent?) {

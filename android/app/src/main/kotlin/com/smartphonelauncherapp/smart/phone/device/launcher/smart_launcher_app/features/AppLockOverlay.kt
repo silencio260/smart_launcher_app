@@ -3,14 +3,13 @@ package com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
-import android.hardware.biometrics.BiometricPrompt
 import android.os.Build
-import android.os.CancellationSignal
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
@@ -19,8 +18,10 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.R
 import kotlin.math.hypot
 
 /// The device-wide App Lock screen, drawn as a system overlay (no Activity, so
@@ -73,6 +74,10 @@ object AppLockOverlay {
                 WindowManager.LayoutParams.FLAG_SECURE,
             PixelFormat.OPAQUE,
         )
+        // The lock screen is portrait-only, even when drawn over a landscape app
+        // (e.g. a game). Pinning the window orientation keeps the PIN pad upright
+        // instead of inheriting the locked app's rotation.
+        params.screenOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         try {
             wm.addView(content, params)
             windowManager = wm
@@ -176,17 +181,10 @@ private class AppLockView(
             column.addView(PatternView(context) { nodes -> onPattern(nodes) })
         }
 
-        if (AppLockStore.biometricEnabled(context) &&
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-        ) {
+        if (!isPin && canUseBiometric(context)) {
             column.addView(spacer(dp(18)))
-            column.addView(TextView(context).apply {
-                text = "Use fingerprint"
-                setTextColor(white)
-                textSize = 16f
-                gravity = Gravity.CENTER
-                setPadding(dp(20), dp(12), dp(20), dp(12))
-                setOnClickListener { showBiometric(context) }
+            column.addView(iconKey(context, R.drawable.ic_app_lock_fingerprint) {
+                showBiometric(context)
             })
         }
 
@@ -238,11 +236,22 @@ private class AppLockView(
         pad.addView(spacer(dp(18)))
         pad.addView(digitRow(context, listOf("7", "8", "9")))
         pad.addView(spacer(dp(18)))
-        // Bottom row: blank, 0, backspace.
+        // Bottom row mirrors the Flutter App Lock PIN pad: fingerprint, 0,
+        // backspace. If biometrics are off, keep the slot empty for alignment.
         val bottom = LinearLayout(context).apply { gravity = Gravity.CENTER }
-        bottom.addView(slot(blankKey(context)))
+        bottom.addView(
+            slot(
+                if (canUseBiometric(context)) {
+                    iconKey(context, R.drawable.ic_app_lock_fingerprint) {
+                        showBiometric(context)
+                    }
+                } else {
+                    blankKey(context)
+                },
+            ),
+        )
         bottom.addView(slot(digitKey(context, "0")))
-        bottom.addView(slot(iconKey(context, "⌫") { onBackspace() }))
+        bottom.addView(slot(textIconKey(context, "⌫") { onBackspace() }))
         pad.addView(bottom)
         return pad
     }
@@ -275,12 +284,25 @@ private class AppLockView(
             setOnClickListener { onDigit(digit) }
         }
 
-    private fun iconKey(context: Context, glyph: String, onTap: () -> Unit): View =
+    private fun textIconKey(context: Context, glyph: String, onTap: () -> Unit): View =
         TextView(context).apply {
             text = glyph
             setTextColor(white)
             textSize = 24f
             gravity = Gravity.CENTER
+            setOnClickListener { onTap() }
+        }
+
+    private fun iconKey(context: Context, iconRes: Int, onTap: () -> Unit): View =
+        ImageButton(context).apply {
+            setImageResource(iconRes)
+            setColorFilter(white)
+            scaleType = android.widget.ImageView.ScaleType.CENTER
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(surface2)
+            }
+            contentDescription = "Use fingerprint"
             setOnClickListener { onTap() }
         }
 
@@ -334,29 +356,20 @@ private class AppLockView(
     private fun showBiometric(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
         try {
-            val prompt = BiometricPrompt.Builder(context)
-                .setTitle("Unlock app")
-                .setDescription(appLabel(context))
-                .setNegativeButton(
-                    "Use PIN",
-                    context.mainExecutor,
-                ) { _, _ -> }
-                .build()
-            prompt.authenticate(
-                CancellationSignal(),
-                context.mainExecutor,
-                object : BiometricPrompt.AuthenticationCallback() {
-                    override fun onAuthenticationSucceeded(
-                        result: BiometricPrompt.AuthenticationResult,
-                    ) {
-                        onUnlock()
-                    }
-                },
+            context.startActivity(
+                Intent(context, AppLockBiometricActivity::class.java)
+                    .putExtra(AppLockBiometricActivity.EXTRA_PACKAGE, pkg)
+                    .putExtra(AppLockBiometricActivity.EXTRA_LABEL, appLabel(context))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
         } catch (_: Exception) {
             // Fall back to PIN/pattern silently.
         }
     }
+
+    private fun canUseBiometric(context: Context): Boolean =
+        AppLockStore.biometricEnabled(context) &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
 
     // ---- helpers ------------------------------------------------------------
 

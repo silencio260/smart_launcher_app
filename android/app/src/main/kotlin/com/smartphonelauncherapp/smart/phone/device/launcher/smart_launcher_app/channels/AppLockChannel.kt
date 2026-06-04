@@ -3,6 +3,7 @@ package com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app
 import android.content.Context
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.AppLockOverlay
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.AppLockStore
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.services.AppLockWatcherService
 
@@ -27,6 +28,20 @@ class AppLockChannel(private val context: Context) {
                             call.argument<Boolean>("enabled") ?: false,
                         )
                         result.success(true)
+                    }
+                    "showAppLockOverlay" -> {
+                        // Instant in-launcher gate: when the launcher itself opens
+                        // a locked app, draw the same PIN/pattern overlay the
+                        // watcher uses, so the app launches behind it with no
+                        // device-credential prompt. Skip if already unlocked this
+                        // session so re-launching an open app isn't re-gated.
+                        val pkg = call.argument<String>("packageName")
+                        if (pkg.isNullOrEmpty() || AppLockStore.isUnlocked(pkg)) {
+                            result.success(false)
+                        } else {
+                            AppLockOverlay.show(context, pkg)
+                            result.success(true)
+                        }
                     }
                     "clearAppLockCredential" -> {
                         AppLockStore.clearCredential(context)
