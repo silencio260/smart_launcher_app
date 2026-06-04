@@ -20,7 +20,9 @@ import 'gesture_settings_screen.dart';
 import 'recents_settings_screen.dart';
 import 'backup_restore_screen.dart';
 import 'about_screen.dart';
+import 'help_feedback_screen.dart';
 import 'widget_picker_screen.dart';
+import '../../config/support_links.dart';
 import '../features/launcher_features_settings_screen.dart';
 
 class SettingsRootScreen extends StatefulWidget {
@@ -177,6 +179,36 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                   subtitle: 'Version and credits',
                   onTap: () => Navigator.push(c,
                       MaterialPageRoute(builder: (_) => const AboutScreen())),
+                ),
+            (_) => const Divider(),
+            (_) => const _SectionHeader(
+                  icon: Icons.support_outlined,
+                  title: 'Support',
+                ),
+            (c) => _Tile(
+                  icon: Icons.privacy_tip_outlined,
+                  title: 'Privacy Policy',
+                  subtitle: 'How your data is handled',
+                  onTap: () async {
+                    final ok = await LauncherService.launchUrl(
+                        SupportLinks.privacyPolicyUrl);
+                    if (!c.mounted) return;
+                    if (!ok) {
+                      ScaffoldMessenger.of(c)
+                        ..removeCurrentSnackBar()
+                        ..showSnackBar(const SnackBar(
+                            content: Text("Couldn't open the privacy policy")));
+                    }
+                  },
+                ),
+            (c) => _Tile(
+                  icon: Icons.help_outline,
+                  title: 'Help & Feedback',
+                  subtitle: 'Restore home screen, send feedback, uninstall',
+                  onTap: () => Navigator.push(
+                      c,
+                      MaterialPageRoute(
+                          builder: (_) => const HelpFeedbackScreen())),
                 ),
             (_) => const Divider(),
             (_) => const _SectionHeader(

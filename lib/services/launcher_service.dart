@@ -85,6 +85,33 @@ class LauncherService {
     await _apps.invokeMethod('openAppSettings', {'packageName': packageName});
   }
 
+  /// Opens a URL with the system handler. Handles web links, `mailto:` feedback
+  /// addresses, and `market://` / Play Store listings alike. Returns false if no
+  /// app could handle the intent.
+  static Future<bool> launchUrl(String url) async {
+    try {
+      final result = await _system.invokeMethod<bool>('launchUrl', {'url': url});
+      return result ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Opens the system "Default Home app" picker so the user can switch back to
+  /// their previous launcher. ([requestHomeRole] already falls back here while we
+  /// hold the home role, but this names the intent explicitly for the menu item.)
+  static Future<bool> openHomeSettings() async {
+    try {
+      final result = await _system.invokeMethod<bool>(
+        'openSettingsAction',
+        {'action': 'android.settings.HOME_SETTINGS'},
+      );
+      return result ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Whether this app is currently the system's default home launcher.
   static Future<bool> isDefaultLauncher() async {
     try {
