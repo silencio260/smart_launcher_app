@@ -585,8 +585,13 @@ class _HomeScreenState extends State<HomeScreen>
   // The richer Smart-search screen opened by the permanent home pill: app
   // search + suggested/frequent apps + recent searches + settings shortcuts +
   // a web fallback.
-  void _openSmartSearch() {
+  void _openSmartSearch({bool pinToHome = true}) {
     if (!mounted) return;
+    if (pinToHome) {
+      _prepareHomeForSmartSearch();
+    } else {
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
     final settings = context.read<SettingsCubit>().state;
     Navigator.push(
       context,
@@ -614,6 +619,28 @@ class _HomeScreenState extends State<HomeScreen>
         ),
       ),
     );
+  }
+
+  void _prepareHomeForSmartSearch() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    _syncCurrentPageToVisibleWorkspacePage();
+
+    final workspace = context.read<WorkspaceCubit>().state;
+    if (workspace.pages.isEmpty || _pageController?.hasClients != true) {
+      return;
+    }
+
+    final homePage =
+        workspace.currentPage.clamp(0, workspace.pages.length - 1).toInt();
+    final target = _toControllerPage(homePage);
+    final rawPage =
+        _pageController!.page ?? _pageController!.initialPage.toDouble();
+    if ((rawPage - target).abs() < 0.001) return;
+
+    _pageController!.jumpToPage(target);
+    _chromeOpacity.value = 1.0;
+    _chromeSlide.value = 0.0;
+    _activeSection.value = HomeSection.home;
   }
 
   void _openSettings() {
@@ -856,8 +883,8 @@ class _HomeScreenState extends State<HomeScreen>
                             onPageChanged: (offset) {
                               const MethodChannel(
                                       'com.genrevibes.smartlauncher/wallpaper')
-                                  .invokeMethod(
-                                      'setWallpaperOffset', {'xOffset': offset});
+                                  .invokeMethod('setWallpaperOffset',
+                                      {'xOffset': offset});
                             },
                             onControllerReady: (ctrl) =>
                                 setState(() => _pageController = ctrl),
@@ -866,7 +893,8 @@ class _HomeScreenState extends State<HomeScreen>
                             homeBottomInset: _bottomChromeHeight,
                             discoverBuilder: settings.discoverPageEnabled
                                 ? (ctx) => DiscoverPage(
-                                      onOpenSearch: _openSmartSearch,
+                                      onOpenSearch: () =>
+                                          _openSmartSearch(pinToHome: false),
                                       onLaunchApp: (app) =>
                                           FeatureLaunchDispatcher.launch(
                                               ctx, app),
@@ -1002,7 +1030,9 @@ class _HomeScreenState extends State<HomeScreen>
               if (settings.showDock) _buildDock(context, settings),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                child: SmartSearchPill(onTap: _openSmartSearch),
+                child: SmartSearchPill(
+                  onTap: () => _openSmartSearch(pinToHome: true),
+                ),
               ),
             ],
           ),
