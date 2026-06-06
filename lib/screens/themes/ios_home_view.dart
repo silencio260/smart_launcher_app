@@ -45,6 +45,9 @@ class _IosHomeViewState extends State<IosHomeView>
   // index 1 and the launcher opens there.
   final _pageController = PageController(initialPage: 1);
   int _currentPage = 1;
+  // The page a user drag began from. The snap physics measures commit distance
+  // relative to this so the threshold is symmetric forward and backward.
+  double _dragOrigin = 1;
   bool _editMode = false;
   bool _searchOpen = false;
 
@@ -105,19 +108,32 @@ class _IosHomeViewState extends State<IosHomeView>
                   children: [
                     const SizedBox(height: 8),
                     Expanded(
-                      child: PageView.builder(
-                        controller: _pageController,
-                        // Custom snapping (pageSnapping:false) so our physics
-                        // fully owns the commit threshold; otherwise Flutter's
-                        // built-in PageScrollPhysics runs first and a swipe that
-                        // doesn't cross ~50% springs back to the same page.
-                        pageSnapping: false,
-                        physics: _editMode
-                            ? const NeverScrollableScrollPhysics()
-                            : const _SnappyPagePhysics(
-                                parent: BouncingScrollPhysics(),
-                              ),
-                        itemCount: itemCount,
+                      child: NotificationListener<ScrollStartNotification>(
+                        // Record which page a drag starts from so the physics
+                        // can measure commit distance symmetrically (forward and
+                        // backward) instead of relative to floor(page).
+                        onNotification: (n) {
+                          if (n.dragDetails != null) {
+                            _dragOrigin =
+                                (_pageController.page ?? _dragOrigin)
+                                    .roundToDouble();
+                          }
+                          return false;
+                        },
+                        child: PageView.builder(
+                          controller: _pageController,
+                          // Custom snapping (pageSnapping:false) so our physics
+                          // fully owns the commit threshold; otherwise Flutter's
+                          // built-in PageScrollPhysics runs first and a swipe
+                          // that doesn't cross ~50% springs back to the page.
+                          pageSnapping: false,
+                          physics: _editMode
+                              ? const NeverScrollableScrollPhysics()
+                              : _SnappyPagePhysics(
+                                  parent: const BouncingScrollPhysics(),
+                                  origin: () => _dragOrigin,
+                                ),
+                          itemCount: itemCount,
                         onPageChanged: (value) =>
                             setState(() => _currentPage = value),
                         itemBuilder: (context, index) {
@@ -144,6 +160,7 @@ class _IosHomeViewState extends State<IosHomeView>
                             onRemove: _hideApp,
                           );
                         },
+                        ),
                       ),
                     ),
                     Opacity(
@@ -601,11 +618,16 @@ const _iosTemplateApps = <_IosTemplateApp>[
 /// Flutter's built-in PageScrollPhysics — decides which page to land on. Assumes
 /// the default viewportFraction of 1.0 (one page == one viewport width).
 class _SnappyPagePhysics extends ScrollPhysics {
-  const _SnappyPagePhysics({super.parent});
+  /// Returns the page the current drag started from, so commit distance is
+  /// measured symmetrically forward and backward (not relative to floor(page),
+  /// which made backward swipes need ~80% travel while forward needed ~20%).
+  final double Function()? origin;
+
+  const _SnappyPagePhysics({super.parent, this.origin});
 
   @override
   _SnappyPagePhysics applyTo(ScrollPhysics? ancestor) =>
-      _SnappyPagePhysics(parent: buildParent(ancestor));
+      _SnappyPagePhysics(parent: buildParent(ancestor), origin: origin);
 
   @override
   double get minFlingVelocity => 20.0;
@@ -614,24 +636,28 @@ class _SnappyPagePhysics extends ScrollPhysics {
     final viewport = position.viewportDimension;
     if (viewport <= 0) return position.pixels;
     final page = position.pixels / viewport;
-    final base = page.floorToDouble();
-    final fraction = page - base;
+    final from = (origin?.call() ?? page.roundToDouble());
+    // Signed travel from where the drag began: + forward, - backward.
+    final delta = page - from;
 
-    // Decide by distance first; let velocity only *assist*, never veto a real
-    // drag. The common rejection was a firm forward swipe whose finger
-    // decelerated on lift, producing a small backward release velocity — that
-    // must NOT throw away a drag the user clearly intended.
-    final bool goForward;
-    if (velocity > minFlingVelocity) {
-      goForward = true; // forward flick → always advance
+    // Decide by distance first; velocity only *assists*, it never vetoes a real
+    // drag (a firm swipe whose finger decelerates on lift can register a small
+    // opposite velocity, which must not throw away the drag). Snap at most one
+    // page from the origin so a fast drag never skips pages.
+    double target = from;
+    if (delta >= 0.6) {
+      target = from + 1; // deep forward drag commits regardless of velocity
+    } else if (delta <= -0.6) {
+      target = from - 1; // deep backward drag commits regardless of velocity
+    } else if (velocity > minFlingVelocity) {
+      target = from + 1; // forward flick
     } else if (velocity < -minFlingVelocity) {
-      // Backward flick only cancels a shallow drag; a deep drag still commits.
-      goForward = fraction >= 0.6;
-    } else {
-      // Neutral release: commit once the drag passed ~1/5 of a page.
-      goForward = fraction >= 0.2;
+      target = from - 1; // backward flick
+    } else if (delta >= 0.2) {
+      target = from + 1; // neutral release, dragged ~1/5 page forward
+    } else if (delta <= -0.2) {
+      target = from - 1; // neutral release, dragged ~1/5 page backward
     }
-    final target = goForward ? base + 1 : base;
     return (target * viewport).clamp(
       position.minScrollExtent,
       position.maxScrollExtent,
