@@ -616,15 +616,22 @@ class _SnappyPagePhysics extends ScrollPhysics {
     final page = position.pixels / viewport;
     final base = page.floorToDouble();
     final fraction = page - base;
-    double target;
+
+    // Decide by distance first; let velocity only *assist*, never veto a real
+    // drag. The common rejection was a firm forward swipe whose finger
+    // decelerated on lift, producing a small backward release velocity — that
+    // must NOT throw away a drag the user clearly intended.
+    final bool goForward;
     if (velocity > minFlingVelocity) {
-      target = base + 1;
+      goForward = true; // forward flick → always advance
     } else if (velocity < -minFlingVelocity) {
-      target = base;
+      // Backward flick only cancels a shallow drag; a deep drag still commits.
+      goForward = fraction >= 0.6;
     } else {
-      // Static release (no flick): commit once the drag passed ~1/5 of a page.
-      target = fraction > 0.2 ? base + 1 : base;
+      // Neutral release: commit once the drag passed ~1/5 of a page.
+      goForward = fraction >= 0.2;
     }
+    final target = goForward ? base + 1 : base;
     return (target * viewport).clamp(
       position.minScrollExtent,
       position.maxScrollExtent,
