@@ -8,10 +8,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/app_info.dart';
 import '../../models/launcher_feature.dart';
 import '../../models/launcher_settings.dart';
+import '../../services/feature_launch_dispatcher.dart';
 import '../../services/launcher_service.dart';
 import '../../state/apps_cubit.dart';
 import '../../state/launcher_feature_cubit.dart';
 import '../../state/settings_cubit.dart';
+import '../../widgets/app_menu/launcher_app_context_menu.dart';
 import '../../widgets/icons/feature_icon.dart';
 import '../../widgets/icons/shaped_icon.dart';
 import '../../widgets/wallpaper/themed_wallpaper_background.dart';
@@ -527,6 +529,7 @@ class _IosHomeViewState extends State<IosHomeView>
     );
     final featureCubit = context.read<LauncherFeatureSettingsCubit>();
     final isLocked = featureCubit.state.lockedApps.contains(app.packageName);
+    final featureId = LauncherFeatureCatalog.idForApp(app);
     final action = await showGeneralDialog<String>(
       context: context,
       barrierDismissible: true,
@@ -540,9 +543,10 @@ class _IosHomeViewState extends State<IosHomeView>
         inDock: inDock,
         dockFull: dockFull,
         isLocked: isLocked,
-        canLock: !app.isInternalFeature,
+        canLock: featureId == null,
       ),
     );
+    if (!mounted) return;
     switch (action) {
       case 'dock_add':
         _addToDock(app);
@@ -551,7 +555,11 @@ class _IosHomeViewState extends State<IosHomeView>
         _removeFromDock(app);
         break;
       case 'app_info':
-        LauncherService.openAppSettings(app.packageName);
+        if (featureId != null) {
+          FeatureLaunchDispatcher.openFeature(context, featureId);
+        } else {
+          LauncherService.openAppSettings(app.packageName);
+        }
         break;
       case 'lock':
         featureCubit.setAppLocked(app.packageName, !isLocked);
@@ -1915,8 +1923,9 @@ class _IosSpotlightState extends State<_IosSpotlight> {
 
   @override
   Widget build(BuildContext context) {
+    final settings = context.watch<SettingsCubit>().state;
     final appsState = context.watch<AppsCubit>().state;
-    final hidden = widget.settings.hiddenApps.toSet();
+    final hidden = settings.hiddenApps.toSet();
     final apps = appsState.apps
         .where((app) =>
             !hidden.contains(app.launcherKey) &&
@@ -1927,7 +1936,7 @@ class _IosSpotlightState extends State<_IosSpotlight> {
       fit: StackFit.expand,
       children: [
         ThemedWallpaperBackground(
-          path: widget.settings.customWallpaperPath,
+          path: settings.customWallpaperPath,
           useSystemWallpaper: true,
           transparentSystemFallback: true,
           blur: true,
@@ -1969,16 +1978,25 @@ class _IosSpotlightState extends State<_IosSpotlight> {
                     itemCount: apps.length,
                     itemBuilder: (context, index) {
                       final app = apps[index];
-                      return ListTile(
-                        leading: _Icon(app: app, size: 40),
-                        title: Text(
-                          app.name,
-                          style: const TextStyle(color: Colors.white),
+                      return GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onLongPressStart: (details) =>
+                            showLauncherAppContextMenu(
+                          context,
+                          app: app,
+                          globalPosition: details.globalPosition,
                         ),
-                        onTap: () {
-                          widget.onClose();
-                          widget.onLaunch(app);
-                        },
+                        child: ListTile(
+                          leading: _Icon(app: app, size: 40),
+                          title: Text(
+                            app.name,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          onTap: () {
+                            widget.onClose();
+                            widget.onLaunch(app);
+                          },
+                        ),
                       );
                     },
                   ),

@@ -8,6 +8,7 @@ import '../../models/launcher_settings.dart';
 import '../../services/launcher_service.dart';
 import '../../state/apps_cubit.dart';
 import '../../state/settings_cubit.dart';
+import '../../widgets/app_menu/launcher_app_context_menu.dart';
 import '../../widgets/wallpaper/themed_wallpaper_background.dart';
 
 class MinimalHomeView extends StatefulWidget {
@@ -117,7 +118,8 @@ class _MinimalHomeViewState extends State<MinimalHomeView> {
                             fontSize: settings.minimalFontSize,
                             onLaunch: widget.onLaunchApp,
                             onAdd: () => _showFavoritePicker(apps, settings),
-                            onRemove: (app) => _removeFavorite(app, settings),
+                            onLongPress: (app, position) =>
+                                _showFavoriteMenu(app, position, settings),
                           ),
                           const Spacer(flex: 4),
                           _MinimalActions(
@@ -221,6 +223,27 @@ class _MinimalHomeViewState extends State<MinimalHomeView> {
     context
         .read<SettingsCubit>()
         .update(settings.copyWith(minimalFavoritePackages: refs));
+  }
+
+  Future<void> _showFavoriteMenu(
+    AppInfo app,
+    Offset position,
+    LauncherSettings settings,
+  ) {
+    return showLauncherAppContextMenu(
+      context,
+      app: app,
+      globalPosition: position,
+      trailingItems: [
+        LauncherAppMenuItem(
+          id: 'remove_favorite',
+          icon: Icons.remove_circle_outline,
+          label: 'Remove favorite',
+          destructive: true,
+          onSelected: () => _removeFavorite(app, settings),
+        ),
+      ],
+    );
   }
 
   void _showFavoritePicker(List<AppInfo> apps, LauncherSettings settings) {
@@ -415,6 +438,11 @@ class _MinimalLibraryPageState extends State<_MinimalLibraryPage> {
                   app: app,
                   fontSize: widget.fontSize,
                   onTap: () => widget.onLaunch(app),
+                  onLongPress: (position) => showLauncherAppContextMenu(
+                    context,
+                    app: app,
+                    globalPosition: position,
+                  ),
                 );
               },
             ),
@@ -518,6 +546,11 @@ class _MinimalDrawerPageState extends State<_MinimalDrawerPage> {
                           app: app,
                           fontSize: widget.fontSize,
                           onTap: () => widget.onLaunch(app),
+                          onLongPress: (position) => showLauncherAppContextMenu(
+                            context,
+                            app: app,
+                            globalPosition: position,
+                          ),
                         );
                       },
                     ),
@@ -570,17 +603,23 @@ class _MinimalAppTextTile extends StatelessWidget {
   final AppInfo app;
   final double fontSize;
   final VoidCallback onTap;
+  final ValueChanged<Offset>? onLongPress;
 
   const _MinimalAppTextTile({
     required this.app,
     required this.fontSize,
     required this.onTap,
+    this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return GestureDetector(
       onTap: onTap,
+      onLongPressStart: onLongPress == null
+          ? null
+          : (details) => onLongPress!(details.globalPosition),
+      behavior: HitTestBehavior.opaque,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 9),
         child: Text(
@@ -650,14 +689,14 @@ class _FavoritesList extends StatelessWidget {
   final double fontSize;
   final ValueChanged<AppInfo> onLaunch;
   final VoidCallback onAdd;
-  final ValueChanged<AppInfo> onRemove;
+  final void Function(AppInfo app, Offset position) onLongPress;
 
   const _FavoritesList({
     required this.favorites,
     required this.fontSize,
     required this.onLaunch,
     required this.onAdd,
-    required this.onRemove,
+    required this.onLongPress,
   });
 
   @override
@@ -666,9 +705,11 @@ class _FavoritesList extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (final app in favorites)
-          InkWell(
+          GestureDetector(
             onTap: () => onLaunch(app),
-            onLongPress: () => onRemove(app),
+            onLongPressStart: (details) =>
+                onLongPress(app, details.globalPosition),
+            behavior: HitTestBehavior.opaque,
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 5),
               child: Text(

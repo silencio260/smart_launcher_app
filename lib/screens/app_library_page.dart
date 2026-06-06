@@ -6,6 +6,7 @@ import '../models/launcher_settings.dart';
 import '../services/app_categories.dart';
 import '../state/apps_cubit.dart';
 import '../state/settings_cubit.dart';
+import '../widgets/app_menu/launcher_app_context_menu.dart';
 import '../widgets/allapps/all_apps_grid_adapter.dart';
 import '../widgets/icons/feature_icon.dart';
 import '../widgets/icons/shaped_icon.dart';
@@ -77,7 +78,8 @@ class _AppLibraryPageState extends State<AppLibraryPage> {
     final visible = <AppInfo>[];
     final hiddenApps = <AppInfo>[];
     for (final app in appsState.apps) {
-      if (hidden.contains(app.launcherKey) || hidden.contains(app.packageName)) {
+      if (hidden.contains(app.launcherKey) ||
+          hidden.contains(app.packageName)) {
         hiddenApps.add(app);
       } else {
         visible.add(app);
@@ -195,7 +197,11 @@ class _AppLibraryPageState extends State<AppLibraryPage> {
               childAspectRatio: 0.78,
             ),
             delegate: SliverChildBuilderDelegate(
-              (context, i) => _AppTile(app: apps[i], onTap: widget.onLaunchApp),
+              (context, i) => _AppTile(
+                app: apps[i],
+                onTap: widget.onLaunchApp,
+                onLongPress: _showAppMenu,
+              ),
               childCount: apps.length,
             ),
           ),
@@ -234,7 +240,11 @@ class _AppLibraryPageState extends State<AppLibraryPage> {
                     for (final app in item.apps)
                       Expanded(
                         child: Center(
-                          child: _AppTile(app: app, onTap: widget.onLaunchApp),
+                          child: _AppTile(
+                            app: app,
+                            onTap: widget.onLaunchApp,
+                            onLongPress: _showAppMenu,
+                          ),
                         ),
                       ),
                     for (int i = 0; i < columns - item.apps.length; i++)
@@ -297,12 +307,21 @@ class _AppLibraryPageState extends State<AppLibraryPage> {
                 child: _FolderPanel(
                   folder: folder,
                   onLaunch: widget.onLaunchApp,
+                  onLongPress: _showAppMenu,
                 ),
               ),
             ),
           ),
         );
       },
+    );
+  }
+
+  Future<void> _showAppMenu(AppInfo app, Offset position) {
+    return showLauncherAppContextMenu(
+      context,
+      app: app,
+      globalPosition: position,
     );
   }
 }
@@ -334,12 +353,21 @@ class _SectionLabel extends StatelessWidget {
 class _AppTile extends StatelessWidget {
   final AppInfo app;
   final void Function(AppInfo app) onTap;
-  const _AppTile({required this.app, required this.onTap});
+  final void Function(AppInfo app, Offset position)? onLongPress;
+
+  const _AppTile({
+    required this.app,
+    required this.onTap,
+    this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () => onTap(app),
+      onLongPressStart: onLongPress == null
+          ? null
+          : (details) => onLongPress!(app, details.globalPosition),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -442,7 +470,13 @@ class _FolderTile extends StatelessWidget {
 class _FolderPanel extends StatelessWidget {
   final _LibraryFolder folder;
   final void Function(AppInfo app) onLaunch;
-  const _FolderPanel({required this.folder, required this.onLaunch});
+  final void Function(AppInfo app, Offset position) onLongPress;
+
+  const _FolderPanel({
+    required this.folder,
+    required this.onLaunch,
+    required this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -491,6 +525,7 @@ class _FolderPanel extends StatelessWidget {
                     ),
                     itemBuilder: (context, i) => _AppTile(
                       app: folder.apps[i],
+                      onLongPress: onLongPress,
                       onTap: (app) {
                         Navigator.of(context).pop();
                         onLaunch(app);
