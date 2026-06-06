@@ -102,6 +102,7 @@ class WallpaperService {
       'setWallpaperFromFile',
       {'path': path},
     );
+    if (result ?? false) invalidateSystemWallpaperCache();
     return result ?? false;
   }
 
@@ -112,10 +113,36 @@ class WallpaperService {
 
   static Future<void> openSystemPicker() async {
     await _channel.invokeMethod<void>('changeWallpaper');
+    invalidateSystemWallpaperCache();
   }
 
+  static Uint8List? _systemWallpaperCache;
+  static bool _systemWallpaperResolved = false;
+
+  /// Cached so opaque surfaces (Spotlight, App Library, Minimal drawer) can show
+  /// the wallpaper instantly on repeat opens without a channel round-trip or a
+  /// black flash. Returns null when there is no static bitmap (e.g. a live
+  /// wallpaper). Call [invalidateSystemWallpaperCache] after the user changes
+  /// the wallpaper.
   static Future<Uint8List?> currentSystemWallpaper() async {
-    return _channel.invokeMethod<Uint8List>('getWallpaperBitmap');
+    if (_systemWallpaperResolved) return _systemWallpaperCache;
+    final bytes = await _channel.invokeMethod<Uint8List>('getWallpaperBitmap');
+    _systemWallpaperCache = bytes;
+    _systemWallpaperResolved = true;
+    return bytes;
+  }
+
+  /// Synchronously returns the cached wallpaper bytes if already resolved, so
+  /// callers can seed their first frame without a black flash. Null if not yet
+  /// resolved or if there is no static bitmap.
+  static Uint8List? get cachedSystemWallpaper =>
+      _systemWallpaperResolved ? _systemWallpaperCache : null;
+
+  static bool get isSystemWallpaperResolved => _systemWallpaperResolved;
+
+  static void invalidateSystemWallpaperCache() {
+    _systemWallpaperCache = null;
+    _systemWallpaperResolved = false;
   }
 
   static Future<Directory> _wallpaperDir() async {

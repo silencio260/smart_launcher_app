@@ -50,14 +50,17 @@ class _IosHomeViewState extends State<IosHomeView>
   double _dragOrigin = 1;
   bool _editMode = false;
   bool _searchOpen = false;
+  // Cumulative upward drag distance for the swipe-up-to-Spotlight gesture.
+  double _swipeUpDistance = 0;
   // Controller index of the App Library (far-right) page. Cached during build so
   // the full-screen swipe-up zone (below the pager) can jump straight to it.
   int _libraryPageIndex = 1;
 
-  // Bundled default iOS wallpaper. Used only when the user hasn't set a custom/
-  // device wallpaper; if the asset is missing the background falls back to the
-  // iOS-style gradient (see ThemedWallpaperBackground).
-  static const _iosWallpaperAsset = 'assets/ios_theme/wallpaper/ios_default.jpg';
+  // Bundled iOS template wallpaper. This keeps the iOS theme self-contained:
+  // Spotlight, App Library, and home never depend on a transparent route or a
+  // readable Android system wallpaper to avoid a black background.
+  static const _iosWallpaperAsset =
+      'assets/ios_theme/wallpaper/ios_default.jpg';
 
   @override
   void initState() {
@@ -83,6 +86,7 @@ class _IosHomeViewState extends State<IosHomeView>
       children: [
         ThemedWallpaperBackground(
           path: settings.customWallpaperPath,
+          useSystemWallpaper: true,
           assetFallback: _iosWallpaperAsset,
           fallbackColors: const [Color(0xFF1A2440), Color(0xFF9C6F72)],
         ),
@@ -95,8 +99,7 @@ class _IosHomeViewState extends State<IosHomeView>
             // Effective pager layout: [Discover] [home 0..N] [App Library].
             final itemCount = homePages.length + 2;
             _libraryPageIndex = itemCount - 1;
-            final homeIndex =
-                (_currentPage - 1).clamp(0, homePages.length - 1);
+            final homeIndex = (_currentPage - 1).clamp(0, homePages.length - 1);
             final onHomePage =
                 _currentPage >= 1 && _currentPage <= homePages.length;
             // Space the home grids leave at the bottom for the dock+dots
@@ -214,8 +217,8 @@ class _IosHomeViewState extends State<IosHomeView>
             );
           },
         ),
-        // Full-screen vertical-swipe zone over the home area: swipe down →
-        // Spotlight search, swipe up → App Library (the far-right page). It's
+        // Full-screen vertical-swipe zone over the home area: swipe up opens the
+        // App Library (the far-right page). Swipe down does nothing. It's
         // translucent and only claims vertical drags, so taps, long-press and
         // the PageView's horizontal paging all still reach the content below.
         if (!_editMode)
@@ -225,20 +228,27 @@ class _IosHomeViewState extends State<IosHomeView>
             // grids don't scroll (NeverScrollableScrollPhysics), so there's no
             // gesture to steal there.
             child: IgnorePointer(
-              ignoring: !(_currentPage >= 1 && _currentPage < _libraryPageIndex),
+              ignoring:
+                  !(_currentPage >= 1 && _currentPage < _libraryPageIndex),
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
-                onVerticalDragEnd: (details) {
-                  final velocity = details.primaryVelocity ?? 0;
-                  if (velocity > 320) {
-                    setState(() => _searchOpen = true); // pull down → Spotlight
-                  } else if (velocity < -320) {
-                    _pageController.animateToPage(
-                      _libraryPageIndex, // swipe up → App Library
-                      duration: const Duration(milliseconds: 320),
-                      curve: Curves.easeOutCubic,
-                    );
+                onVerticalDragStart: (_) => _swipeUpDistance = 0,
+                onVerticalDragUpdate: (details) {
+                  // Accumulate upward travel. A deliberate slow drag should open
+                  // Spotlight too, not just a fast fling — trigger as soon as the
+                  // drag passes the distance threshold for instant feedback.
+                  _swipeUpDistance -= details.primaryDelta ?? 0;
+                  if (!_searchOpen && _swipeUpDistance > 90) {
+                    setState(() => _searchOpen = true); // swipe up → Spotlight
                   }
+                },
+                onVerticalDragEnd: (details) {
+                  // Fast flick still opens it even if distance was short.
+                  final velocity = details.primaryVelocity ?? 0;
+                  if (!_searchOpen && velocity < -280) {
+                    setState(() => _searchOpen = true);
+                  }
+                  _swipeUpDistance = 0;
                 },
               ),
             ),
@@ -276,10 +286,11 @@ class _IosHomeViewState extends State<IosHomeView>
       children: [
         ThemedWallpaperBackground(
           path: settings.customWallpaperPath,
+          useSystemWallpaper: true,
           assetFallback: _iosWallpaperAsset,
-          fallbackColors: const [Color(0xFF1A2440), Color(0xFF9C6F72)],
           blur: true,
           blurSigma: 28,
+          fallbackColors: const [Color(0xFF1A2440), Color(0xFF9C6F72)],
         ),
         const ColoredBox(color: Color(0x99000000)),
         AppLibraryPage(
@@ -1470,7 +1481,8 @@ class _MenuCard extends StatelessWidget {
               divider,
               if (canLock) ...[
                 _ContextMenuItem(
-                  icon: isLocked ? Icons.lock_open_outlined : Icons.lock_outline,
+                  icon:
+                      isLocked ? Icons.lock_open_outlined : Icons.lock_outline,
                   label: isLocked ? 'Unlock App' : 'Lock App',
                   onTap: () => Navigator.pop(context, 'lock'),
                 ),
@@ -1772,85 +1784,85 @@ class _CalendarWidgetState extends State<_CalendarWidget> {
           color: Colors.white.withValues(alpha: 0.18),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _monthNames[_now.month - 1],
-                    style: const TextStyle(
-                      color: Color(0xFFFF9F0A),
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                    ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _monthNames[_now.month - 1],
+                  style: const TextStyle(
+                    color: Color(0xFFFF9F0A),
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
                   ),
-                  const SizedBox(height: 3),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: _dayLabels
-                        .map(
-                          (day) => SizedBox(
-                            width: 20,
-                            child: Text(
-                              day,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.45),
-                                fontSize: 9,
-                                fontWeight: FontWeight.w500,
-                              ),
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: _dayLabels
+                      .map(
+                        (day) => SizedBox(
+                          width: 20,
+                          child: Text(
+                            day,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.45),
+                              fontSize: 9,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
-                        )
-                        .toList(),
-                  ),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: List.generate(weeks, (week) {
-                        return Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: List.generate(7, (col) {
-                            final day = week * 7 + col - offset + 1;
-                            if (day < 1 || day > daysInMonth) {
-                              return const SizedBox(width: 20, height: 18);
-                            }
-                            final isToday = day == _now.day;
-                            return SizedBox(
-                              width: 20,
-                              height: 18,
-                              child: DecoratedBox(
-                                decoration: isToday
-                                    ? const BoxDecoration(
-                                        color: Color(0xFFFF3B30),
-                                        shape: BoxShape.circle,
-                                      )
-                                    : const BoxDecoration(),
-                                child: Center(
-                                  child: Text(
-                                    '$day',
-                                    style: TextStyle(
-                                      color: Colors.white.withValues(
-                                          alpha: isToday ? 1 : 0.85),
-                                      fontSize: 10,
-                                      fontWeight: isToday
-                                          ? FontWeight.bold
-                                          : FontWeight.normal,
-                                    ),
+                        ),
+                      )
+                      .toList(),
+                ),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: List.generate(weeks, (week) {
+                      return Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: List.generate(7, (col) {
+                          final day = week * 7 + col - offset + 1;
+                          if (day < 1 || day > daysInMonth) {
+                            return const SizedBox(width: 20, height: 18);
+                          }
+                          final isToday = day == _now.day;
+                          return SizedBox(
+                            width: 20,
+                            height: 18,
+                            child: DecoratedBox(
+                              decoration: isToday
+                                  ? const BoxDecoration(
+                                      color: Color(0xFFFF3B30),
+                                      shape: BoxShape.circle,
+                                    )
+                                  : const BoxDecoration(),
+                              child: Center(
+                                child: Text(
+                                  '$day',
+                                  style: TextStyle(
+                                    color: Colors.white
+                                        .withValues(alpha: isToday ? 1 : 0.85),
+                                    fontSize: 10,
+                                    fontWeight: isToday
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
                                   ),
                                 ),
                               ),
-                            );
-                          }),
-                        );
-                      }),
-                    ),
+                            ),
+                          );
+                        }),
+                      );
+                    }),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
-      );
+      ),
+    );
   }
 }
 
@@ -1888,55 +1900,80 @@ class _IosSpotlightState extends State<_IosSpotlight> {
             !hidden.contains(app.packageName) &&
             app.name.toLowerCase().contains(_query.toLowerCase()))
         .toList();
-    return Material(
-      color: Colors.black.withValues(alpha: 0.68),
-      child: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-              child: TextField(
-                autofocus: true,
-                style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  hintText: 'Search',
-                  hintStyle: const TextStyle(color: Colors.white54),
-                  prefixIcon: const Icon(Icons.search, color: Colors.white70),
-                  suffixIcon: IconButton(
-                    onPressed: widget.onClose,
-                    icon: const Icon(Icons.close, color: Colors.white70),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white.withValues(alpha: 0.18),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-                onChanged: (value) => setState(() => _query = value),
-              ),
-            ),
-            Expanded(
-              child: ListView.builder(
-                itemCount: apps.length,
-                itemBuilder: (context, index) {
-                  final app = apps[index];
-                  return ListTile(
-                    leading: _Icon(app: app, size: 40),
-                    title: Text(
-                      app.name,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) widget.onClose();
+      },
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Opaque background that mirrors the App Library: a blurred copy of
+          // the theme/system wallpaper plus a dark scrim. The home page never
+          // shows through Spotlight.
+          const ColoredBox(color: Colors.black),
+          ThemedWallpaperBackground(
+            path: widget.settings.customWallpaperPath,
+            useSystemWallpaper: true,
+            assetFallback: _IosHomeViewState._iosWallpaperAsset,
+            blur: true,
+            blurSigma: 28,
+            fallbackColors: const [Color(0xFF1A2440), Color(0xFF9C6F72)],
+          ),
+          const ColoredBox(color: Color(0x99000000)),
+          Material(
+            type: MaterialType.transparency,
+            child: SafeArea(
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                    child: TextField(
+                      autofocus: true,
                       style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Search',
+                        hintStyle: const TextStyle(color: Colors.white54),
+                        prefixIcon:
+                            const Icon(Icons.search, color: Colors.white70),
+                        suffixIcon: IconButton(
+                          onPressed: widget.onClose,
+                          icon: const Icon(Icons.close, color: Colors.white70),
+                        ),
+                        filled: true,
+                        fillColor: Colors.white.withValues(alpha: 0.18),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(18),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                      onChanged: (value) => setState(() => _query = value),
                     ),
-                    onTap: () {
-                      widget.onClose();
-                      widget.onLaunch(app);
-                    },
-                  );
-                },
+                  ),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: apps.length,
+                      itemBuilder: (context, index) {
+                        final app = apps[index];
+                        return ListTile(
+                          leading: _Icon(app: app, size: 40),
+                          title: Text(
+                            app.name,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          onTap: () {
+                            widget.onClose();
+                            widget.onLaunch(app);
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

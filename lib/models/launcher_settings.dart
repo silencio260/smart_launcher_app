@@ -76,6 +76,11 @@ class LauncherSettings extends Equatable {
   final bool minimalUse24HourClock;
   final int minimalDayStartMinutes;
   final int minimalDayEndMinutes;
+  // Minimal background: when true the home + drawer show the device wallpaper
+  // (same as the Smart launcher); when false they paint [minimalBackgroundColor]
+  // as a flat solid colour.
+  final bool minimalUseWallpaper;
+  final int minimalBackgroundColor;
 
   // Dock
   final bool showDock;
@@ -161,6 +166,8 @@ class LauncherSettings extends Equatable {
     this.minimalUse24HourClock = false,
     this.minimalDayStartMinutes = 8 * 60,
     this.minimalDayEndMinutes = 22 * 60,
+    this.minimalUseWallpaper = false,
+    this.minimalBackgroundColor = 0xFF000000,
     this.showDock = true,
     this.dockSize = 4,
     this.dockShowBackground = false,
@@ -237,6 +244,8 @@ class LauncherSettings extends Equatable {
     bool? minimalUse24HourClock,
     int? minimalDayStartMinutes,
     int? minimalDayEndMinutes,
+    bool? minimalUseWallpaper,
+    int? minimalBackgroundColor,
     bool? showDock,
     int? dockSize,
     bool? dockShowBackground,
@@ -322,6 +331,9 @@ class LauncherSettings extends Equatable {
       minimalDayStartMinutes:
           minimalDayStartMinutes ?? this.minimalDayStartMinutes,
       minimalDayEndMinutes: minimalDayEndMinutes ?? this.minimalDayEndMinutes,
+      minimalUseWallpaper: minimalUseWallpaper ?? this.minimalUseWallpaper,
+      minimalBackgroundColor:
+          minimalBackgroundColor ?? this.minimalBackgroundColor,
       showDock: showDock ?? this.showDock,
       dockSize: dockSize ?? this.dockSize,
       dockShowBackground: dockShowBackground ?? this.dockShowBackground,
@@ -405,6 +417,8 @@ class LauncherSettings extends Equatable {
         minimalUse24HourClock,
         minimalDayStartMinutes,
         minimalDayEndMinutes,
+        minimalUseWallpaper,
+        minimalBackgroundColor,
         showDock,
         dockSize,
         dockShowBackground,

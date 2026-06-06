@@ -178,6 +178,17 @@ class _MinimalOptions extends StatelessWidget {
       title: 'Minimal options',
       children: [
         SwitchListTile(
+          secondary: const Icon(Icons.wallpaper_outlined),
+          title: const Text('Use wallpaper'),
+          subtitle: const Text('Show the device wallpaper, or a solid colour'),
+          value: settings.minimalUseWallpaper,
+          onChanged: (value) => cubit.update(
+            settings.copyWith(minimalUseWallpaper: value),
+          ),
+        ),
+        if (!settings.minimalUseWallpaper)
+          _MinimalColorPicker(settings: settings, cubit: cubit),
+        SwitchListTile(
           secondary: const Icon(Icons.schedule_outlined),
           title: const Text('24-hour clock'),
           value: settings.minimalUse24HourClock,
@@ -201,6 +212,94 @@ class _MinimalOptions extends StatelessWidget {
           trailing: Text('${settings.minimalFontSize.round()}'),
         ),
       ],
+    );
+  }
+}
+
+class _MinimalColorPicker extends StatelessWidget {
+  final LauncherSettings settings;
+  final SettingsCubit cubit;
+
+  const _MinimalColorPicker({required this.settings, required this.cubit});
+
+  static const _swatches = <int>[
+    0xFF000000, // black
+    0xFF101414, // charcoal (default)
+    0xFF1B2430, // navy
+    0xFF20161B, // wine
+    0xFF14201A, // forest
+    0xFF2A2A2E, // graphite
+    0xFFF5F5F5, // light
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Row(
+        children: [
+          const Icon(Icons.palette_outlined),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (final color in _swatches)
+                  _ColorSwatch(
+                    color: Color(color),
+                    selected: settings.minimalBackgroundColor == color,
+                    onTap: () => cubit.update(
+                      settings.copyWith(minimalBackgroundColor: color),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ColorSwatch extends StatelessWidget {
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ColorSwatch({
+    required this.color,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      customBorder: const CircleBorder(),
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: selected ? scheme.primary : scheme.outlineVariant,
+            width: selected ? 3 : 1,
+          ),
+        ),
+        child: selected
+            ? Icon(
+                Icons.check,
+                size: 16,
+                color: color.computeLuminance() > 0.5
+                    ? Colors.black
+                    : Colors.white,
+              )
+            : null,
+      ),
     );
   }
 }

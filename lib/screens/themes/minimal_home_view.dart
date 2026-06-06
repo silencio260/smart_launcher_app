@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
@@ -58,13 +57,20 @@ class _MinimalHomeViewState extends State<MinimalHomeView> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        ThemedWallpaperBackground(
-          path: settings.customWallpaperPath,
-          blur: settings.wallpaperBlur,
-          blurSigma: 4 + settings.wallpaperBlurIntensity * 18,
-          fallbackColors: const [Color(0xFF0F1414), Color(0xFF39413B)],
-        ),
-        ColoredBox(color: Colors.black.withValues(alpha: 0.28)),
+        // Background: the device wallpaper (same as the Smart launcher) or a
+        // flat solid colour, depending on the Minimal setting.
+        if (settings.minimalUseWallpaper) ...[
+          const ColoredBox(color: Colors.black),
+          ThemedWallpaperBackground(
+            path: settings.customWallpaperPath,
+            useSystemWallpaper: true,
+            blur: settings.wallpaperBlur,
+            blurSigma: 4 + settings.wallpaperBlurIntensity * 18,
+            fallbackColors: const [Colors.black, Colors.black],
+          ),
+          ColoredBox(color: Colors.black.withValues(alpha: 0.28)),
+        ] else
+          ColoredBox(color: Color(settings.minimalBackgroundColor)),
         SafeArea(
           child: BlocBuilder<AppsCubit, AppsState>(
             buildWhen: (prev, next) => prev.apps != next.apps,
@@ -138,6 +144,7 @@ class _MinimalHomeViewState extends State<MinimalHomeView> {
             buildWhen: (prev, next) => prev.apps != next.apps,
             builder: (context, appsState) => _MinimalDrawer(
               apps: _visibleApps(appsState.apps, settings),
+              settings: settings,
               fontSize: settings.minimalFontSize,
               onDismiss: () => setState(() => _drawerOpen = false),
               onLaunch: (app) {
@@ -402,12 +409,14 @@ class _MinimalLibraryPageState extends State<_MinimalLibraryPage> {
 
 class _MinimalDrawer extends StatefulWidget {
   final List<AppInfo> apps;
+  final LauncherSettings settings;
   final double fontSize;
   final VoidCallback onDismiss;
   final ValueChanged<AppInfo> onLaunch;
 
   const _MinimalDrawer({
     required this.apps,
+    required this.settings,
     required this.fontSize,
     required this.onDismiss,
     required this.onLaunch,
@@ -423,55 +432,76 @@ class _MinimalDrawerState extends State<_MinimalDrawer> {
   @override
   Widget build(BuildContext context) {
     final apps = _filtered;
-    return Material(
-      color: Colors.black.withValues(alpha: 0.86),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(26, 18, 26, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+    final settings = widget.settings;
+    // The drawer gets its own background: the device wallpaper (blurred, with a
+    // dark scrim for legibility) when wallpaper mode is on, otherwise the flat
+    // solid colour — matching the home background choice.
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (settings.minimalUseWallpaper) ...[
+          const ColoredBox(color: Colors.black),
+          ThemedWallpaperBackground(
+            path: settings.customWallpaperPath,
+            useSystemWallpaper: true,
+            blur: true,
+            blurSigma: 26,
+            fallbackColors: const [Colors.black, Colors.black],
+          ),
+          ColoredBox(color: Colors.black.withValues(alpha: 0.55)),
+        ] else
+          ColoredBox(color: Color(settings.minimalBackgroundColor)),
+        Material(
+          type: MaterialType.transparency,
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(26, 18, 26, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Apps',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: widget.fontSize * 1.7,
-                      fontWeight: FontWeight.w300,
-                    ),
+                  Row(
+                    children: [
+                      Text(
+                        'Apps',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: widget.fontSize * 1.7,
+                          fontWeight: FontWeight.w300,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: widget.onDismiss,
+                        color: Colors.white70,
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
                   ),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: widget.onDismiss,
-                    color: Colors.white70,
-                    icon: const Icon(Icons.close),
+                  const SizedBox(height: 12),
+                  _MinimalSearchField(
+                    hint: 'Search',
+                    onChanged: (value) => setState(() => _query = value),
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: apps.length,
+                      itemBuilder: (context, index) {
+                        final app = apps[index];
+                        return _MinimalAppTextTile(
+                          app: app,
+                          fontSize: widget.fontSize,
+                          onTap: () => widget.onLaunch(app),
+                        );
+                      },
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              _MinimalSearchField(
-                hint: 'Search',
-                onChanged: (value) => setState(() => _query = value),
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: apps.length,
-                  itemBuilder: (context, index) {
-                    final app = apps[index];
-                    return _MinimalAppTextTile(
-                      app: app,
-                      fontSize: widget.fontSize,
-                      onTap: () => widget.onLaunch(app),
-                    );
-                  },
-                ),
-              ),
-            ],
+            ),
           ),
         ),
-      ),
+      ],
     );
   }
 
