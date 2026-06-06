@@ -97,6 +97,7 @@ class BackupService {
 
   Map<String, dynamic> _serializeSettings(LauncherSettings s) => {
         'themeMode': s.themeMode.index,
+        'homeMode': s.homeMode.index,
         'settingsBackgroundMode': s.settingsBackgroundMode.index,
         'iconShape': s.iconShape,
         'iconPackPackage': s.iconPackPackage,
@@ -120,6 +121,15 @@ class BackupService {
         'wallpaperDepthEffect': s.wallpaperDepthEffect,
         'wallpaperBlur': s.wallpaperBlur,
         'wallpaperBlurIntensity': s.wallpaperBlurIntensity,
+        'customWallpaperPath': s.customWallpaperPath,
+        'iosGridColumns': s.iosGridColumns,
+        'iosLibraryViewMode': s.iosLibraryViewMode.index,
+        'iosDockPackages': s.iosDockPackages,
+        'minimalFavoritePackages': s.minimalFavoritePackages,
+        'minimalFontSize': s.minimalFontSize,
+        'minimalUse24HourClock': s.minimalUse24HourClock,
+        'minimalDayStartMinutes': s.minimalDayStartMinutes,
+        'minimalDayEndMinutes': s.minimalDayEndMinutes,
         'showDock': s.showDock,
         'dockSize': s.dockSize,
         'dockShowBackground': s.dockShowBackground,
@@ -159,6 +169,7 @@ class BackupService {
 
     return LauncherSettings(
       themeMode: enumAt(ThemeMode2.values, 'themeMode', ThemeMode2.system),
+      homeMode: enumAt(HomeMode.values, 'homeMode', HomeMode.smart),
       settingsBackgroundMode: enumAt(SettingsBackgroundMode.values,
           'settingsBackgroundMode', SettingsBackgroundMode.black),
       iconShape: d['iconShape'] as String? ?? 'squircle',
@@ -186,6 +197,17 @@ class BackupService {
       wallpaperBlur: d['wallpaperBlur'] as bool? ?? false,
       wallpaperBlurIntensity:
           (d['wallpaperBlurIntensity'] as num?)?.toDouble() ?? 0.3,
+      customWallpaperPath: d['customWallpaperPath'] as String? ?? '',
+      iosGridColumns: d['iosGridColumns'] as int? ?? 4,
+      iosLibraryViewMode: enumAt(IosLibraryViewMode.values,
+          'iosLibraryViewMode', IosLibraryViewMode.grid),
+      iosDockPackages: (d['iosDockPackages'] as List?)?.cast<String>() ?? [],
+      minimalFavoritePackages:
+          (d['minimalFavoritePackages'] as List?)?.cast<String>() ?? [],
+      minimalFontSize: (d['minimalFontSize'] as num?)?.toDouble() ?? 16,
+      minimalUse24HourClock: d['minimalUse24HourClock'] as bool? ?? false,
+      minimalDayStartMinutes: d['minimalDayStartMinutes'] as int? ?? 8 * 60,
+      minimalDayEndMinutes: d['minimalDayEndMinutes'] as int? ?? 22 * 60,
       showDock: d['showDock'] as bool? ?? true,
       dockSize: d['dockSize'] as int? ?? 5,
       dockShowBackground: d['dockShowBackground'] as bool? ?? true,

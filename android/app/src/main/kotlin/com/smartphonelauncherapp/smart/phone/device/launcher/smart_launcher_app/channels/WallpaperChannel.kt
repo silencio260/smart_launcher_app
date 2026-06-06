@@ -8,6 +8,8 @@ import android.graphics.drawable.BitmapDrawable
 import android.os.Build
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
+import java.io.FileInputStream
 import java.io.ByteArrayOutputStream
 
 class WallpaperChannel(private val activity: Activity) {
@@ -79,6 +81,32 @@ class WallpaperChannel(private val activity: Activity) {
                             result.success(true)
                         } catch (e: Exception) {
                             result.success(false)
+                        }
+                    }
+                    "setWallpaperFromFile" -> {
+                        val path = call.argument<String>("path")
+                        if (path.isNullOrBlank()) {
+                            result.error("INVALID_PATH", "Wallpaper path is empty", null)
+                            return@setMethodCallHandler
+                        }
+                        try {
+                            val file = File(path)
+                            if (!file.exists()) {
+                                result.error("MISSING_FILE", "Wallpaper file does not exist", null)
+                                return@setMethodCallHandler
+                            }
+                            val wm = WallpaperManager.getInstance(activity)
+                            FileInputStream(file).use { input ->
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                                    wm.setStream(input, null, true, WallpaperManager.FLAG_SYSTEM)
+                                } else {
+                                    @Suppress("DEPRECATION")
+                                    wm.setStream(input)
+                                }
+                            }
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("WALLPAPER_ERROR", e.message, null)
                         }
                     }
                     else -> result.notImplemented()

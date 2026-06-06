@@ -3,6 +3,8 @@ import 'package:equatable/equatable.dart';
 
 enum ThemeMode2 { system, light, dark }
 
+enum HomeMode { smart, ios, minimal }
+
 enum SettingsBackgroundMode { black, white, system, theme, wallpaper }
 
 enum TextColorMode { auto, light, dark }
@@ -10,6 +12,8 @@ enum TextColorMode { auto, light, dark }
 enum TimeFormat { h12, h24 }
 
 enum DrawerLayout { standard, caddy }
+
+enum IosLibraryViewMode { grid, list }
 
 enum GestureAction {
   none,
@@ -27,6 +31,7 @@ enum GestureAction {
 class LauncherSettings extends Equatable {
   // General
   final ThemeMode2 themeMode;
+  final HomeMode homeMode;
   final SettingsBackgroundMode settingsBackgroundMode;
   final String iconShape;
   final String iconPackPackage;
@@ -62,6 +67,15 @@ class LauncherSettings extends Equatable {
   final bool wallpaperDepthEffect;
   final bool wallpaperBlur;
   final double wallpaperBlurIntensity;
+  final String customWallpaperPath;
+  final int iosGridColumns;
+  final IosLibraryViewMode iosLibraryViewMode;
+  final List<String> iosDockPackages;
+  final List<String> minimalFavoritePackages;
+  final double minimalFontSize;
+  final bool minimalUse24HourClock;
+  final int minimalDayStartMinutes;
+  final int minimalDayEndMinutes;
 
   // Dock
   final bool showDock;
@@ -107,6 +121,7 @@ class LauncherSettings extends Equatable {
 
   const LauncherSettings({
     this.themeMode = ThemeMode2.system,
+    this.homeMode = HomeMode.smart,
     this.settingsBackgroundMode = SettingsBackgroundMode.black,
     this.iconShape = 'squircle',
     this.iconPackPackage = '',
@@ -137,6 +152,15 @@ class LauncherSettings extends Equatable {
     this.wallpaperDepthEffect = false,
     this.wallpaperBlur = false,
     this.wallpaperBlurIntensity = 0.3,
+    this.customWallpaperPath = '',
+    this.iosGridColumns = 4,
+    this.iosLibraryViewMode = IosLibraryViewMode.grid,
+    this.iosDockPackages = const [],
+    this.minimalFavoritePackages = const [],
+    this.minimalFontSize = 16,
+    this.minimalUse24HourClock = false,
+    this.minimalDayStartMinutes = 8 * 60,
+    this.minimalDayEndMinutes = 22 * 60,
     this.showDock = true,
     this.dockSize = 4,
     this.dockShowBackground = false,
@@ -173,6 +197,7 @@ class LauncherSettings extends Equatable {
 
   LauncherSettings copyWith({
     ThemeMode2? themeMode,
+    HomeMode? homeMode,
     SettingsBackgroundMode? settingsBackgroundMode,
     String? iconShape,
     String? iconPackPackage,
@@ -203,6 +228,15 @@ class LauncherSettings extends Equatable {
     bool? wallpaperDepthEffect,
     bool? wallpaperBlur,
     double? wallpaperBlurIntensity,
+    String? customWallpaperPath,
+    int? iosGridColumns,
+    IosLibraryViewMode? iosLibraryViewMode,
+    List<String>? iosDockPackages,
+    List<String>? minimalFavoritePackages,
+    double? minimalFontSize,
+    bool? minimalUse24HourClock,
+    int? minimalDayStartMinutes,
+    int? minimalDayEndMinutes,
     bool? showDock,
     int? dockSize,
     bool? dockShowBackground,
@@ -238,6 +272,7 @@ class LauncherSettings extends Equatable {
   }) {
     return LauncherSettings(
       themeMode: themeMode ?? this.themeMode,
+      homeMode: homeMode ?? this.homeMode,
       settingsBackgroundMode:
           settingsBackgroundMode ?? this.settingsBackgroundMode,
       iconShape: iconShape ?? this.iconShape,
@@ -275,6 +310,18 @@ class LauncherSettings extends Equatable {
       wallpaperBlur: wallpaperBlur ?? this.wallpaperBlur,
       wallpaperBlurIntensity:
           wallpaperBlurIntensity ?? this.wallpaperBlurIntensity,
+      customWallpaperPath: customWallpaperPath ?? this.customWallpaperPath,
+      iosGridColumns: iosGridColumns ?? this.iosGridColumns,
+      iosLibraryViewMode: iosLibraryViewMode ?? this.iosLibraryViewMode,
+      iosDockPackages: iosDockPackages ?? this.iosDockPackages,
+      minimalFavoritePackages:
+          minimalFavoritePackages ?? this.minimalFavoritePackages,
+      minimalFontSize: minimalFontSize ?? this.minimalFontSize,
+      minimalUse24HourClock:
+          minimalUse24HourClock ?? this.minimalUse24HourClock,
+      minimalDayStartMinutes:
+          minimalDayStartMinutes ?? this.minimalDayStartMinutes,
+      minimalDayEndMinutes: minimalDayEndMinutes ?? this.minimalDayEndMinutes,
       showDock: showDock ?? this.showDock,
       dockSize: dockSize ?? this.dockSize,
       dockShowBackground: dockShowBackground ?? this.dockShowBackground,
@@ -318,6 +365,7 @@ class LauncherSettings extends Equatable {
   @override
   List<Object?> get props => [
         themeMode,
+        homeMode,
         settingsBackgroundMode,
         iconShape,
         iconPackPackage,
@@ -348,6 +396,15 @@ class LauncherSettings extends Equatable {
         wallpaperDepthEffect,
         wallpaperBlur,
         wallpaperBlurIntensity,
+        customWallpaperPath,
+        iosGridColumns,
+        iosLibraryViewMode,
+        iosDockPackages,
+        minimalFavoritePackages,
+        minimalFontSize,
+        minimalUse24HourClock,
+        minimalDayStartMinutes,
+        minimalDayEndMinutes,
         showDock,
         dockSize,
         dockShowBackground,

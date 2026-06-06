@@ -2,6 +2,7 @@ package com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app
 
 import android.app.Activity
 import android.app.AppOpsManager
+import android.os.BatteryManager
 import android.app.role.RoleManager
 import android.content.Context
 import android.content.ComponentName
@@ -55,6 +56,15 @@ class SystemChannel(private val activity: Activity) {
                             result.success(true)
                         } catch (e: Exception) {
                             result.success(false)
+                        }
+                    }
+                    "getBatteryLevel" -> {
+                        try {
+                            val bm = activity.getSystemService(BatteryManager::class.java)
+                            val level = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
+                            result.success(level)
+                        } catch (e: Exception) {
+                            result.success(-1)
                         }
                     }
                     "expandQuickSettings" -> {

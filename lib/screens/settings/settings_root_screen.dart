@@ -14,6 +14,7 @@ import '../../state/workspace_cubit.dart';
 import '../../utils/debug_flags.dart';
 import 'general_settings_screen.dart';
 import 'home_screen_settings_screen.dart';
+import 'launcher_themes_screen.dart';
 import 'settings_appearance.dart';
 import 'smartspace_settings_screen.dart';
 import 'dock_settings_screen.dart';
@@ -23,6 +24,7 @@ import 'gesture_settings_screen.dart';
 import 'recents_settings_screen.dart';
 import 'help_feedback_screen.dart';
 import 'widget_picker_screen.dart';
+import 'wallpaper_screen.dart';
 import '../../config/support_links.dart';
 import '../features/launcher_features_settings_screen.dart';
 
@@ -102,6 +104,24 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                     onTap: () => Navigator.push(
                       c,
                       settingsRoute(const GeneralSettingsScreen()),
+                    ),
+                  ),
+              (c) => _Tile(
+                    icon: Icons.format_paint_outlined,
+                    title: 'Themes',
+                    subtitle: 'Smart, iOS, and Minimal launchers',
+                    onTap: () => Navigator.push(
+                      c,
+                      settingsRoute(const LauncherThemesScreen()),
+                    ),
+                  ),
+              (c) => _Tile(
+                    icon: Icons.wallpaper_outlined,
+                    title: 'Wallpaper',
+                    subtitle: 'Browse, download, and apply wallpapers',
+                    onTap: () => Navigator.push(
+                      c,
+                      settingsRoute(const WallpaperScreen()),
                     ),
                   ),
               (c) => _Tile(

@@ -46,6 +46,7 @@ class SettingsCubit extends Cubit<LauncherSettings> {
 
   Map<String, dynamic> _toJson(LauncherSettings s) => {
         'themeMode': s.themeMode.index,
+        'homeMode': s.homeMode.index,
         'settingsBackgroundMode': s.settingsBackgroundMode.index,
         'iconShape': s.iconShape,
         'iconPackPackage': s.iconPackPackage,
@@ -76,6 +77,15 @@ class SettingsCubit extends Cubit<LauncherSettings> {
         'wallpaperDepthEffect': s.wallpaperDepthEffect,
         'wallpaperBlur': s.wallpaperBlur,
         'wallpaperBlurIntensity': s.wallpaperBlurIntensity,
+        'customWallpaperPath': s.customWallpaperPath,
+        'iosGridColumns': s.iosGridColumns,
+        'iosLibraryViewMode': s.iosLibraryViewMode.index,
+        'iosDockPackages': s.iosDockPackages,
+        'minimalFavoritePackages': s.minimalFavoritePackages,
+        'minimalFontSize': s.minimalFontSize,
+        'minimalUse24HourClock': s.minimalUse24HourClock,
+        'minimalDayStartMinutes': s.minimalDayStartMinutes,
+        'minimalDayEndMinutes': s.minimalDayEndMinutes,
         'showDock': s.showDock,
         'dockSize': s.dockSize,
         'dockShowBackground': s.dockShowBackground,
@@ -118,6 +128,7 @@ class SettingsCubit extends Cubit<LauncherSettings> {
 
     return LauncherSettings(
       themeMode: enumAt(ThemeMode2.values, 'themeMode', ThemeMode2.system),
+      homeMode: enumAt(HomeMode.values, 'homeMode', HomeMode.smart),
       settingsBackgroundMode: enumAt(SettingsBackgroundMode.values,
           'settingsBackgroundMode', SettingsBackgroundMode.black),
       iconShape: j['iconShape'] as String? ?? 'squircle',
@@ -153,6 +164,17 @@ class SettingsCubit extends Cubit<LauncherSettings> {
       wallpaperBlur: j['wallpaperBlur'] as bool? ?? false,
       wallpaperBlurIntensity:
           (j['wallpaperBlurIntensity'] as num?)?.toDouble() ?? 0.3,
+      customWallpaperPath: j['customWallpaperPath'] as String? ?? '',
+      iosGridColumns: j['iosGridColumns'] as int? ?? 4,
+      iosLibraryViewMode: enumAt(IosLibraryViewMode.values,
+          'iosLibraryViewMode', IosLibraryViewMode.grid),
+      iosDockPackages: (j['iosDockPackages'] as List?)?.cast<String>() ?? [],
+      minimalFavoritePackages:
+          (j['minimalFavoritePackages'] as List?)?.cast<String>() ?? [],
+      minimalFontSize: (j['minimalFontSize'] as num?)?.toDouble() ?? 16,
+      minimalUse24HourClock: j['minimalUse24HourClock'] as bool? ?? false,
+      minimalDayStartMinutes: j['minimalDayStartMinutes'] as int? ?? 8 * 60,
+      minimalDayEndMinutes: j['minimalDayEndMinutes'] as int? ?? 22 * 60,
       showDock: j['showDock'] as bool? ?? true,
       dockSize: j['dockSize'] as int? ?? 4,
       dockShowBackground: j['dockShowBackground'] as bool? ?? true,

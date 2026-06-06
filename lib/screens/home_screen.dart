@@ -49,10 +49,13 @@ import 'features/after_call_settings_screen.dart';
 import 'features/good_morning_screen.dart';
 import 'discover_page.dart';
 import 'app_library_page.dart';
-import 'settings/general_settings_screen.dart';
+import 'settings/launcher_themes_screen.dart';
 import 'settings/settings_appearance.dart';
 import 'settings/settings_root_screen.dart';
+import 'settings/wallpaper_screen.dart';
 import 'settings/widget_picker_screen.dart';
+import 'themes/ios_home_view.dart';
+import 'themes/minimal_home_view.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -716,7 +719,21 @@ class _HomeScreenState extends State<HomeScreen>
                 value: context.read<LauncherFeatureSettingsCubit>()),
             BlocProvider.value(value: context.read<AppsCubit>()),
           ],
-          child: const SettingsAppearance(child: GeneralSettingsScreen()),
+          child: const SettingsAppearance(child: LauncherThemesScreen()),
+        ),
+      ),
+    );
+  }
+
+  void _openWallpaper() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MultiBlocProvider(
+          providers: [
+            BlocProvider.value(value: context.read<SettingsCubit>()),
+          ],
+          child: const SettingsAppearance(child: WallpaperScreen()),
         ),
       ),
     );
@@ -965,101 +982,104 @@ class _HomeScreenState extends State<HomeScreen>
               resizeToAvoidBottomInset: false,
               body: Stack(
                 children: [
-                  // Workspace subtree sits under EditModeScope so its
-                  // HomeWidgetSlot / HomeWidgetStackView short-circuit their
-                  // AndroidViews while edit mode is active, freeing each
-                  // appWidgetId for the overlay below to mount its own host
-                  // views. The overlay is NOT inside this scope.
-                  EditModeScope(
-                    active: _editMode,
-                    child: DragLayer(
-                      dragController: _dragController,
-                      iconShape: settings.iconShape,
-                      pageController: _pageController,
-                      child: WorkspaceTouchListener(
-                        settings: settings,
+                  if (settings.homeMode == HomeMode.smart) ...[
+                    // Workspace subtree sits under EditModeScope so its
+                    // HomeWidgetSlot / HomeWidgetStackView short-circuit their
+                    // AndroidViews while edit mode is active, freeing each
+                    // appWidgetId for the overlay below to mount its own host
+                    // views. The overlay is NOT inside this scope.
+                    EditModeScope(
+                      active: _editMode,
+                      child: DragLayer(
                         dragController: _dragController,
-                        activeSection: _activeSection,
-                        onDoubleTap: () =>
-                            _handleGesture(settings.doubleTapAction),
-                        onSwipeUp: () => _handleGesture(settings.swipeUpAction),
-                        onSwipeDown: () =>
-                            _handleGesture(settings.swipeDownAction),
-                        onLongPress: _enterEditMode,
-                        // The pager now fills the whole body so the flanking
-                        // special pages (Discover / App Library) are full-screen.
-                        // The dock + Smart-search pill moved to a bottom overlay
-                        // (see _buildBottomChrome). Home pages reserve the status
-                        // bar + chrome band via homeTopInset/homeBottomInset.
-                        child: Visibility(
-                          // Reveal workspace when dragging from drawer so drop
-                          // targets are reachable behind the drawer. Hidden in
-                          // edit mode so the wallpaper shows through behind the
-                          // One UI–style overlay.
-                          visible: (!_drawerOpen || _drawerDraggingToHome) &&
-                              !_editMode,
-                          maintainState: true,
-                          maintainAnimation: true,
-                          maintainSize: true,
-                          // No BlocBuilder<AppsCubit> here — leaves
-                          // (BubbleTextView/FolderIconView via BlocSelector in
-                          // CellLayoutView) subscribe individually, so
-                          // notification badge updates don't rebuild the entire
-                          // PageView + AndroidView subtree.
-                          child: WorkspaceView(
-                            dragController: _dragController,
-                            settings: settings,
-                            onAppTap: (app) =>
-                                FeatureLaunchDispatcher.launch(context, app),
-                            onAppLongPress: (app, page, slot, center) =>
-                                _showAppInfoTooltip(app, center,
-                                    page: page, slot: slot),
-                            onBackgroundLongPress: _enterEditMode,
-                            onPickWidgetForStack: _openWidgetPickerForStack,
-                            onPageChanged: (offset) {
-                              const MethodChannel(
-                                      'com.genrevibes.smartlauncher/wallpaper')
-                                  .invokeMethod('setWallpaperOffset',
-                                      {'xOffset': offset});
-                            },
-                            onControllerReady: (ctrl) =>
-                                setState(() => _pageController = ctrl),
-                            homeTopInset:
-                                MediaQuery.of(context).padding.top + 8,
-                            homeBottomInset: _bottomChromeHeight,
-                            discoverBuilder: settings.discoverPageEnabled
-                                ? (ctx) => DiscoverPage(
-                                      onOpenSearch: () =>
-                                          _openSmartSearch(pinToHome: false),
-                                      onLaunchApp: (app) =>
-                                          FeatureLaunchDispatcher.launch(
-                                              ctx, app),
-                                      activeSection: _activeSection,
-                                    )
-                                : null,
-                            libraryBuilder: settings.appLibraryPageEnabled
-                                ? (ctx) => AppLibraryPage(
-                                      onLaunchApp: (app) =>
-                                          FeatureLaunchDispatcher.launch(
-                                              ctx, app),
-                                    )
-                                : null,
-                            onSectionSettled: (s) => _activeSection.value = s,
-                            onChromeProgress: (v) => _chromeOpacity.value = v,
-                            onChromeSlide: (v) => _chromeSlide.value = v,
+                        iconShape: settings.iconShape,
+                        pageController: _pageController,
+                        child: WorkspaceTouchListener(
+                          settings: settings,
+                          dragController: _dragController,
+                          activeSection: _activeSection,
+                          onDoubleTap: () =>
+                              _handleGesture(settings.doubleTapAction),
+                          onSwipeUp: () =>
+                              _handleGesture(settings.swipeUpAction),
+                          onSwipeDown: () =>
+                              _handleGesture(settings.swipeDownAction),
+                          onLongPress: _enterEditMode,
+                          child: Visibility(
+                            visible: (!_drawerOpen || _drawerDraggingToHome) &&
+                                !_editMode,
+                            maintainState: true,
+                            maintainAnimation: true,
+                            maintainSize: true,
+                            child: WorkspaceView(
+                              dragController: _dragController,
+                              settings: settings,
+                              onAppTap: (app) =>
+                                  FeatureLaunchDispatcher.launch(context, app),
+                              onAppLongPress: (app, page, slot, center) =>
+                                  _showAppInfoTooltip(app, center,
+                                      page: page, slot: slot),
+                              onBackgroundLongPress: _enterEditMode,
+                              onPickWidgetForStack: _openWidgetPickerForStack,
+                              onPageChanged: (offset) {
+                                const MethodChannel(
+                                        'com.genrevibes.smartlauncher/wallpaper')
+                                    .invokeMethod('setWallpaperOffset',
+                                        {'xOffset': offset});
+                              },
+                              onControllerReady: (ctrl) =>
+                                  setState(() => _pageController = ctrl),
+                              homeTopInset:
+                                  MediaQuery.of(context).padding.top + 8,
+                              homeBottomInset: _bottomChromeHeight,
+                              discoverBuilder: settings.discoverPageEnabled
+                                  ? (ctx) => DiscoverPage(
+                                        onOpenSearch: () =>
+                                            _openSmartSearch(pinToHome: false),
+                                        onLaunchApp: (app) =>
+                                            FeatureLaunchDispatcher.launch(
+                                                ctx, app),
+                                        activeSection: _activeSection,
+                                      )
+                                  : null,
+                              libraryBuilder: settings.appLibraryPageEnabled
+                                  ? (ctx) => AppLibraryPage(
+                                        onLaunchApp: (app) =>
+                                            FeatureLaunchDispatcher.launch(
+                                                ctx, app),
+                                      )
+                                  : null,
+                              onSectionSettled: (s) => _activeSection.value = s,
+                              onChromeProgress: (v) => _chromeOpacity.value = v,
+                              onChromeSlide: (v) => _chromeSlide.value = v,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  // Dock + Smart-search pill band — drawn over the workspace,
-                  // visible only on home pages (faded out on the special pages).
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: _buildBottomChrome(context, settings),
-                  ),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: _buildBottomChrome(context, settings),
+                    ),
+                  ] else if (settings.homeMode == HomeMode.ios)
+                    IosHomeView(
+                      settings: settings,
+                      onLaunchApp: (app) =>
+                          FeatureLaunchDispatcher.launch(context, app),
+                      onOpenSearch: () => _openSmartSearch(pinToHome: true),
+                      onOpenWallpaper: _openWallpaper,
+                      onOpenSettings: _openSettings,
+                    )
+                  else
+                    MinimalHomeView(
+                      settings: settings,
+                      onLaunchApp: (app) =>
+                          FeatureLaunchDispatcher.launch(context, app),
+                      onOpenSearch: () => _openSmartSearch(pinToHome: true),
+                      onOpenSettings: _openSettings,
+                    ),
                   if (_drawerOpen)
                     AllAppsContainer(
                       settings: settings,
@@ -1077,13 +1097,13 @@ class _HomeScreenState extends State<HomeScreen>
                       onDragCancelled: () =>
                           setState(() => _drawerDraggingToHome = false),
                     ),
-                  if (_editMode)
+                  if (_editMode && settings.homeMode == HomeMode.smart)
                     EditModeOverlay(
                       settings: settings,
                       onDismiss: _exitEditMode,
                       onWallpaper: () {
                         _exitEditMode();
-                        LauncherService.changeWallpaper();
+                        _openWallpaper();
                       },
                       onThemes: () {
                         _exitEditMode();

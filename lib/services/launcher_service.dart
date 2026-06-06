@@ -273,6 +273,14 @@ class LauncherService {
   static Future<bool> openStopwatch() async =>
       await _alarm.invokeMethod<bool>('openStopwatch') ?? false;
 
+  static Future<int> getBatteryLevel() async {
+    try {
+      return await _system.invokeMethod<int>('getBatteryLevel') ?? -1;
+    } catch (_) {
+      return -1;
+    }
+  }
+
   static Future<bool> canDrawOverlays() async =>
       await _system.invokeMethod<bool>('canDrawOverlays') ?? false;
 
