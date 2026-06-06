@@ -26,7 +26,17 @@ class _LibraryFolder {
 class AppLibraryPage extends StatefulWidget {
   final void Function(AppInfo app) onLaunchApp;
 
-  const AppLibraryPage({super.key, required this.onLaunchApp});
+  /// When true, the page paints no background of its own — it's transparent so
+  /// the caller can place a full-bleed frosted/blurred wallpaper behind it (the
+  /// iOS theme look). When false (default, the smart theme) it paints solid
+  /// opaque black.
+  final bool translucent;
+
+  const AppLibraryPage({
+    super.key,
+    required this.onLaunchApp,
+    this.translucent = false,
+  });
 
   @override
   State<AppLibraryPage> createState() => _AppLibraryPageState();
@@ -97,22 +107,27 @@ class _AppLibraryPageState extends State<AppLibraryPage> {
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsCubit>().state;
     final hidden = settings.hiddenApps.toSet();
-    return ColoredBox(
-      color: Colors.black,
-      child: BlocBuilder<AppsCubit, AppsState>(
-        buildWhen: (a, b) => a.apps != b.apps,
-        builder: (context, appsState) {
-          return SafeArea(
-            child: CustomScrollView(
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              slivers: _query.isEmpty
-                  ? _browseSlivers(appsState, hidden, settings)
-                  : _searchSlivers(_filtered(appsState, hidden)),
-            ),
-          );
-        },
-      ),
+    final content = BlocBuilder<AppsCubit, AppsState>(
+      buildWhen: (a, b) => a.apps != b.apps,
+      builder: (context, appsState) {
+        return SafeArea(
+          child: CustomScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            slivers: _query.isEmpty
+                ? _browseSlivers(appsState, hidden, settings)
+                : _searchSlivers(_filtered(appsState, hidden)),
+          ),
+        );
+      },
     );
+    if (!widget.translucent) {
+      return ColoredBox(color: Colors.black, child: content);
+    }
+    // Transparent: the iOS theme stacks its own full-bleed blurred wallpaper +
+    // dim scrim behind this page, so we must not paint a background (and must
+    // not use a BackdropFilter, which would bleed onto the neighbouring page
+    // during a horizontal swipe).
+    return content;
   }
 
   // ── Browse mode: category folders, then an A–Z drawer-style app list ────────

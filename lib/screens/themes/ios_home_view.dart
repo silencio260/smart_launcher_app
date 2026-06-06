@@ -50,6 +50,9 @@ class _IosHomeViewState extends State<IosHomeView>
   double _dragOrigin = 1;
   bool _editMode = false;
   bool _searchOpen = false;
+  // Controller index of the App Library (far-right) page. Cached during build so
+  // the full-screen swipe-up zone (below the pager) can jump straight to it.
+  int _libraryPageIndex = 1;
 
   // Bundled default iOS wallpaper. Used only when the user hasn't set a custom/
   // device wallpaper; if the asset is missing the background falls back to the
@@ -83,127 +86,163 @@ class _IosHomeViewState extends State<IosHomeView>
           assetFallback: _iosWallpaperAsset,
           fallbackColors: const [Color(0xFF1A2440), Color(0xFF9C6F72)],
         ),
-        SafeArea(
-          child: BlocBuilder<AppsCubit, AppsState>(
-            buildWhen: (prev, next) => prev.apps != next.apps,
-            builder: (context, appsState) {
-              final apps = _visibleApps(appsState.apps, settings);
-              final homePages = _pages(apps, settings);
-              final dock = _dockApps(apps, settings);
-              // Effective pager layout: [Discover] [home 0..N] [App Library].
-              final itemCount = homePages.length + 2;
-              final homeIndex =
-                  (_currentPage - 1).clamp(0, homePages.length - 1);
-              final onHomePage =
-                  _currentPage >= 1 && _currentPage <= homePages.length;
-              // Long-press (home options) and tap (exit edit) live on an opaque
-              // wrapper. Neither competes with the PageView's horizontal drag,
-              // so paging stays crisp — unlike the old screen-wide vertical
-              // drag recognizer, which is now confined to a top strip below.
-              return GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onLongPress: _showHomeOptions,
-                onTap: _editMode ? _exitEditMode : null,
-                child: Column(
-                  children: [
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: NotificationListener<ScrollStartNotification>(
-                        // Record which page a drag starts from so the physics
-                        // can measure commit distance symmetrically (forward and
-                        // backward) instead of relative to floor(page).
-                        onNotification: (n) {
-                          if (n.dragDetails != null) {
-                            _dragOrigin =
-                                (_pageController.page ?? _dragOrigin)
-                                    .roundToDouble();
-                          }
-                          return false;
-                        },
-                        child: PageView.builder(
-                          controller: _pageController,
-                          // Custom snapping (pageSnapping:false) so our physics
-                          // fully owns the commit threshold; otherwise Flutter's
-                          // built-in PageScrollPhysics runs first and a swipe
-                          // that doesn't cross ~50% springs back to the page.
-                          pageSnapping: false,
-                          physics: _editMode
-                              ? const NeverScrollableScrollPhysics()
-                              : _SnappyPagePhysics(
-                                  parent: const BouncingScrollPhysics(),
-                                  origin: () => _dragOrigin,
-                                ),
-                          itemCount: itemCount,
-                        onPageChanged: (value) =>
-                            setState(() => _currentPage = value),
-                        itemBuilder: (context, index) {
-                          if (index == 0) {
-                            return DiscoverPage(
-                              onOpenSearch: widget.onOpenSearch,
-                              onLaunchApp: widget.onLaunchApp,
-                            );
-                          }
-                          if (index == itemCount - 1) {
-                            return AppLibraryPage(
-                              onLaunchApp: widget.onLaunchApp,
-                            );
-                          }
-                          final page = homePages[index - 1];
-                          return _IosPageView(
-                            page: page,
-                            settings: settings,
-                            editMode: _editMode,
-                            jiggle: _jiggle,
-                            onLaunch: widget.onLaunchApp,
-                            onLaunchTemplate: _launchTemplateApp,
-                            onLongPress: _showAppMenuAt,
-                            onRemove: _hideApp,
+        BlocBuilder<AppsCubit, AppsState>(
+          buildWhen: (prev, next) => prev.apps != next.apps,
+          builder: (context, appsState) {
+            final apps = _visibleApps(appsState.apps, settings);
+            final homePages = _pages(apps, settings);
+            final dock = _dockApps(apps, settings);
+            // Effective pager layout: [Discover] [home 0..N] [App Library].
+            final itemCount = homePages.length + 2;
+            _libraryPageIndex = itemCount - 1;
+            final homeIndex =
+                (_currentPage - 1).clamp(0, homePages.length - 1);
+            final onHomePage =
+                _currentPage >= 1 && _currentPage <= homePages.length;
+            // Space the home grids leave at the bottom for the dock+dots
+            // overlay so icons don't slide underneath it.
+            final dockReserve = 120.0 + MediaQuery.of(context).padding.bottom;
+            // Long-press (home options) and tap (exit edit) live on an opaque
+            // wrapper. Neither competes with the PageView's horizontal drag,
+            // so paging stays crisp.
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onLongPress: _showHomeOptions,
+              onTap: _editMode ? _exitEditMode : null,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // Full-screen pager so special pages (App Library) can paint a
+                  // full-bleed background under the status bar and home area.
+                  NotificationListener<ScrollStartNotification>(
+                    // Record which page a drag starts from so the physics can
+                    // measure commit distance symmetrically (forward and
+                    // backward) instead of relative to floor(page).
+                    onNotification: (n) {
+                      if (n.dragDetails != null) {
+                        _dragOrigin = (_pageController.page ?? _dragOrigin)
+                            .roundToDouble();
+                      }
+                      return false;
+                    },
+                    child: PageView.builder(
+                      controller: _pageController,
+                      // Custom snapping (pageSnapping:false) so our physics fully
+                      // owns the commit threshold; otherwise Flutter's built-in
+                      // PageScrollPhysics runs first and a swipe that doesn't
+                      // cross ~50% springs back to the page.
+                      pageSnapping: false,
+                      physics: _editMode
+                          ? const NeverScrollableScrollPhysics()
+                          : _SnappyPagePhysics(
+                              parent: const BouncingScrollPhysics(),
+                              origin: () => _dragOrigin,
+                            ),
+                      itemCount: itemCount,
+                      onPageChanged: (value) =>
+                          setState(() => _currentPage = value),
+                      itemBuilder: (context, index) {
+                        if (index == 0) {
+                          return DiscoverPage(
+                            onOpenSearch: widget.onOpenSearch,
+                            onLaunchApp: widget.onLaunchApp,
                           );
-                        },
+                        }
+                        if (index == itemCount - 1) {
+                          return _buildLibraryPage(settings);
+                        }
+                        final page = homePages[index - 1];
+                        return SafeArea(
+                          bottom: false,
+                          child: Padding(
+                            padding:
+                                EdgeInsets.only(top: 8, bottom: dockReserve),
+                            child: _IosPageView(
+                              page: page,
+                              settings: settings,
+                              editMode: _editMode,
+                              jiggle: _jiggle,
+                              onLaunch: widget.onLaunchApp,
+                              onLaunchTemplate: _launchTemplateApp,
+                              onLongPress: _showAppMenuAt,
+                              onRemove: _hideApp,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  // Dock + page dots: a bottom overlay shown only on home pages
+                  // (never on Discover or the full-bleed App Library).
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: IgnorePointer(
+                      ignoring: !onHomePage,
+                      child: AnimatedOpacity(
+                        opacity: onHomePage ? 1 : 0,
+                        duration: const Duration(milliseconds: 180),
+                        child: SafeArea(
+                          top: false,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _PageDots(
+                                count: homePages.length,
+                                current: homeIndex,
+                              ),
+                              const SizedBox(height: 8),
+                              _Dock(
+                                apps: dock,
+                                settings: settings,
+                                editMode: _editMode,
+                                jiggle: _jiggle,
+                                onLaunch: widget.onLaunchApp,
+                                onLongPress: _showAppMenuAt,
+                                onRemove: _removeFromDock,
+                              ),
+                              const SizedBox(height: 8),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                    Opacity(
-                      opacity: onHomePage ? 1 : 0,
-                      child: _PageDots(
-                        count: homePages.length,
-                        current: homeIndex,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _Dock(
-                      apps: dock,
-                      settings: settings,
-                      editMode: _editMode,
-                      jiggle: _jiggle,
-                      onLaunch: widget.onLaunchApp,
-                      onLongPress: _showAppMenuAt,
-                      onRemove: _removeFromDock,
-                    ),
-                    SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
-                  ],
-                ),
-              );
-            },
-          ),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
-        // Spotlight swipe-down zone, confined to a top strip so it never steals
-        // horizontal page swipes across the grid (mirrors iOS pull-down search).
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          height: 110,
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onVerticalDragEnd: (details) {
-              if (_editMode) return;
-              if ((details.primaryVelocity ?? 0) > 320) {
-                setState(() => _searchOpen = true);
-              }
-            },
+        // Full-screen vertical-swipe zone over the home area: swipe down →
+        // Spotlight search, swipe up → App Library (the far-right page). It's
+        // translucent and only claims vertical drags, so taps, long-press and
+        // the PageView's horizontal paging all still reach the content below.
+        if (!_editMode)
+          Positioned.fill(
+            // Active only on a home page. On Discover / App Library it ignores
+            // pointers so those pages' own vertical scrolling works; home page
+            // grids don't scroll (NeverScrollableScrollPhysics), so there's no
+            // gesture to steal there.
+            child: IgnorePointer(
+              ignoring: !(_currentPage >= 1 && _currentPage < _libraryPageIndex),
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onVerticalDragEnd: (details) {
+                  final velocity = details.primaryVelocity ?? 0;
+                  if (velocity > 320) {
+                    setState(() => _searchOpen = true); // pull down → Spotlight
+                  } else if (velocity < -320) {
+                    _pageController.animateToPage(
+                      _libraryPageIndex, // swipe up → App Library
+                      duration: const Duration(milliseconds: 320),
+                      curve: Curves.easeOutCubic,
+                    );
+                  }
+                },
+              ),
+            ),
           ),
-        ),
         if (_editMode)
           SafeArea(
             child: Align(
@@ -223,6 +262,30 @@ class _IosHomeViewState extends State<IosHomeView>
             onClose: () => setState(() => _searchOpen = false),
             onLaunch: widget.onLaunchApp,
           ),
+      ],
+    );
+  }
+
+  /// The far-right App Library page, rendered full-bleed (under the status bar
+  /// and home area). Its blurred wallpaper and dim scrim live INSIDE the page —
+  /// not as a BackdropFilter over the pager — so the blur can't bleed onto the
+  /// neighbouring home page while swiping between them.
+  Widget _buildLibraryPage(LauncherSettings settings) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ThemedWallpaperBackground(
+          path: settings.customWallpaperPath,
+          assetFallback: _iosWallpaperAsset,
+          fallbackColors: const [Color(0xFF1A2440), Color(0xFF9C6F72)],
+          blur: true,
+          blurSigma: 28,
+        ),
+        const ColoredBox(color: Color(0x99000000)),
+        AppLibraryPage(
+          onLaunchApp: widget.onLaunchApp,
+          translucent: true,
+        ),
       ],
     );
   }
