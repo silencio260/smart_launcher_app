@@ -4,7 +4,6 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:intl/intl.dart';
 
 import '../../models/app_info.dart';
 import '../../models/launcher_settings.dart';
@@ -44,9 +43,6 @@ class _IosHomeViewState extends State<IosHomeView>
   bool _editMode = false;
   bool _libraryOpen = false;
   bool _searchOpen = false;
-  Timer? _clockTimer;
-  DateTime _now = DateTime.now();
-  int _batteryLevel = -1;
 
   @override
   void initState() {
@@ -55,15 +51,10 @@ class _IosHomeViewState extends State<IosHomeView>
       vsync: this,
       duration: const Duration(milliseconds: 140),
     );
-    _clockTimer = Timer.periodic(const Duration(seconds: 20), (_) {
-      if (mounted) setState(() => _now = DateTime.now());
-    });
-    _loadBattery();
   }
 
   @override
   void dispose() {
-    _clockTimer?.cancel();
     _jiggle.dispose();
     _pageController.dispose();
     super.dispose();
@@ -98,11 +89,7 @@ class _IosHomeViewState extends State<IosHomeView>
                 },
                 child: Column(
                   children: [
-                    _RealStatusBar(
-                      now: _now,
-                      batteryLevel: _batteryLevel,
-                      onSettings: widget.onOpenSettings,
-                    ),
+                    const SizedBox(height: 8),
                     Expanded(
                       child: PageView.builder(
                         controller: _pageController,
@@ -199,12 +186,25 @@ class _IosHomeViewState extends State<IosHomeView>
     final remaining = apps
         .where((app) => !templatePackages.contains(app.packageName))
         .toList();
-    final size = (settings.iosGridColumns.clamp(3, 5) * 5).toInt();
+    final columns = settings.iosGridColumns.clamp(3, 5).toInt();
+    final size = columns * 5;
+    // The first page also shows the widgets row, so it holds fewer icons
+    // (two rows) to keep it from feeling cramped. The rest flow onto
+    // subsequent full-height pages.
+    final firstPageCount = columns * 2;
     final pages = <_IosPage>[
-      _IosPage(templateApps: template.take(16).toList(), showWidgets: true),
+      _IosPage(
+        templateApps: template.take(firstPageCount).toList(),
+        showWidgets: true,
+      ),
     ];
-    if (template.length > 16) {
-      pages.add(_IosPage(templateApps: template.skip(16).toList()));
+    for (var i = firstPageCount; i < template.length; i += size) {
+      pages.add(
+        _IosPage(
+          templateApps:
+              template.sublist(i, math.min(template.length, i + size)),
+        ),
+      );
     }
     for (var i = 0; i < remaining.length; i += size) {
       pages.add(
@@ -257,11 +257,6 @@ class _IosHomeViewState extends State<IosHomeView>
       }
     }
     return null;
-  }
-
-  Future<void> _loadBattery() async {
-    final level = await LauncherService.getBatteryLevel();
-    if (mounted) setState(() => _batteryLevel = level);
   }
 
   Future<void> _launchTemplateApp(_IosTemplateApp template) async {
@@ -384,103 +379,6 @@ class _IosHomeViewState extends State<IosHomeView>
         _enterEditMode();
         break;
     }
-  }
-}
-
-class _RealStatusBar extends StatelessWidget {
-  final DateTime now;
-  final int batteryLevel;
-  final VoidCallback onSettings;
-
-  const _RealStatusBar({
-    required this.now,
-    required this.batteryLevel,
-    required this.onSettings,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final level = batteryLevel < 0 ? null : batteryLevel.clamp(0, 100);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 6, 18, 8),
-      child: Row(
-        children: [
-          Text(
-            DateFormat('h:mm').format(now),
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              shadows: [Shadow(blurRadius: 4, color: Colors.black54)],
-            ),
-          ),
-          const Spacer(),
-          GestureDetector(
-            onTap: onSettings,
-            child: Row(
-              children: [
-                if (level != null)
-                  Text(
-                    '$level%',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      shadows: [Shadow(blurRadius: 4, color: Colors.black54)],
-                    ),
-                  ),
-                const SizedBox(width: 6),
-                _BatteryGlyph(level: level),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BatteryGlyph extends StatelessWidget {
-  final int? level;
-
-  const _BatteryGlyph({required this.level});
-
-  @override
-  Widget build(BuildContext context) {
-    final fill = ((level ?? 72) / 100).clamp(0.05, 1.0).toDouble();
-    final color = (level ?? 72) <= 20 ? const Color(0xFFFF453A) : Colors.white;
-    return Row(
-      children: [
-        Container(
-          width: 24,
-          height: 12,
-          padding: const EdgeInsets.all(1.5),
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.white, width: 1.2),
-            borderRadius: BorderRadius.circular(3),
-          ),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: FractionallySizedBox(
-              widthFactor: fill,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: color,
-                  borderRadius: BorderRadius.circular(1.5),
-                ),
-              ),
-            ),
-          ),
-        ),
-        Container(
-          width: 2.5,
-          height: 5,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-      ],
-    );
   }
 }
 
