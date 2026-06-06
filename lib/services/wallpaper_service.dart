@@ -10,6 +10,8 @@ import '../models/wallpaper_item.dart';
 class WallpaperService {
   static const _channel =
       MethodChannel('com.genrevibes.smartlauncher/wallpaper');
+  static const iosTemplateWallpaperAsset =
+      'assets/ios_theme/wallpaper/ios_default.jpg';
   static const storeUrl =
       'https://raw.githubusercontent.com/code3-dev/code3-dev/refs/heads/main/pc.json';
 
@@ -34,10 +36,27 @@ class WallpaperService {
       }
       final text = await response.transform(utf8.decoder).join();
       final data = jsonDecode(text) as List<dynamic>;
-      return _itemsFromUrls(data.map((item) => item.toString()).toList());
+      return _withBundledWallpapers(
+          _itemsFromUrls(data.map((item) => item.toString()).toList()));
     } catch (_) {
-      return _itemsFromUrls(fallbackUrls);
+      return _withBundledWallpapers(_itemsFromUrls(fallbackUrls));
     }
+  }
+
+  static List<WallpaperItem> _withBundledWallpapers(
+    List<WallpaperItem> wallpapers,
+  ) {
+    return [
+      const WallpaperItem(
+        id: 'ios_template_default',
+        title: 'iOS Template',
+        collection: 'Bundled',
+        imageUrl: '',
+        thumbnailUrl: '',
+        assetPath: iosTemplateWallpaperAsset,
+      ),
+      ...wallpapers,
+    ];
   }
 
   static List<WallpaperItem> _itemsFromUrls(List<String> urls) {
@@ -82,6 +101,15 @@ class WallpaperService {
 
   static Future<String> download(WallpaperItem item) async {
     final dir = await _wallpaperDir();
+    if (item.isAsset) {
+      final ext = _extension(item.assetPath.split('/').last);
+      final file = File('${dir.path}/${item.id}.${ext.isEmpty ? 'jpg' : ext}');
+      if (await file.exists()) return file.path;
+      final data = await rootBundle.load(item.assetPath);
+      await file.writeAsBytes(data.buffer.asUint8List(), flush: true);
+      return file.path;
+    }
+
     final segments = Uri.parse(item.imageUrl).pathSegments;
     final ext = segments.isEmpty ? '' : _extension(segments.last);
     final file = File('${dir.path}/${item.id}.${ext.isEmpty ? 'jpg' : ext}');

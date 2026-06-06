@@ -1,12 +1,7 @@
 # iOS theme wallpapers
 
-Drop the default iOS wallpaper here as `ios_default.jpg`.
+`ios_default.jpg` is bundled as a selectable wallpaper in the Wallpaper screen.
 
-The iOS launcher theme uses it as the background when no custom/device
-wallpaper is set (see `_iosWallpaperAsset` in
-`lib/screens/themes/ios_home_view.dart`). If the file is missing, the theme
-falls back to an iOS-style gradient automatically.
-
-Add more wallpapers in this folder and register/reference them as needed.
-</content>
-</invoke>
+The iOS launcher surfaces should still prefer the user's current phone wallpaper
+by default. Bundled images in this folder are only used after the user selects
+one as a theme/device wallpaper.

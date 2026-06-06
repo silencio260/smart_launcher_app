@@ -13,16 +13,17 @@ class ThemedWallpaperBackground extends StatefulWidget {
   /// gradient fallback. A missing asset degrades gracefully to the gradient.
   final String? assetFallback;
 
-  /// When [path] is empty/missing, load the device's live system wallpaper —
-  /// the same wallpaper the Smart launcher shows through its transparent
-  /// scaffold — before falling back to [assetFallback] / the gradient. This is
-  /// how opaque surfaces (the iOS App Library, the Minimal drawer) match the
-  /// home wallpaper instead of painting a flat colour.
+  /// When [path] is empty/missing, load the device's static system wallpaper
+  /// before falling back to [assetFallback] / the gradient.
   final bool useSystemWallpaper;
 
   final bool blur;
   final double blurSigma;
   final List<Color> fallbackColors;
+
+  /// If Android cannot expose a static wallpaper bitmap, paint nothing so the
+  /// launcher's wallpaper window shows the current live/system wallpaper.
+  final bool transparentSystemFallback;
 
   const ThemedWallpaperBackground({
     super.key,
@@ -32,6 +33,7 @@ class ThemedWallpaperBackground extends StatefulWidget {
     this.blur = false,
     this.blurSigma = 12,
     this.fallbackColors = const [Color(0xFF151A1F), Color(0xFF364D45)],
+    this.transparentSystemFallback = false,
   });
 
   @override
@@ -48,6 +50,11 @@ class _ThemedWallpaperBackgroundState extends State<ThemedWallpaperBackground> {
   @override
   void initState() {
     super.initState();
+    // Seed from the synchronous cache so the very first frame already shows the
+    // wallpaper (no black flash) on repeat opens.
+    if (widget.useSystemWallpaper && !_hasFile) {
+      _systemBytes = WallpaperService.cachedSystemWallpaper;
+    }
     _maybeLoadSystem();
   }
 
@@ -104,6 +111,8 @@ class _ThemedWallpaperBackgroundState extends State<ThemedWallpaperBackground> {
         gaplessPlayback: true,
         errorBuilder: (context, error, stackTrace) => _gradient(),
       );
+    } else if (widget.useSystemWallpaper && widget.transparentSystemFallback) {
+      child = const SizedBox.expand();
     } else if (widget.assetFallback != null &&
         widget.assetFallback!.isNotEmpty) {
       child = Image.asset(

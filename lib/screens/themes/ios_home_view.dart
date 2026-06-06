@@ -49,18 +49,12 @@ class _IosHomeViewState extends State<IosHomeView>
   // relative to this so the threshold is symmetric forward and backward.
   double _dragOrigin = 1;
   bool _editMode = false;
-  bool _searchOpen = false;
+  bool _spotlightOpen = false;
   // Cumulative upward drag distance for the swipe-up-to-Spotlight gesture.
   double _swipeUpDistance = 0;
   // Controller index of the App Library (far-right) page. Cached during build so
   // the full-screen swipe-up zone (below the pager) can jump straight to it.
   int _libraryPageIndex = 1;
-
-  // Bundled iOS template wallpaper. This keeps the iOS theme self-contained:
-  // Spotlight, App Library, and home never depend on a transparent route or a
-  // readable Android system wallpaper to avoid a black background.
-  static const _iosWallpaperAsset =
-      'assets/ios_theme/wallpaper/ios_default.jpg';
 
   @override
   void initState() {
@@ -87,7 +81,7 @@ class _IosHomeViewState extends State<IosHomeView>
         ThemedWallpaperBackground(
           path: settings.customWallpaperPath,
           useSystemWallpaper: true,
-          assetFallback: _iosWallpaperAsset,
+          transparentSystemFallback: true,
           fallbackColors: const [Color(0xFF1A2440), Color(0xFF9C6F72)],
         ),
         BlocBuilder<AppsCubit, AppsState>(
@@ -238,15 +232,15 @@ class _IosHomeViewState extends State<IosHomeView>
                   // Spotlight too, not just a fast fling — trigger as soon as the
                   // drag passes the distance threshold for instant feedback.
                   _swipeUpDistance -= details.primaryDelta ?? 0;
-                  if (!_searchOpen && _swipeUpDistance > 90) {
-                    setState(() => _searchOpen = true); // swipe up → Spotlight
+                  if (!_spotlightOpen && _swipeUpDistance > 90) {
+                    _openSpotlight();
                   }
                 },
                 onVerticalDragEnd: (details) {
                   // Fast flick still opens it even if distance was short.
                   final velocity = details.primaryVelocity ?? 0;
-                  if (!_searchOpen && velocity < -280) {
-                    setState(() => _searchOpen = true);
+                  if (!_spotlightOpen && velocity < -280) {
+                    _openSpotlight();
                   }
                   _swipeUpDistance = 0;
                 },
@@ -266,14 +260,43 @@ class _IosHomeViewState extends State<IosHomeView>
               ),
             ),
           ),
-        if (_searchOpen)
-          _IosSpotlight(
-            settings: settings,
-            onClose: () => setState(() => _searchOpen = false),
-            onLaunch: widget.onLaunchApp,
-          ),
       ],
     );
+  }
+
+  Future<void> _openSpotlight() async {
+    if (_spotlightOpen) return;
+    _swipeUpDistance = 0;
+    setState(() => _spotlightOpen = true);
+    await Navigator.of(context).push<void>(
+      PageRouteBuilder<void>(
+        opaque: true,
+        transitionDuration: const Duration(milliseconds: 180),
+        reverseTransitionDuration: const Duration(milliseconds: 140),
+        pageBuilder: (routeContext, animation, secondaryAnimation) {
+          return _IosSpotlight(
+            settings: widget.settings,
+            onClose: () => Navigator.of(routeContext).maybePop(),
+            onLaunch: widget.onLaunchApp,
+          );
+        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.04),
+                end: Offset.zero,
+              ).animate(
+                CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+              ),
+              child: child,
+            ),
+          );
+        },
+      ),
+    );
+    if (mounted) setState(() => _spotlightOpen = false);
   }
 
   /// The far-right App Library page, rendered full-bleed (under the status bar
@@ -287,7 +310,7 @@ class _IosHomeViewState extends State<IosHomeView>
         ThemedWallpaperBackground(
           path: settings.customWallpaperPath,
           useSystemWallpaper: true,
-          assetFallback: _iosWallpaperAsset,
+          transparentSystemFallback: true,
           blur: true,
           blurSigma: 28,
           fallbackColors: const [Color(0xFF1A2440), Color(0xFF9C6F72)],
@@ -1900,81 +1923,71 @@ class _IosSpotlightState extends State<_IosSpotlight> {
             !hidden.contains(app.packageName) &&
             app.name.toLowerCase().contains(_query.toLowerCase()))
         .toList();
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
-        if (!didPop) widget.onClose();
-      },
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Opaque background that mirrors the App Library: a blurred copy of
-          // the theme/system wallpaper plus a dark scrim. The home page never
-          // shows through Spotlight.
-          const ColoredBox(color: Colors.black),
-          ThemedWallpaperBackground(
-            path: widget.settings.customWallpaperPath,
-            useSystemWallpaper: true,
-            assetFallback: _IosHomeViewState._iosWallpaperAsset,
-            blur: true,
-            blurSigma: 28,
-            fallbackColors: const [Color(0xFF1A2440), Color(0xFF9C6F72)],
-          ),
-          const ColoredBox(color: Color(0x99000000)),
-          Material(
-            type: MaterialType.transparency,
-            child: SafeArea(
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-                    child: TextField(
-                      autofocus: true,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: InputDecoration(
-                        hintText: 'Search',
-                        hintStyle: const TextStyle(color: Colors.white54),
-                        prefixIcon:
-                            const Icon(Icons.search, color: Colors.white70),
-                        suffixIcon: IconButton(
-                          onPressed: widget.onClose,
-                          icon: const Icon(Icons.close, color: Colors.white70),
-                        ),
-                        filled: true,
-                        fillColor: Colors.white.withValues(alpha: 0.18),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(18),
-                          borderSide: BorderSide.none,
-                        ),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ThemedWallpaperBackground(
+          path: widget.settings.customWallpaperPath,
+          useSystemWallpaper: true,
+          transparentSystemFallback: true,
+          blur: true,
+          blurSigma: 28,
+          fallbackColors: const [Color(0xFF1A2440), Color(0xFF9C6F72)],
+        ),
+        const ColoredBox(color: Color(0x99000000)),
+        Material(
+          type: MaterialType.transparency,
+          child: SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                  child: TextField(
+                    autofocus: true,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'Search',
+                      hintStyle: const TextStyle(color: Colors.white54),
+                      prefixIcon:
+                          const Icon(Icons.search, color: Colors.white70),
+                      suffixIcon: IconButton(
+                        onPressed: widget.onClose,
+                        icon: const Icon(Icons.close, color: Colors.white70),
                       ),
-                      onChanged: (value) => setState(() => _query = value),
+                      filled: true,
+                      fillColor: Colors.white.withValues(alpha: 0.18),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: BorderSide.none,
+                      ),
                     ),
+                    onChanged: (value) => setState(() => _query = value),
                   ),
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: apps.length,
-                      itemBuilder: (context, index) {
-                        final app = apps[index];
-                        return ListTile(
-                          leading: _Icon(app: app, size: 40),
-                          title: Text(
-                            app.name,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          onTap: () {
-                            widget.onClose();
-                            widget.onLaunch(app);
-                          },
-                        );
-                      },
-                    ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: apps.length,
+                    itemBuilder: (context, index) {
+                      final app = apps[index];
+                      return ListTile(
+                        leading: _Icon(app: app, size: 40),
+                        title: Text(
+                          app.name,
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                        onTap: () {
+                          widget.onClose();
+                          widget.onLaunch(app);
+                        },
+                      );
+                    },
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

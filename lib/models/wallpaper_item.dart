@@ -4,6 +4,7 @@ class WallpaperItem {
   final String collection;
   final String imageUrl;
   final String thumbnailUrl;
+  final String assetPath;
   final bool isLive;
 
   const WallpaperItem({
@@ -12,6 +13,9 @@ class WallpaperItem {
     required this.collection,
     required this.imageUrl,
     required this.thumbnailUrl,
+    this.assetPath = '',
     this.isLive = false,
   });
+
+  bool get isAsset => assetPath.isNotEmpty;
 }

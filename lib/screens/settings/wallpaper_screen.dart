@@ -214,14 +214,7 @@ class _WallpaperTile extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            CachedNetworkImage(
-              imageUrl: item.thumbnailUrl,
-              fit: BoxFit.cover,
-              placeholder: (_, __) => const Center(
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-              errorWidget: (_, __, ___) => const Icon(Icons.broken_image),
-            ),
+            _WallpaperImage(item: item),
             Positioned(
               top: 8,
               right: 8,
@@ -350,15 +343,10 @@ class _WallpaperPreviewScreenState extends State<_WallpaperPreviewScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          CachedNetworkImage(
-            imageUrl: widget.item.imageUrl,
-            fit: BoxFit.cover,
-            placeholder: (_, __) => const Center(
-              child: CircularProgressIndicator(color: Colors.white),
-            ),
-            errorWidget: (_, __, ___) => const Center(
-              child: Icon(Icons.broken_image, color: Colors.white70),
-            ),
+          _WallpaperImage(
+            item: widget.item,
+            loadingColor: Colors.white,
+            brokenColor: Colors.white70,
           ),
           Positioned(
             left: 16,
@@ -399,6 +387,47 @@ class _WallpaperPreviewScreenState extends State<_WallpaperPreviewScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _WallpaperImage extends StatelessWidget {
+  final WallpaperItem item;
+  final Color? loadingColor;
+  final Color? brokenColor;
+
+  const _WallpaperImage({
+    required this.item,
+    this.loadingColor,
+    this.brokenColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (item.isAsset) {
+      return Image.asset(
+        item.assetPath,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Icon(
+          Icons.broken_image,
+          color: brokenColor,
+        ),
+      );
+    }
+    return CachedNetworkImage(
+      imageUrl:
+          item.thumbnailUrl.isNotEmpty ? item.thumbnailUrl : item.imageUrl,
+      fit: BoxFit.cover,
+      placeholder: (_, __) => Center(
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: loadingColor,
+        ),
+      ),
+      errorWidget: (_, __, ___) => Icon(
+        Icons.broken_image,
+        color: brokenColor,
       ),
     );
   }
