@@ -5,6 +5,10 @@ import 'package:flutter/material.dart';
 
 class ThemedWallpaperBackground extends StatelessWidget {
   final String path;
+
+  /// Optional bundled asset shown when [path] is empty/missing, before the
+  /// gradient fallback. A missing asset degrades gracefully to the gradient.
+  final String? assetFallback;
   final bool blur;
   final double blurSigma;
   final List<Color> fallbackColors;
@@ -12,10 +16,21 @@ class ThemedWallpaperBackground extends StatelessWidget {
   const ThemedWallpaperBackground({
     super.key,
     required this.path,
+    this.assetFallback,
     this.blur = false,
     this.blurSigma = 12,
     this.fallbackColors = const [Color(0xFF151A1F), Color(0xFF364D45)],
   });
+
+  Widget _gradient() => DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: fallbackColors,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -27,16 +42,18 @@ class ThemedWallpaperBackground extends StatelessWidget {
         width: double.infinity,
         height: double.infinity,
       );
-    } else {
-      child = DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: fallbackColors,
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
+    } else if (assetFallback != null && assetFallback!.isNotEmpty) {
+      child = Image.asset(
+        assetFallback!,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+        // If the bundled wallpaper isn't present, fall back to the gradient
+        // instead of throwing.
+        errorBuilder: (context, error, stackTrace) => _gradient(),
       );
+    } else {
+      child = _gradient();
     }
 
     if (!blur) return Positioned.fill(child: child);

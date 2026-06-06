@@ -6,14 +6,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../models/app_info.dart';
+import '../../models/launcher_feature.dart';
 import '../../models/launcher_settings.dart';
-import '../../services/app_categories.dart';
 import '../../services/launcher_service.dart';
 import '../../state/apps_cubit.dart';
+import '../../state/launcher_feature_cubit.dart';
 import '../../state/settings_cubit.dart';
 import '../../widgets/icons/feature_icon.dart';
 import '../../widgets/icons/shaped_icon.dart';
 import '../../widgets/wallpaper/themed_wallpaper_background.dart';
+import '../app_library_page.dart';
+import '../discover_page.dart';
 
 class IosHomeView extends StatefulWidget {
   final LauncherSettings settings;
@@ -38,11 +41,17 @@ class IosHomeView extends StatefulWidget {
 class _IosHomeViewState extends State<IosHomeView>
     with SingleTickerProviderStateMixin {
   late final AnimationController _jiggle;
-  final _pageController = PageController();
-  int _currentPage = 0;
+  // Page 0 is the Discover special page, so home page 0 lives at controller
+  // index 1 and the launcher opens there.
+  final _pageController = PageController(initialPage: 1);
+  int _currentPage = 1;
   bool _editMode = false;
-  bool _libraryOpen = false;
   bool _searchOpen = false;
+
+  // Bundled default iOS wallpaper. Used only when the user hasn't set a custom/
+  // device wallpaper; if the asset is missing the background falls back to the
+  // iOS-style gradient (see ThemedWallpaperBackground).
+  static const _iosWallpaperAsset = 'assets/ios_theme/wallpaper/ios_default.jpg';
 
   @override
   void initState() {
@@ -68,6 +77,7 @@ class _IosHomeViewState extends State<IosHomeView>
       children: [
         ThemedWallpaperBackground(
           path: settings.customWallpaperPath,
+          assetFallback: _iosWallpaperAsset,
           fallbackColors: const [Color(0xFF1A2440), Color(0xFF9C6F72)],
         ),
         SafeArea(
@@ -75,34 +85,54 @@ class _IosHomeViewState extends State<IosHomeView>
             buildWhen: (prev, next) => prev.apps != next.apps,
             builder: (context, appsState) {
               final apps = _visibleApps(appsState.apps, settings);
-              final pages = _pages(apps, settings);
+              final homePages = _pages(apps, settings);
               final dock = _dockApps(apps, settings);
+              // Effective pager layout: [Discover] [home 0..N] [App Library].
+              final itemCount = homePages.length + 2;
+              final homeIndex =
+                  (_currentPage - 1).clamp(0, homePages.length - 1);
+              final onHomePage =
+                  _currentPage >= 1 && _currentPage <= homePages.length;
+              // Long-press (home options) and tap (exit edit) live on an opaque
+              // wrapper. Neither competes with the PageView's horizontal drag,
+              // so paging stays crisp — unlike the old screen-wide vertical
+              // drag recognizer, which is now confined to a top strip below.
               return GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onLongPress: _showHomeOptions,
                 onTap: _editMode ? _exitEditMode : null,
-                onVerticalDragEnd: (details) {
-                  if (_editMode) return;
-                  final velocity = details.primaryVelocity ?? 0;
-                  if (velocity > 420) setState(() => _searchOpen = true);
-                  if (velocity < -420) setState(() => _libraryOpen = true);
-                },
                 child: Column(
                   children: [
                     const SizedBox(height: 8),
                     Expanded(
                       child: PageView.builder(
                         controller: _pageController,
+                        // Custom snapping (pageSnapping:false) so our physics
+                        // fully owns the commit threshold; otherwise Flutter's
+                        // built-in PageScrollPhysics runs first and a swipe that
+                        // doesn't cross ~50% springs back to the same page.
+                        pageSnapping: false,
                         physics: _editMode
                             ? const NeverScrollableScrollPhysics()
-                            : const BouncingScrollPhysics(),
-                        itemCount: pages.length.clamp(1, 999),
+                            : const _SnappyPagePhysics(
+                                parent: BouncingScrollPhysics(),
+                              ),
+                        itemCount: itemCount,
                         onPageChanged: (value) =>
                             setState(() => _currentPage = value),
                         itemBuilder: (context, index) {
-                          final page = pages.isEmpty
-                              ? const _IosPage.empty()
-                              : pages[index];
+                          if (index == 0) {
+                            return DiscoverPage(
+                              onOpenSearch: widget.onOpenSearch,
+                              onLaunchApp: widget.onLaunchApp,
+                            );
+                          }
+                          if (index == itemCount - 1) {
+                            return AppLibraryPage(
+                              onLaunchApp: widget.onLaunchApp,
+                            );
+                          }
+                          final page = homePages[index - 1];
                           return _IosPageView(
                             page: page,
                             settings: settings,
@@ -116,7 +146,13 @@ class _IosHomeViewState extends State<IosHomeView>
                         },
                       ),
                     ),
-                    _PageDots(count: pages.length, current: _currentPage),
+                    Opacity(
+                      opacity: onHomePage ? 1 : 0,
+                      child: _PageDots(
+                        count: homePages.length,
+                        current: homeIndex,
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     _Dock(
                       apps: dock,
@@ -134,6 +170,23 @@ class _IosHomeViewState extends State<IosHomeView>
             },
           ),
         ),
+        // Spotlight swipe-down zone, confined to a top strip so it never steals
+        // horizontal page swipes across the grid (mirrors iOS pull-down search).
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 110,
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onVerticalDragEnd: (details) {
+              if (_editMode) return;
+              if ((details.primaryVelocity ?? 0) > 320) {
+                setState(() => _searchOpen = true);
+              }
+            },
+          ),
+        ),
         if (_editMode)
           SafeArea(
             child: Align(
@@ -146,13 +199,6 @@ class _IosHomeViewState extends State<IosHomeView>
                 ),
               ),
             ),
-          ),
-        if (_libraryOpen)
-          _IosAppLibrary(
-            settings: settings,
-            onClose: () => setState(() => _libraryOpen = false),
-            onLaunch: widget.onLaunchApp,
-            onLongPress: (app) => _showAppMenuAt(app, Offset.zero),
           ),
         if (_searchOpen)
           _IosSpotlight(
@@ -173,7 +219,21 @@ class _IosHomeViewState extends State<IosHomeView>
         .toList();
   }
 
+  /// The launcher's own mini-apps (Clock, App Locker, App Hider, File Locker),
+  /// resolved to the live [AppInfo] from the apps list when available (so their
+  /// icons render) and falling back to the catalog entry otherwise.
+  List<AppInfo> _miniApps(List<AppInfo> apps) {
+    final byFeatureId = {
+      for (final app in apps)
+        if (app.launcherFeatureId != null) app.launcherFeatureId!: app,
+    };
+    return LauncherFeatureCatalog.homeFeatures
+        .map((feature) => byFeatureId[feature.id] ?? feature.toAppInfo())
+        .toList(growable: false);
+  }
+
   List<_IosPage> _pages(List<AppInfo> apps, LauncherSettings settings) {
+    final miniApps = _miniApps(apps);
     final template = _resolveTemplateApps(apps);
     final templatePackages = template
         .expand((icon) => [
@@ -184,16 +244,19 @@ class _IosHomeViewState extends State<IosHomeView>
         .whereType<String>()
         .toSet();
     final remaining = apps
-        .where((app) => !templatePackages.contains(app.packageName))
+        .where((app) =>
+            !app.isInternalFeature &&
+            !templatePackages.contains(app.packageName))
         .toList();
     final columns = settings.iosGridColumns.clamp(3, 5).toInt();
     final size = columns * 5;
-    // The first page also shows the widgets row, so it holds fewer icons
-    // (two rows) to keep it from feeling cramped. The rest flow onto
-    // subsequent full-height pages.
+    // The first page also shows the widgets row and a mini-apps row, so it
+    // holds fewer template icons (two rows) to keep it from feeling cramped.
+    // The rest flow onto subsequent full-height pages.
     final firstPageCount = columns * 2;
     final pages = <_IosPage>[
       _IosPage(
+        miniApps: miniApps,
         templateApps: template.take(firstPageCount).toList(),
         showWidgets: true,
       ),
@@ -348,6 +411,8 @@ class _IosHomeViewState extends State<IosHomeView>
       MediaQuery.of(context).size.width / 2,
       MediaQuery.of(context).size.height / 2,
     );
+    final featureCubit = context.read<LauncherFeatureSettingsCubit>();
+    final isLocked = featureCubit.state.lockedApps.contains(app.packageName);
     final action = await showGeneralDialog<String>(
       context: context,
       barrierDismissible: true,
@@ -360,6 +425,8 @@ class _IosHomeViewState extends State<IosHomeView>
         appName: app.name,
         inDock: inDock,
         dockFull: dockFull,
+        isLocked: isLocked,
+        canLock: !app.isInternalFeature,
       ),
     );
     switch (action) {
@@ -372,6 +439,10 @@ class _IosHomeViewState extends State<IosHomeView>
       case 'app_info':
         LauncherService.openAppSettings(app.packageName);
         break;
+      case 'lock':
+        featureCubit.setAppLocked(app.packageName, !isLocked);
+        break;
+      case 'hide':
       case 'remove':
         _hideApp(app);
         break;
@@ -384,19 +455,16 @@ class _IosHomeViewState extends State<IosHomeView>
 
 class _IosPage {
   final List<AppInfo> apps;
+  final List<AppInfo> miniApps;
   final List<_IosTemplateApp> templateApps;
   final bool showWidgets;
 
   const _IosPage({
     this.apps = const [],
+    this.miniApps = const [],
     this.templateApps = const [],
     this.showWidgets = false,
   });
-
-  const _IosPage.empty()
-      : apps = const [],
-        templateApps = const [],
-        showWidgets = false;
 }
 
 class _IosTemplateApp {
@@ -522,6 +590,69 @@ const _iosTemplateApps = <_IosTemplateApp>[
   ]),
 ];
 
+/// Page physics tuned so a deliberate swipe reliably flips to the next page
+/// instead of springing back, while never skipping more than one page at a time.
+/// It lowers the drag-distance commit threshold (≈33% of a page vs Flutter's
+/// default 50%) and the fling-velocity threshold. It deliberately keeps the
+/// default (light, critically-damped) spring — a heavy spring would let a fling
+/// carry momentum across several pages.
+///
+/// Must be paired with `pageSnapping: false` on the PageView so this class — not
+/// Flutter's built-in PageScrollPhysics — decides which page to land on. Assumes
+/// the default viewportFraction of 1.0 (one page == one viewport width).
+class _SnappyPagePhysics extends ScrollPhysics {
+  const _SnappyPagePhysics({super.parent});
+
+  @override
+  _SnappyPagePhysics applyTo(ScrollPhysics? ancestor) =>
+      _SnappyPagePhysics(parent: buildParent(ancestor));
+
+  @override
+  double get minFlingVelocity => 20.0;
+
+  double _targetPixels(ScrollMetrics position, double velocity) {
+    final viewport = position.viewportDimension;
+    if (viewport <= 0) return position.pixels;
+    final page = position.pixels / viewport;
+    final base = page.floorToDouble();
+    final fraction = page - base;
+    double target;
+    if (velocity > minFlingVelocity) {
+      target = base + 1;
+    } else if (velocity < -minFlingVelocity) {
+      target = base;
+    } else {
+      // Static release (no flick): commit once the drag passed ~1/5 of a page.
+      target = fraction > 0.2 ? base + 1 : base;
+    }
+    return (target * viewport).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+  }
+
+  @override
+  Simulation? createBallisticSimulation(
+      ScrollMetrics position, double velocity) {
+    // Defer to the parent (bouncing) physics at the edges so overscroll glow /
+    // rubber-band still works past the first/last page.
+    if ((velocity <= 0.0 && position.pixels <= position.minScrollExtent) ||
+        (velocity >= 0.0 && position.pixels >= position.maxScrollExtent)) {
+      return super.createBallisticSimulation(position, velocity);
+    }
+    final tolerance = toleranceFor(position);
+    final target = _targetPixels(position, velocity);
+    if ((target - position.pixels).abs() < tolerance.distance) return null;
+    return ScrollSpringSimulation(
+      spring,
+      position.pixels,
+      target,
+      velocity,
+      tolerance: tolerance,
+    );
+  }
+}
+
 class _IosPageView extends StatelessWidget {
   final _IosPage page;
   final LauncherSettings settings;
@@ -548,6 +679,17 @@ class _IosPageView extends StatelessWidget {
     return Column(
       children: [
         if (page.showWidgets && !editMode) const _HomeWidgetsRow(),
+        if (page.miniApps.isNotEmpty)
+          _IconGrid(
+            apps: page.miniApps,
+            settings: settings,
+            editMode: editMode,
+            jiggle: jiggle,
+            shrinkWrap: true,
+            onLaunch: onLaunch,
+            onLongPress: onLongPress,
+            onRemove: onRemove,
+          ),
         Expanded(
           child: page.templateApps.isNotEmpty
               ? _TemplateIconGrid(
@@ -585,6 +727,7 @@ class _IconGrid extends StatelessWidget {
   final LauncherSettings settings;
   final bool editMode;
   final Animation<double> jiggle;
+  final bool shrinkWrap;
   final ValueChanged<AppInfo> onLaunch;
   final void Function(AppInfo app, Offset globalPosition) onLongPress;
   final ValueChanged<AppInfo> onRemove;
@@ -594,6 +737,7 @@ class _IconGrid extends StatelessWidget {
     required this.settings,
     required this.editMode,
     required this.jiggle,
+    this.shrinkWrap = false,
     required this.onLaunch,
     required this.onLongPress,
     required this.onRemove,
@@ -603,6 +747,7 @@ class _IconGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return GridView.builder(
       padding: const EdgeInsets.fromLTRB(18, 8, 18, 12),
+      shrinkWrap: shrinkWrap,
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: settings.iosGridColumns.clamp(3, 5).toInt(),
@@ -934,19 +1079,19 @@ class _Dock extends StatelessWidget {
       ),
     );
     if (!settings.dockShowBackground) return row;
+    // Flat translucent panel instead of a live BackdropFilter blur — the dock
+    // is on screen during every page swipe, so its per-frame blur was a
+    // constant jank source.
     return ClipRRect(
       borderRadius: BorderRadius.circular(28),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: settings.dockBackgroundColor.withValues(
-              alpha: settings.dockBackgroundOpacity,
-            ),
-            borderRadius: BorderRadius.circular(28),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: settings.dockBackgroundColor.withValues(
+            alpha: settings.dockBackgroundOpacity,
           ),
-          child: row,
+          borderRadius: BorderRadius.circular(28),
         ),
+        child: row,
       ),
     );
   }
@@ -1049,12 +1194,16 @@ class _IosContextMenuOverlay extends StatelessWidget {
   final String appName;
   final bool inDock;
   final bool dockFull;
+  final bool isLocked;
+  final bool canLock;
 
   const _IosContextMenuOverlay({
     required this.globalPosition,
     required this.appName,
     required this.inDock,
     required this.dockFull,
+    required this.isLocked,
+    required this.canLock,
   });
 
   @override
@@ -1063,7 +1212,9 @@ class _IosContextMenuOverlay extends StatelessWidget {
     const menuW = 220.0;
     const itemH = 48.0;
     const arrowH = 10.0;
-    const menuH = itemH * 4 + 2;
+    // Remove App, Edit Home, Dock toggle, Hide app, App Info (+ Lock if shown).
+    final itemCount = canLock ? 6 : 5;
+    final menuH = itemH * itemCount + 2;
     var left = globalPosition.dx - menuW / 2;
     left = left.clamp(12.0, size.width - menuW - 12);
     var top = globalPosition.dy - menuH - arrowH - 10;
@@ -1077,6 +1228,10 @@ class _IosContextMenuOverlay extends StatelessWidget {
       color: Colors.transparent,
       child: GestureDetector(
         onTap: () => Navigator.pop(context),
+        // Any swipe/drag anywhere dismisses the menu (it shouldn't linger while
+        // the user swipes pages).
+        onVerticalDragStart: (_) => Navigator.pop(context),
+        onHorizontalDragStart: (_) => Navigator.pop(context),
         behavior: HitTestBehavior.opaque,
         child: Stack(
           children: [
@@ -1098,7 +1253,12 @@ class _IosContextMenuOverlay extends StatelessWidget {
                           painter: _ArrowPainter(up: true),
                         ),
                       ),
-                    _MenuCard(inDock: inDock, dockFull: dockFull),
+                    _MenuCard(
+                      inDock: inDock,
+                      dockFull: dockFull,
+                      isLocked: isLocked,
+                      canLock: canLock,
+                    ),
                     if (arrowBelow)
                       Padding(
                         padding: EdgeInsets.only(left: arrowLeft),
@@ -1148,8 +1308,15 @@ class _ArrowPainter extends CustomPainter {
 class _MenuCard extends StatelessWidget {
   final bool inDock;
   final bool dockFull;
+  final bool isLocked;
+  final bool canLock;
 
-  const _MenuCard({required this.inDock, required this.dockFull});
+  const _MenuCard({
+    required this.inDock,
+    required this.dockFull,
+    required this.isLocked,
+    required this.canLock,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1204,6 +1371,20 @@ class _MenuCard extends StatelessWidget {
                       ? null
                       : () => Navigator.pop(context, 'dock_add'),
                 ),
+              divider,
+              if (canLock) ...[
+                _ContextMenuItem(
+                  icon: isLocked ? Icons.lock_open_outlined : Icons.lock_outline,
+                  label: isLocked ? 'Unlock App' : 'Lock App',
+                  onTap: () => Navigator.pop(context, 'lock'),
+                ),
+                divider,
+              ],
+              _ContextMenuItem(
+                icon: Icons.visibility_off_outlined,
+                label: 'Hide App',
+                onTap: () => Navigator.pop(context, 'hide'),
+              ),
               divider,
               _ContextMenuItem(
                 icon: Icons.info_outline,
@@ -1314,32 +1495,32 @@ class _ClockWidgetState extends State<_ClockWidget> {
         'com.android.deskclock',
         'com.samsung.android.app.clockpackage',
       ]),
+      // Flat translucent panel instead of a live BackdropFilter blur — the
+      // blur re-sampled the backdrop every frame while the page translated,
+      // which made paging janky.
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: ColoredBox(
-            color: Colors.white.withValues(alpha: 0.14),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-              child: Column(
-                children: [
-                  Expanded(
-                    child: CustomPaint(
-                      painter: _AnalogClockPainter(_now),
-                      size: Size.infinite,
-                    ),
+        child: ColoredBox(
+          color: Colors.white.withValues(alpha: 0.18),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+            child: Column(
+              children: [
+                Expanded(
+                  child: CustomPaint(
+                    painter: _AnalogClockPainter(_now),
+                    size: Size.infinite,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Clock',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.65),
-                      fontSize: 11,
-                    ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Clock',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.65),
+                    fontSize: 11,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -1487,14 +1668,14 @@ class _CalendarWidgetState extends State<_CalendarWidget> {
         'com.android.calendar',
         'com.samsung.android.calendar',
       ]),
+      // Flat translucent panel instead of a live BackdropFilter blur (see
+      // _ClockWidget) to keep page swiping smooth.
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: ColoredBox(
-            color: Colors.white.withValues(alpha: 0.14),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+        child: ColoredBox(
+          color: Colors.white.withValues(alpha: 0.18),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1573,8 +1754,7 @@ class _CalendarWidgetState extends State<_CalendarWidget> {
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 }
 
@@ -1659,130 +1839,6 @@ class _IosSpotlightState extends State<_IosSpotlight> {
                 },
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _IosAppLibrary extends StatelessWidget {
-  final LauncherSettings settings;
-  final VoidCallback onClose;
-  final ValueChanged<AppInfo> onLaunch;
-  final ValueChanged<AppInfo> onLongPress;
-
-  const _IosAppLibrary({
-    required this.settings,
-    required this.onClose,
-    required this.onLaunch,
-    required this.onLongPress,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final appsState = context.watch<AppsCubit>().state;
-    final hidden = settings.hiddenApps.toSet();
-    final apps = appsState.apps
-        .where((app) =>
-            !hidden.contains(app.launcherKey) &&
-            !hidden.contains(app.packageName))
-        .toList();
-    final buckets = categorizeApps(apps);
-    return Material(
-      color: Colors.black.withValues(alpha: 0.86),
-      child: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(18, 8, 18, 12),
-              sliver: SliverToBoxAdapter(
-                child: Row(
-                  children: [
-                    const Text(
-                      'App Library',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      onPressed: onClose,
-                      icon: const Icon(Icons.close, color: Colors.white),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            if (settings.iosLibraryViewMode == IosLibraryViewMode.list)
-              SliverList.builder(
-                itemCount: apps.length,
-                itemBuilder: (context, index) {
-                  final app = apps[index];
-                  return ListTile(
-                    leading: _Icon(app: app, size: 42),
-                    title: Text(
-                      app.name,
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                    onTap: () {
-                      onClose();
-                      onLaunch(app);
-                    },
-                    onLongPress: () => onLongPress(app),
-                  );
-                },
-              )
-            else
-              for (final entry in buckets.entries)
-                if (entry.value.isNotEmpty) ...[
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
-                    sliver: SliverToBoxAdapter(
-                      child: Text(
-                        entry.key.label,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 18),
-                    sliver: SliverGrid(
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 4,
-                        mainAxisSpacing: 14,
-                        crossAxisSpacing: 10,
-                        childAspectRatio: 0.78,
-                      ),
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final app = entry.value[index];
-                          return _IosAppTile(
-                            app: app,
-                            settings: settings,
-                            editMode: false,
-                            jiggle: const AlwaysStoppedAnimation(0),
-                            index: index,
-                            onTap: () {
-                              onClose();
-                              onLaunch(app);
-                            },
-                            onLongPress: (_) => onLongPress(app),
-                            onRemove: () {},
-                          );
-                        },
-                        childCount: entry.value.length,
-                      ),
-                    ),
-                  ),
-                ],
-            const SliverPadding(padding: EdgeInsets.only(bottom: 32)),
           ],
         ),
       ),

@@ -42,3 +42,4 @@ flutter:
   assets:
     - assets/feature_icons/
     - assets/ios_theme/
+    - assets/ios_theme/wallpaper/
