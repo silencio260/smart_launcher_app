@@ -46,10 +46,14 @@ class LauncherThemesScreen extends StatelessWidget {
                   settings.copyWith(homeMode: HomeMode.minimal),
                 ),
               ),
-              const SizedBox(height: 24),
-              _IosOptions(settings: settings, cubit: cubit),
-              const SizedBox(height: 16),
-              _MinimalOptions(settings: settings, cubit: cubit),
+              if (settings.homeMode == HomeMode.ios) ...[
+                const SizedBox(height: 24),
+                _IosOptions(settings: settings, cubit: cubit),
+              ],
+              if (settings.homeMode == HomeMode.minimal) ...[
+                const SizedBox(height: 24),
+                _MinimalOptions(settings: settings, cubit: cubit),
+              ],
             ],
           );
         },

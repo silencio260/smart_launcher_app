@@ -33,7 +33,7 @@ class _MinimalHomeViewState extends State<MinimalHomeView> {
   Timer? _timer;
   DateTime _now = DateTime.now();
   int _batteryLevel = -1;
-  bool _drawerOpen = false;
+  bool _drawerRouteOpen = false;
 
   @override
   void initState() {
@@ -60,10 +60,10 @@ class _MinimalHomeViewState extends State<MinimalHomeView> {
         // Background: the device wallpaper (same as the Smart launcher) or a
         // flat solid colour, depending on the Minimal setting.
         if (settings.minimalUseWallpaper) ...[
-          const ColoredBox(color: Colors.black),
           ThemedWallpaperBackground(
             path: settings.customWallpaperPath,
             useSystemWallpaper: true,
+            transparentSystemFallback: true,
             blur: settings.wallpaperBlur,
             blurSigma: 4 + settings.wallpaperBlurIntensity * 18,
             fallbackColors: const [Colors.black, Colors.black],
@@ -90,7 +90,7 @@ class _MinimalHomeViewState extends State<MinimalHomeView> {
                     behavior: HitTestBehavior.opaque,
                     onVerticalDragEnd: (details) {
                       final velocity = details.primaryVelocity ?? 0;
-                      if (velocity < -350) setState(() => _drawerOpen = true);
+                      if (velocity < -350) _openDrawerPage(apps, settings);
                       if (velocity > 350) widget.onOpenSearch();
                     },
                     child: Padding(
@@ -121,7 +121,7 @@ class _MinimalHomeViewState extends State<MinimalHomeView> {
                           ),
                           const Spacer(flex: 4),
                           _MinimalActions(
-                            onApps: () => setState(() => _drawerOpen = true),
+                            onApps: () => _openDrawerPage(apps, settings),
                             onSearch: widget.onOpenSearch,
                             onSettings: widget.onOpenSettings,
                           ),
@@ -139,20 +139,6 @@ class _MinimalHomeViewState extends State<MinimalHomeView> {
             },
           ),
         ),
-        if (_drawerOpen)
-          BlocBuilder<AppsCubit, AppsState>(
-            buildWhen: (prev, next) => prev.apps != next.apps,
-            builder: (context, appsState) => _MinimalDrawer(
-              apps: _visibleApps(appsState.apps, settings),
-              settings: settings,
-              fontSize: settings.minimalFontSize,
-              onDismiss: () => setState(() => _drawerOpen = false),
-              onLaunch: (app) {
-                setState(() => _drawerOpen = false);
-                widget.onLaunchApp(app);
-              },
-            ),
-          ),
       ],
     );
   }
@@ -166,6 +152,46 @@ class _MinimalHomeViewState extends State<MinimalHomeView> {
   Future<void> _loadBattery() async {
     final level = await LauncherService.getBatteryLevel();
     if (mounted) setState(() => _batteryLevel = level);
+  }
+
+  Future<void> _openDrawerPage(
+    List<AppInfo> apps,
+    LauncherSettings settings,
+  ) async {
+    if (_drawerRouteOpen) return;
+    _drawerRouteOpen = true;
+    await Navigator.of(context).push(
+      PageRouteBuilder<void>(
+        opaque: true,
+        transitionDuration: const Duration(milliseconds: 180),
+        reverseTransitionDuration: const Duration(milliseconds: 140),
+        pageBuilder: (routeContext, animation, secondaryAnimation) {
+          return _MinimalDrawerPage(
+            apps: apps,
+            settings: settings,
+            fontSize: settings.minimalFontSize,
+            onDismiss: () => Navigator.of(routeContext).maybePop(),
+            onLaunch: (app) {
+              Navigator.of(routeContext).pop();
+              widget.onLaunchApp(app);
+            },
+          );
+        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          final offset = Tween<Offset>(
+            begin: const Offset(0, 0.06),
+            end: Offset.zero,
+          ).animate(
+            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+          );
+          return FadeTransition(
+            opacity: animation,
+            child: SlideTransition(position: offset, child: child),
+          );
+        },
+      ),
+    );
+    _drawerRouteOpen = false;
   }
 
   List<AppInfo> _visibleApps(List<AppInfo> apps, LauncherSettings settings) {
@@ -407,14 +433,14 @@ class _MinimalLibraryPageState extends State<_MinimalLibraryPage> {
   }
 }
 
-class _MinimalDrawer extends StatefulWidget {
+class _MinimalDrawerPage extends StatefulWidget {
   final List<AppInfo> apps;
   final LauncherSettings settings;
   final double fontSize;
   final VoidCallback onDismiss;
   final ValueChanged<AppInfo> onLaunch;
 
-  const _MinimalDrawer({
+  const _MinimalDrawerPage({
     required this.apps,
     required this.settings,
     required this.fontSize,
@@ -423,10 +449,10 @@ class _MinimalDrawer extends StatefulWidget {
   });
 
   @override
-  State<_MinimalDrawer> createState() => _MinimalDrawerState();
+  State<_MinimalDrawerPage> createState() => _MinimalDrawerPageState();
 }
 
-class _MinimalDrawerState extends State<_MinimalDrawer> {
+class _MinimalDrawerPageState extends State<_MinimalDrawerPage> {
   String _query = '';
 
   @override
@@ -440,10 +466,10 @@ class _MinimalDrawerState extends State<_MinimalDrawer> {
       fit: StackFit.expand,
       children: [
         if (settings.minimalUseWallpaper) ...[
-          const ColoredBox(color: Colors.black),
           ThemedWallpaperBackground(
             path: settings.customWallpaperPath,
             useSystemWallpaper: true,
+            transparentSystemFallback: true,
             blur: true,
             blurSigma: 26,
             fallbackColors: const [Colors.black, Colors.black],
