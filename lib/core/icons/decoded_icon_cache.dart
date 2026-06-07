@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
-import '../../models/app_info.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
 
 /// Process-wide LRU cache of decoded [ui.Image] icons keyed by
 /// `package@sizePx`. Decoding happens once per (package, target pixel size);

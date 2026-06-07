@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../services/drag/drag_controller.dart';
-import '../../models/app_info.dart';
-import '../icons/shaped_icon.dart';
+import 'package:smart_launcher_app/features/home/presentation/drag/drag_controller.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/widgets/icons/shaped_icon.dart';
 
 class DragView extends StatelessWidget {
   final DragPayload payload;

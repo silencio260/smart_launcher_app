@@ -5,10 +5,10 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../models/launcher_settings.dart';
-import '../../models/wallpaper_item.dart';
-import '../../services/wallpaper_service.dart';
-import '../../state/settings_cubit.dart';
+import 'package:smart_launcher_app/core/models/launcher_settings.dart';
+import 'package:smart_launcher_app/core/models/wallpaper_item.dart';
+import 'package:smart_launcher_app/core/services/wallpaper_service.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
 
 class WallpaperScreen extends StatefulWidget {
   const WallpaperScreen({super.key});

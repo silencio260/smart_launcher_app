@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../../models/app_info.dart';
-import 'feature_icon.dart';
-import 'shaped_icon.dart';
-import 'dot_renderer.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/widgets/icons/feature_icon.dart';
+import 'package:smart_launcher_app/core/widgets/icons/shaped_icon.dart';
+import 'package:smart_launcher_app/core/widgets/icons/dot_renderer.dart';
 
 class BubbleTextView extends StatelessWidget {
   final AppInfo app;

@@ -4,16 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
-import '../models/app_info.dart';
-import '../models/rss_item.dart';
-import '../services/discover/rss_service.dart';
-import '../services/discover/rss_source_store.dart';
-import '../state/apps_cubit.dart';
-import '../state/settings_cubit.dart';
-import '../widgets/icons/feature_icon.dart';
-import '../widgets/icons/shaped_icon.dart';
-import '../widgets/workspace/home_sections.dart';
-import 'add_news_source_screen.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/features/discover/domain/entities/rss_item.dart';
+import 'package:smart_launcher_app/features/discover/data/rss_service.dart';
+import 'package:smart_launcher_app/features/discover/data/rss_source_store.dart';
+import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
+import 'package:smart_launcher_app/core/widgets/icons/feature_icon.dart';
+import 'package:smart_launcher_app/core/widgets/icons/shaped_icon.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/workspace/home_sections.dart';
+import 'package:smart_launcher_app/features/discover/presentation/screens/add_news_source_screen.dart';
 
 /// The far-left "Discover" special page: a launcher-native scaffold (search,
 /// suggested apps, a couple of info cards) plus a "For You" feed assembled from

@@ -1,7 +1,7 @@
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
-import 'debug_flags.dart';
+import 'package:smart_launcher_app/core/utils/debug_flags.dart';
 
 /// Drawer performance logger gated by [DebugFlags.drawerPerfLogs].
 ///

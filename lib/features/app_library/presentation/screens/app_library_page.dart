@@ -1,15 +1,15 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../models/app_info.dart';
-import '../models/launcher_settings.dart';
-import '../services/app_categories.dart';
-import '../state/apps_cubit.dart';
-import '../state/settings_cubit.dart';
-import '../widgets/app_menu/launcher_app_context_menu.dart';
-import '../widgets/allapps/all_apps_grid_adapter.dart';
-import '../widgets/icons/feature_icon.dart';
-import '../widgets/icons/shaped_icon.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_settings.dart';
+import 'package:smart_launcher_app/features/apps/data/app_categories.dart';
+import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
+import 'package:smart_launcher_app/core/widgets/app_menu/launcher_app_context_menu.dart';
+import 'package:smart_launcher_app/features/app_drawer/presentation/widgets/allapps/all_apps_grid_adapter.dart';
+import 'package:smart_launcher_app/core/widgets/icons/feature_icon.dart';
+import 'package:smart_launcher_app/core/widgets/icons/shaped_icon.dart';
 
 /// A category folder in the App Library: a label plus the apps that fall under
 /// it. The special "Hidden" folder collects apps the user hid from the drawer.

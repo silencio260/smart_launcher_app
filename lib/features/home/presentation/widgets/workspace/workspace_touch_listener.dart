@@ -1,10 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import '../../models/launcher_settings.dart';
-import '../../services/drag/drag_controller.dart';
-import '../../services/gestures/widget_resize_gesture_guard.dart';
-import 'home_sections.dart';
+import 'package:smart_launcher_app/core/models/launcher_settings.dart';
+import 'package:smart_launcher_app/features/home/presentation/drag/drag_controller.dart';
+import 'package:smart_launcher_app/features/home/presentation/gestures/widget_resize_gesture_guard.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/workspace/home_sections.dart';
 
 class WorkspaceTouchListener extends StatefulWidget {
   final Widget child;

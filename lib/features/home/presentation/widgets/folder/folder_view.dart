@@ -2,15 +2,15 @@ import 'dart:ui';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../models/app_info.dart';
-import '../../models/launcher_settings.dart';
-import '../../models/workspace_item_info.dart';
-import '../../services/drag/drag_controller.dart';
-import '../../state/apps_cubit.dart';
-import '../../state/workspace_cubit.dart';
-import '../drag/pickup_feedback.dart';
-import '../icons/badge_listener.dart';
-import '../icons/bubble_text_view.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_settings.dart';
+import 'package:smart_launcher_app/core/models/workspace_item_info.dart';
+import 'package:smart_launcher_app/features/home/presentation/drag/drag_controller.dart';
+import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.dart';
+import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/drag/pickup_feedback.dart';
+import 'package:smart_launcher_app/core/widgets/icons/badge_listener.dart';
+import 'package:smart_launcher_app/core/widgets/icons/bubble_text_view.dart';
 
 class FolderView extends StatefulWidget {
   final String folderId;

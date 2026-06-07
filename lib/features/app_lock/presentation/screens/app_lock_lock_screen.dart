@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../data/mini_app_repositories.dart';
-import '../../../services/launcher_service.dart';
-import '../clock/clock_theme.dart';
-import '../mini_app_chrome.dart';
-import '../vault/vault_pattern_lock.dart';
-import '../vault/vault_pin_pad.dart';
+import 'package:smart_launcher_app/core/storage/mini_app_repositories.dart';
+import 'package:smart_launcher_app/core/platform/launcher_service.dart';
+import 'package:smart_launcher_app/features/clock/presentation/clock_theme.dart';
+import 'package:smart_launcher_app/core/widgets/mini_app_chrome.dart';
+import 'package:smart_launcher_app/features/vault/presentation/screens/vault_pattern_lock.dart';
+import 'package:smart_launcher_app/features/vault/presentation/screens/vault_pin_pad.dart';
 
 /// First-run setup and subsequent unlock for App Lock. Monochrome, modelled on
 /// the Vault's [VaultLockScreen] (custom PIN pad + pattern + fingerprint

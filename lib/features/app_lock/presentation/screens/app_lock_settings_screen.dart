@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../../data/mini_app_repositories.dart';
-import '../../../services/launcher_service.dart';
-import '../../../state/launcher_feature_cubit.dart';
-import '../clock/clock_theme.dart';
-import '../mini_app_chrome.dart';
-import '../mini_app_kit.dart';
-import 'app_lock_lock_screen.dart';
-import 'app_lock_protection_guide.dart';
+import 'package:smart_launcher_app/core/storage/mini_app_repositories.dart';
+import 'package:smart_launcher_app/core/platform/launcher_service.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/launcher_feature_cubit.dart';
+import 'package:smart_launcher_app/features/clock/presentation/clock_theme.dart';
+import 'package:smart_launcher_app/core/widgets/mini_app_chrome.dart';
+import 'package:smart_launcher_app/core/widgets/mini_app_kit.dart';
+import 'package:smart_launcher_app/features/app_lock/presentation/screens/app_lock_lock_screen.dart';
+import 'package:smart_launcher_app/features/app_lock/presentation/screens/app_lock_protection_guide.dart';
 
 /// App Lock settings, mirroring the Vault's settings screen (change passcode,
 /// switch PIN/Pattern, toggle fingerprint, auto-lock) plus the bits unique to

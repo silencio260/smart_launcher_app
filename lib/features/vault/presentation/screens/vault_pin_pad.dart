@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../mini_app_chrome.dart';
+import 'package:smart_launcher_app/core/widgets/mini_app_chrome.dart';
 
 /// Monochrome PIN entry: a row of dots showing progress over a 3x4 numeric
 /// keypad. Dumb/stateless — the parent owns the entered string and decides what

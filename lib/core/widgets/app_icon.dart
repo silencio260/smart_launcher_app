@@ -1,11 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import '../models/app_info.dart';
-import '../models/launcher_feature.dart';
-import '../services/feature_launch_dispatcher.dart';
-import '../services/launcher_service.dart';
-import 'icons/feature_icon.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_feature.dart';
+import 'package:smart_launcher_app/core/platform/feature_launch_dispatcher.dart';
+import 'package:smart_launcher_app/core/platform/launcher_service.dart';
+import 'package:smart_launcher_app/core/widgets/icons/feature_icon.dart';
 
 class AppIcon extends StatelessWidget {
   final AppInfo app;

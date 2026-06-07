@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../models/app_info.dart';
-import '../models/launcher_feature.dart';
-import '../screens/features/alarm_clock_screen.dart';
-import '../screens/features/app_hider_screen.dart';
-import '../screens/features/app_locker_screen.dart';
-import '../screens/features/file_locker_screen.dart';
-import '../services/launcher_service.dart';
-import '../state/apps_cubit.dart';
-import '../state/launcher_feature_cubit.dart';
-import '../state/settings_cubit.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_feature.dart';
+import 'package:smart_launcher_app/features/clock/presentation/screens/alarm_clock_screen.dart';
+import 'package:smart_launcher_app/features/app_hider/presentation/screens/app_hider_screen.dart';
+import 'package:smart_launcher_app/features/app_lock/presentation/screens/app_locker_screen.dart';
+import 'package:smart_launcher_app/features/file_locker/presentation/screens/file_locker_screen.dart';
+import 'package:smart_launcher_app/core/platform/launcher_service.dart';
+import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/launcher_feature_cubit.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
 
 class FeatureLaunchDispatcher {
   FeatureLaunchDispatcher._();

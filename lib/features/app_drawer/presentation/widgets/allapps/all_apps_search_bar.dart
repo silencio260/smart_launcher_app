@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../state/search_cubit.dart';
+import 'package:smart_launcher_app/features/search/presentation/bloc/search_cubit.dart';
 
 class AllAppsSearchBar extends StatefulWidget {
   const AllAppsSearchBar({super.key});

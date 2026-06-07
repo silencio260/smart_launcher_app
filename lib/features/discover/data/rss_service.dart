@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import '../../models/rss_item.dart';
+import 'package:smart_launcher_app/features/discover/domain/entities/rss_item.dart';
 
 /// Fetches and parses RSS/Atom feeds with the built-in [HttpClient] (no extra
 /// dependencies) and a tolerant regex parser. Results are cached in memory so

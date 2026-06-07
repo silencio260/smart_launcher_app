@@ -3,11 +3,11 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import '../../models/launcher_widget_info.dart';
-import '../../services/launcher_service.dart';
-import '../../utils/drawer_perf.dart';
-import '../edit_mode/edit_mode_scope.dart';
-import 'route_coverage_scope.dart';
+import 'package:smart_launcher_app/core/models/launcher_widget_info.dart';
+import 'package:smart_launcher_app/core/platform/launcher_service.dart';
+import 'package:smart_launcher_app/core/utils/drawer_perf.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/edit_mode/edit_mode_scope.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/workspace/route_coverage_scope.dart';
 
 /// Shows a swipeable stack of widgets. Long-press dragging is handled by the
 /// parent CellLayoutView (same as single widgets). Resize handles work on the

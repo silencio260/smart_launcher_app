@@ -1,5 +1,5 @@
-import '../../models/launcher_widget_info.dart';
-import '../../state/workspace_cubit.dart';
+import 'package:smart_launcher_app/core/models/launcher_widget_info.dart';
+import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
 
 /// Matches `_gridGap` in cell_layout.dart — the spacing between cells used when
 /// converting pixel sizes to cell counts. Centralized so placement-time span

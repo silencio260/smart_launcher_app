@@ -1,5 +1,5 @@
 import 'dart:typed_data';
-import 'item_info.dart';
+import 'package:smart_launcher_app/core/models/item_info.dart';
 
 class AppInfo extends ItemInfo {
   String packageName;

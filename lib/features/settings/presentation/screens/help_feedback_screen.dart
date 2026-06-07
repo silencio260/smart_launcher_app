@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../config/support_links.dart';
-import '../../models/launcher_feature.dart';
-import '../../services/launcher_service.dart';
+import 'package:smart_launcher_app/features/settings/presentation/support_links.dart';
+import 'package:smart_launcher_app/core/models/launcher_feature.dart';
+import 'package:smart_launcher_app/core/platform/launcher_service.dart';
 
 /// Help & Feedback sub-page reached from the Support section of Launcher
 /// Settings. Mirrors the three common exit/help paths a launcher user looks

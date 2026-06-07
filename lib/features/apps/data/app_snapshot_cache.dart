@@ -3,8 +3,8 @@ import 'dart:convert';
 
 import 'package:path_provider/path_provider.dart';
 
-import '../models/app_info.dart';
-import '../models/launcher_feature.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_feature.dart';
 
 class AppSnapshot {
   final String snapshotKey;

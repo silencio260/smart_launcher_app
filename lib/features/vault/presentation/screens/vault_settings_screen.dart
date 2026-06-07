@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../../../data/mini_app_repositories.dart';
-import '../clock/clock_theme.dart';
-import '../mini_app_chrome.dart';
-import '../mini_app_kit.dart';
-import 'vault_lock_screen.dart';
+import 'package:smart_launcher_app/core/storage/mini_app_repositories.dart';
+import 'package:smart_launcher_app/features/clock/presentation/clock_theme.dart';
+import 'package:smart_launcher_app/core/widgets/mini_app_chrome.dart';
+import 'package:smart_launcher_app/core/widgets/mini_app_kit.dart';
+import 'package:smart_launcher_app/features/vault/presentation/screens/vault_lock_screen.dart';
 
 /// Minimal vault settings, styled after the App Lock reference but monochrome:
 /// change passcode, switch PIN/Pattern, toggle fingerprint, set auto-lock.

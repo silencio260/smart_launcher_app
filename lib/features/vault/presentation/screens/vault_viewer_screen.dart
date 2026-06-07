@@ -3,8 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
-import '../../../services/launcher_service.dart';
-import '../mini_app_chrome.dart';
+import 'package:smart_launcher_app/core/platform/launcher_service.dart';
+import 'package:smart_launcher_app/core/widgets/mini_app_chrome.dart';
 
 /// Full-screen, swipeable viewer for vault media. Images zoom, videos play
 /// in-app, and other file types offer an export.

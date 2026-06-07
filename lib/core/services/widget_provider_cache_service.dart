@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:path_provider/path_provider.dart';
 
-import '../models/widget_provider_info.dart';
+import 'package:smart_launcher_app/core/models/widget_provider_info.dart';
 
 /// Grid sig that the cache is keyed by. A mismatch on load means a stale
 /// cache from a different grid configuration; we drop it and let the next

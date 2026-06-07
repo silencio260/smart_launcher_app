@@ -2,16 +2,16 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../models/app_info.dart';
-import '../../models/folder_info.dart';
-import '../../models/launcher_feature.dart';
-import '../../models/launcher_settings.dart';
-import '../../models/workspace_item_info.dart';
-import '../../state/apps_cubit.dart';
-import '../../state/workspace_cubit.dart';
-import '../icons/feature_icon.dart';
-import '../icons/shaped_icon.dart';
-import 'threshold_reorderable_list.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/models/folder_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_feature.dart';
+import 'package:smart_launcher_app/core/models/launcher_settings.dart';
+import 'package:smart_launcher_app/core/models/workspace_item_info.dart';
+import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.dart';
+import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
+import 'package:smart_launcher_app/core/widgets/icons/feature_icon.dart';
+import 'package:smart_launcher_app/core/widgets/icons/shaped_icon.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/edit_mode/threshold_reorderable_list.dart';
 
 class EditModeOverlay extends StatefulWidget {
   final LauncherSettings settings;

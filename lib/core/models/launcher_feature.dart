@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import 'app_info.dart';
-import 'item_info.dart';
-import 'workspace_item_info.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/models/item_info.dart';
+import 'package:smart_launcher_app/core/models/workspace_item_info.dart';
 
 class LauncherFeature {
   static const launcherPackage =

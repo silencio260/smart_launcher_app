@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
-import '../models/wallpaper_item.dart';
+import 'package:smart_launcher_app/core/models/wallpaper_item.dart';
 
 class WallpaperService {
   static const _channel =

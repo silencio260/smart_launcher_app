@@ -2,14 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../models/app_info.dart';
-import '../../models/launcher_settings.dart';
-import '../../services/drag/drag_controller.dart';
-import '../../services/gestures/widget_resize_gesture_guard.dart';
-import '../../state/workspace_cubit.dart';
-import '../../utils/debug_flags.dart';
-import 'cell_layout.dart';
-import 'home_sections.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_settings.dart';
+import 'package:smart_launcher_app/features/home/presentation/drag/drag_controller.dart';
+import 'package:smart_launcher_app/features/home/presentation/gestures/widget_resize_gesture_guard.dart';
+import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
+import 'package:smart_launcher_app/core/utils/debug_flags.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/workspace/cell_layout.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/workspace/home_sections.dart';
 
 class WorkspaceView extends StatefulWidget {
   final LauncherSettings settings;

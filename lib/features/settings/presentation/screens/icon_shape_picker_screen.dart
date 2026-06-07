@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../services/icons/icon_shape.dart';
+import 'package:smart_launcher_app/core/icons/icon_shape.dart';
 
 class IconShapePickerScreen extends StatelessWidget {
   final String current;

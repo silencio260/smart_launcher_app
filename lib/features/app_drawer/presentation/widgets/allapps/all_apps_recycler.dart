@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
-import '../../models/app_info.dart';
-import '../../models/item_info.dart';
-import '../../models/launcher_settings.dart';
-import '../../models/workspace_item_info.dart';
-import '../../services/drag/drag_controller.dart';
-import '../../utils/drawer_perf.dart';
-import '../drag/pickup_feedback.dart';
-import '../icons/badge_listener.dart';
-import '../icons/bubble_text_view.dart';
-import '../workspace/cell_layout.dart' show kDrawerSourcePage;
-import 'all_apps_grid_adapter.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/models/item_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_settings.dart';
+import 'package:smart_launcher_app/core/models/workspace_item_info.dart';
+import 'package:smart_launcher_app/features/home/presentation/drag/drag_controller.dart';
+import 'package:smart_launcher_app/core/utils/drawer_perf.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/drag/pickup_feedback.dart';
+import 'package:smart_launcher_app/core/widgets/icons/badge_listener.dart';
+import 'package:smart_launcher_app/core/widgets/icons/bubble_text_view.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/workspace/cell_layout.dart' show kDrawerSourcePage;
+import 'package:smart_launcher_app/features/app_drawer/presentation/widgets/allapps/all_apps_grid_adapter.dart';
 
 class AllAppsRecycler extends StatefulWidget {
   final List<AppInfo> apps;

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../../data/mini_app_repositories.dart';
-import '../../../data/world_cities.dart';
-import '../mini_app_chrome.dart';
+import 'package:smart_launcher_app/core/storage/mini_app_repositories.dart';
+import 'package:smart_launcher_app/features/clock/data/world_cities.dart';
+import 'package:smart_launcher_app/core/widgets/mini_app_chrome.dart';
 
 /// Searchable picker over the curated [worldCities] list. Tapping a city adds
 /// it to the World Clock (offline, DST-correct) and pops. Already-added cities

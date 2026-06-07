@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../models/launcher_settings.dart';
-import '../../state/settings_cubit.dart';
-import 'icon_shape_picker_screen.dart';
-import 'settings_appearance.dart';
+import 'package:smart_launcher_app/core/models/launcher_settings.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
+import 'package:smart_launcher_app/features/settings/presentation/screens/icon_shape_picker_screen.dart';
+import 'package:smart_launcher_app/features/settings/presentation/screens/settings_appearance.dart';
 
 class FolderSettingsScreen extends StatelessWidget {
   const FolderSettingsScreen({super.key});

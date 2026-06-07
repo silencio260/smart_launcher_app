@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../data/mini_app_repositories.dart';
-import '../../models/app_info.dart';
-import '../../models/launcher_feature.dart';
-import '../../models/launcher_settings.dart';
-import '../../state/apps_cubit.dart';
-import '../../state/settings_cubit.dart';
-import '../../widgets/icons/shaped_icon.dart';
-import 'app_hider/app_hider_lock_screen.dart';
-import 'app_hider/app_hider_settings_screen.dart';
-import 'clock/clock_theme.dart';
-import 'mini_app_chrome.dart';
-import 'mini_app_kit.dart';
+import 'package:smart_launcher_app/core/storage/mini_app_repositories.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_feature.dart';
+import 'package:smart_launcher_app/core/models/launcher_settings.dart';
+import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
+import 'package:smart_launcher_app/core/widgets/icons/shaped_icon.dart';
+import 'package:smart_launcher_app/features/app_hider/presentation/screens/app_hider_lock_screen.dart';
+import 'package:smart_launcher_app/features/app_hider/presentation/screens/app_hider_settings_screen.dart';
+import 'package:smart_launcher_app/features/clock/presentation/clock_theme.dart';
+import 'package:smart_launcher_app/core/widgets/mini_app_chrome.dart';
+import 'package:smart_launcher_app/core/widgets/mini_app_kit.dart';
 
 const _featureId = 'app_hider';
 

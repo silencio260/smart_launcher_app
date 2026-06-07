@@ -2,10 +2,10 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/launcher_settings.dart';
-import '../services/launcher_service.dart';
-import '../utils/debug_flags.dart';
-import '../utils/drawer_perf.dart';
+import 'package:smart_launcher_app/core/models/launcher_settings.dart';
+import 'package:smart_launcher_app/core/platform/launcher_service.dart';
+import 'package:smart_launcher_app/core/utils/debug_flags.dart';
+import 'package:smart_launcher_app/core/utils/drawer_perf.dart';
 
 class SettingsCubit extends Cubit<LauncherSettings> {
   static const _key = 'launcher_settings_v1';

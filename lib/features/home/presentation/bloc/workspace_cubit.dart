@@ -5,14 +5,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/workspace_item_info.dart';
-import '../models/launcher_feature.dart';
-import '../models/folder_info.dart';
-import '../models/launcher_widget_info.dart';
-import '../models/widget_provider_info.dart';
-import '../models/item_info.dart';
-import '../widgets/workspace/widget_grid_math.dart';
-import '../utils/debug_flags.dart';
+import 'package:smart_launcher_app/core/models/workspace_item_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_feature.dart';
+import 'package:smart_launcher_app/core/models/folder_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_widget_info.dart';
+import 'package:smart_launcher_app/core/models/widget_provider_info.dart';
+import 'package:smart_launcher_app/core/models/item_info.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/workspace/widget_grid_math.dart';
+import 'package:smart_launcher_app/core/utils/debug_flags.dart';
 
 sealed class SlotContent {}
 

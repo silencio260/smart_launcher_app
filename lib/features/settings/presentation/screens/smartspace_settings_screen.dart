@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../models/launcher_settings.dart';
-import '../../state/settings_cubit.dart';
+import 'package:smart_launcher_app/core/models/launcher_settings.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
 
 class SmartspaceSettingsScreen extends StatelessWidget {
   const SmartspaceSettingsScreen({super.key});

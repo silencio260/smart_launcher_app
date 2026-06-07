@@ -1,5 +1,5 @@
-import '../../models/app_info.dart';
-import '../../models/search_result.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/features/search/domain/entities/search_result.dart';
 
 class AppSearchService {
   List<SearchResult> search(

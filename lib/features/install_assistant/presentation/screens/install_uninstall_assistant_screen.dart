@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../models/launcher_feature_settings.dart';
-import '../../services/install_assistant_service.dart';
-import '../../services/launcher_service.dart';
-import '../../state/launcher_feature_cubit.dart';
+import 'package:smart_launcher_app/core/models/launcher_feature_settings.dart';
+import 'package:smart_launcher_app/features/install_assistant/data/install_assistant_service.dart';
+import 'package:smart_launcher_app/core/platform/launcher_service.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/launcher_feature_cubit.dart';
 
 class InstallUninstallAssistantScreen extends StatelessWidget {
   const InstallUninstallAssistantScreen({super.key});

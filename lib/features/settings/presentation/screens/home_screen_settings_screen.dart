@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../models/launcher_settings.dart';
-import '../../services/default_layout_seeder.dart';
-import '../../state/apps_cubit.dart';
-import '../../state/settings_cubit.dart';
-import '../../state/workspace_cubit.dart';
+import 'package:smart_launcher_app/core/models/launcher_settings.dart';
+import 'package:smart_launcher_app/features/home/data/default_layout_seeder.dart';
+import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
+import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
 
 class HomeScreenSettingsScreen extends StatelessWidget {
   const HomeScreenSettingsScreen({super.key});

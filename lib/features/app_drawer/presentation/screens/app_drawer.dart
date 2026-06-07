@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../models/app_info.dart';
-import '../widgets/app_icon.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/widgets/app_icon.dart';
 
 class AppDrawer extends StatefulWidget {
   final List<AppInfo> apps;

@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../data/mini_app_repositories.dart';
-import '../../models/app_info.dart';
-import '../../models/launcher_feature.dart';
-import '../../models/launcher_feature_settings.dart';
-import '../../services/launcher_service.dart';
-import '../../state/apps_cubit.dart';
-import '../../state/launcher_feature_cubit.dart';
-import '../../widgets/icons/shaped_icon.dart';
-import 'app_lock/app_lock_lock_screen.dart';
-import 'app_lock/app_lock_protection_guide.dart';
-import 'app_lock/app_lock_settings_screen.dart';
-import 'clock/clock_theme.dart';
-import 'mini_app_chrome.dart';
-import 'mini_app_kit.dart';
+import 'package:smart_launcher_app/core/storage/mini_app_repositories.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_feature.dart';
+import 'package:smart_launcher_app/core/models/launcher_feature_settings.dart';
+import 'package:smart_launcher_app/core/platform/launcher_service.dart';
+import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/launcher_feature_cubit.dart';
+import 'package:smart_launcher_app/core/widgets/icons/shaped_icon.dart';
+import 'package:smart_launcher_app/features/app_lock/presentation/screens/app_lock_lock_screen.dart';
+import 'package:smart_launcher_app/features/app_lock/presentation/screens/app_lock_protection_guide.dart';
+import 'package:smart_launcher_app/features/app_lock/presentation/screens/app_lock_settings_screen.dart';
+import 'package:smart_launcher_app/features/clock/presentation/clock_theme.dart';
+import 'package:smart_launcher_app/core/widgets/mini_app_chrome.dart';
+import 'package:smart_launcher_app/core/widgets/mini_app_kit.dart';
 
 /// App Lock: a monochrome (alarm-themed) per-app locker. Gates on entry behind
 /// its own PIN/pattern + fingerprint (see [AppLockLockScreen]) exactly like the

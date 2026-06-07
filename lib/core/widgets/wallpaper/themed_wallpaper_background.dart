@@ -4,7 +4,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
-import '../../services/wallpaper_service.dart';
+import 'package:smart_launcher_app/core/services/wallpaper_service.dart';
 
 class ThemedWallpaperBackground extends StatefulWidget {
   final String path;

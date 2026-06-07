@@ -1,4 +1,4 @@
-import '../../models/search_result.dart';
+import 'package:smart_launcher_app/features/search/domain/entities/search_result.dart';
 
 class CalculatorService {
   static final _pattern = RegExp(r'^[\d\s\+\-\*\/\.\(\)]+$');

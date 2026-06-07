@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../../models/folder_info.dart';
-import '../../models/launcher_settings.dart';
-import '../icons/shaped_icon.dart';
-import '../icons/dot_renderer.dart';
+import 'package:smart_launcher_app/core/models/folder_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_settings.dart';
+import 'package:smart_launcher_app/core/widgets/icons/shaped_icon.dart';
+import 'package:smart_launcher_app/core/widgets/icons/dot_renderer.dart';
 
 class FolderIconView extends StatelessWidget {
   final FolderInfo folder;

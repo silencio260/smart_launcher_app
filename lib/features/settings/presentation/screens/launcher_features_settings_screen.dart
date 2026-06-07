@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../models/launcher_feature_settings.dart';
-import '../../services/launcher_service.dart';
-import '../../state/launcher_feature_cubit.dart';
-import '../settings/settings_appearance.dart';
-import 'after_call_settings_screen.dart';
-import 'install_uninstall_assistant_screen.dart';
+import 'package:smart_launcher_app/core/models/launcher_feature_settings.dart';
+import 'package:smart_launcher_app/core/platform/launcher_service.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/launcher_feature_cubit.dart';
+import 'package:smart_launcher_app/features/settings/presentation/screens/settings_appearance.dart';
+import 'package:smart_launcher_app/features/after_call/presentation/screens/after_call_settings_screen.dart';
+import 'package:smart_launcher_app/features/install_assistant/presentation/screens/install_uninstall_assistant_screen.dart';
 
 class LauncherFeaturesSettingsScreen extends StatelessWidget {
   const LauncherFeaturesSettingsScreen({super.key});

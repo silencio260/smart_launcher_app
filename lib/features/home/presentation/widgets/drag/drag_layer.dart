@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../models/workspace_item_info.dart';
-import '../../services/drag/drag_controller.dart';
-import '../../state/settings_cubit.dart';
-import '../../state/workspace_cubit.dart';
-import '../../utils/debug_flags.dart';
+import 'package:smart_launcher_app/core/models/workspace_item_info.dart';
+import 'package:smart_launcher_app/features/home/presentation/drag/drag_controller.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
+import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
+import 'package:smart_launcher_app/core/utils/debug_flags.dart';
 
 class DragLayer extends StatelessWidget {
   final Widget child;

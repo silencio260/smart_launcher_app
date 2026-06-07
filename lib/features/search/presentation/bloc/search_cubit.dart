@@ -1,6 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
-import '../models/search_result.dart';
+import 'package:smart_launcher_app/features/search/domain/entities/search_result.dart';
 
 class SearchState extends Equatable {
   final String query;

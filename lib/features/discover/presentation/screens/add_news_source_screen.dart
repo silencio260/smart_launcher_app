@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/discover/rss_source_store.dart';
+import 'package:smart_launcher_app/features/discover/data/rss_source_store.dart';
 
 /// Manage the Discover feed's RSS sources: add by URL, add a popular preset,
 /// import an OPML document, or remove an existing source.

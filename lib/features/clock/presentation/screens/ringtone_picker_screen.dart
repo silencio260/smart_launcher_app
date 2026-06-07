@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../../services/launcher_service.dart';
-import '../mini_app_chrome.dart';
+import 'package:smart_launcher_app/core/platform/launcher_service.dart';
+import 'package:smart_launcher_app/core/widgets/mini_app_chrome.dart';
 
 /// Lets the user choose an alarm sound: the device default, a system alarm
 /// tone (native ringtone picker), or any audio file on the device (SAF). The

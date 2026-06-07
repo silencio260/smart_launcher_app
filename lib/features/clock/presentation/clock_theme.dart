@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../mini_app_chrome.dart';
+import 'package:smart_launcher_app/core/widgets/mini_app_chrome.dart';
 
 /// Black & white, One UI-inspired theming local to the clock mini-app.
 ///

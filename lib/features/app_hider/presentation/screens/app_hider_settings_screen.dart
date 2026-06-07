@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-import '../../../data/mini_app_repositories.dart';
-import '../../../services/launcher_service.dart';
-import '../clock/clock_theme.dart';
-import '../mini_app_chrome.dart';
-import '../mini_app_kit.dart';
-import 'app_hider_lock_screen.dart';
+import 'package:smart_launcher_app/core/storage/mini_app_repositories.dart';
+import 'package:smart_launcher_app/core/platform/launcher_service.dart';
+import 'package:smart_launcher_app/features/clock/presentation/clock_theme.dart';
+import 'package:smart_launcher_app/core/widgets/mini_app_chrome.dart';
+import 'package:smart_launcher_app/core/widgets/mini_app_kit.dart';
+import 'package:smart_launcher_app/features/app_hider/presentation/screens/app_hider_lock_screen.dart';
 
 /// App Hider settings, mirroring the Vault / App Lock settings screens (change
 /// passcode, switch PIN/Pattern, toggle fingerprint, auto-lock) plus the bit

@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../state/apps_cubit.dart';
+import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.dart';
 
 // Subscribes one widget to a single package's badge count without going
 // through the AppsCubit Bloc stream. Used by every tile that renders a

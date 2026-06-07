@@ -5,10 +5,10 @@ import 'package:crypto/crypto.dart';
 import 'package:hive/hive.dart';
 import 'package:uuid/uuid.dart';
 
-import '../services/clock_service.dart';
-import '../services/launcher_service.dart';
-import 'feature_hive_store.dart';
-import 'world_cities.dart';
+import 'package:smart_launcher_app/features/clock/data/clock_service.dart';
+import 'package:smart_launcher_app/core/platform/launcher_service.dart';
+import 'package:smart_launcher_app/core/storage/feature_hive_store.dart';
+import 'package:smart_launcher_app/features/clock/data/world_cities.dart';
 
 /// Stable native-alarm id for the single countdown timer.
 const kLauncherTimerId = 'launcher_timer';

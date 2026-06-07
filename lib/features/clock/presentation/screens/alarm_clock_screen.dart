@@ -7,13 +7,13 @@ import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../data/mini_app_repositories.dart';
-import '../../services/clock_service.dart';
-import '../../services/launcher_service.dart';
-import 'clock/alarm_edit_screen.dart';
-import 'clock/clock_theme.dart';
-import 'clock/world_clock_picker_screen.dart';
-import 'mini_app_chrome.dart';
+import 'package:smart_launcher_app/core/storage/mini_app_repositories.dart';
+import 'package:smart_launcher_app/features/clock/data/clock_service.dart';
+import 'package:smart_launcher_app/core/platform/launcher_service.dart';
+import 'package:smart_launcher_app/features/clock/presentation/screens/alarm_edit_screen.dart';
+import 'package:smart_launcher_app/features/clock/presentation/clock_theme.dart';
+import 'package:smart_launcher_app/features/clock/presentation/screens/world_clock_picker_screen.dart';
+import 'package:smart_launcher_app/core/widgets/mini_app_chrome.dart';
 
 class AlarmClockScreen extends StatefulWidget {
   const AlarmClockScreen({super.key});

@@ -1,11 +1,11 @@
-import '../models/app_info.dart';
-import '../models/folder_info.dart';
-import '../models/item_info.dart';
-import '../models/launcher_feature.dart';
-import '../models/workspace_item_info.dart';
-import '../state/settings_cubit.dart';
-import '../state/workspace_cubit.dart';
-import 'app_categories.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/models/folder_info.dart';
+import 'package:smart_launcher_app/core/models/item_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_feature.dart';
+import 'package:smart_launcher_app/core/models/workspace_item_info.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
+import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
+import 'package:smart_launcher_app/features/apps/data/app_categories.dart';
 
 /// Builds the out-of-box default home layout and writes it into the
 /// [WorkspaceCubit] + [SettingsCubit]. Runs once on first install and again

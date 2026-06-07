@@ -1,6 +1,6 @@
 import 'package:characters/characters.dart';
-import '../../models/app_info.dart';
-import '../../models/launcher_feature.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_feature.dart';
 
 final _asciiSectionLetter = RegExp(r'^[A-Z]$');
 

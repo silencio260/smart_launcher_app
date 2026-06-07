@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../mini_app_chrome.dart';
+import 'package:smart_launcher_app/core/widgets/mini_app_chrome.dart';
 
 /// A monochrome 3x3 pattern lock. Drag across the dots to connect them; on
 /// release it reports the ordered node sequence (0..8, row-major) via

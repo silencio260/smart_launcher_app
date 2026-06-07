@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../models/launcher_feature.dart';
+import 'package:smart_launcher_app/core/models/launcher_feature.dart';
 
 class FeatureIcon extends StatelessWidget {
   final String? featureId;

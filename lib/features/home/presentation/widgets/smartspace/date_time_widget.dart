@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../../models/launcher_settings.dart';
+import 'package:smart_launcher_app/core/models/launcher_settings.dart';
 
 class DateTimeWidget extends StatefulWidget {
   final LauncherSettings settings;

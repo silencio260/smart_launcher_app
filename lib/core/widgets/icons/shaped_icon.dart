@@ -2,8 +2,8 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import '../../services/icons/decoded_icon_cache.dart';
-import '../../services/icons/icon_shape.dart';
+import 'package:smart_launcher_app/core/icons/decoded_icon_cache.dart';
+import 'package:smart_launcher_app/core/icons/icon_shape.dart';
 
 class ShapedIcon extends StatefulWidget {
   final Uint8List? iconBytes;

@@ -3,12 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:uuid/uuid.dart';
 
-import '../../../data/mini_app_repositories.dart';
-import '../../../services/clock_service.dart';
-import '../../../services/launcher_service.dart';
-import '../mini_app_chrome.dart';
-import 'clock_theme.dart';
-import 'ringtone_picker_screen.dart';
+import 'package:smart_launcher_app/core/storage/mini_app_repositories.dart';
+import 'package:smart_launcher_app/features/clock/data/clock_service.dart';
+import 'package:smart_launcher_app/core/platform/launcher_service.dart';
+import 'package:smart_launcher_app/core/widgets/mini_app_chrome.dart';
+import 'package:smart_launcher_app/features/clock/presentation/clock_theme.dart';
+import 'package:smart_launcher_app/features/clock/presentation/screens/ringtone_picker_screen.dart';
 
 /// Full create/edit screen for a single alarm. Returns true if the alarm list
 /// changed (saved or deleted).

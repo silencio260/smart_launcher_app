@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 import 'dart:collection';
 import 'package:flutter/services.dart';
-import '../../models/icon_pack_info.dart';
+import 'package:smart_launcher_app/core/models/icon_pack_info.dart';
 
 class IconPackService {
   static const _channel = MethodChannel('com.genrevibes.smartlauncher/apps');

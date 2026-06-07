@@ -1,4 +1,4 @@
-import '../models/app_info.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
 
 /// Coarse app categories used to seed the default home layout (pages 2/3 and
 /// the page-4 category folders). This is a best-effort classifier: a curated

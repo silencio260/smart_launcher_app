@@ -3,16 +3,16 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../models/launcher_widget_info.dart';
-import '../../models/widget_provider_info.dart';
-import '../../services/launcher_service.dart';
-import '../../services/widget_provider_cache_service.dart';
-import '../../state/apps_cubit.dart';
-import '../../state/settings_cubit.dart';
-import '../../state/workspace_cubit.dart';
-import '../../utils/debug_flags.dart';
-import '../../widgets/icons/shaped_icon.dart';
-import '../../widgets/workspace/widget_grid_math.dart';
+import 'package:smart_launcher_app/core/models/launcher_widget_info.dart';
+import 'package:smart_launcher_app/core/models/widget_provider_info.dart';
+import 'package:smart_launcher_app/core/platform/launcher_service.dart';
+import 'package:smart_launcher_app/core/services/widget_provider_cache_service.dart';
+import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
+import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
+import 'package:smart_launcher_app/core/utils/debug_flags.dart';
+import 'package:smart_launcher_app/core/widgets/icons/shaped_icon.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/workspace/widget_grid_math.dart';
 
 class WidgetPickerScreen extends StatefulWidget {
   /// Called after a widget is activated and placed on the home screen.

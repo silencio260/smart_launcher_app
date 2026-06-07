@@ -1,17 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../models/app_info.dart';
-import '../models/launcher_feature.dart';
-import '../models/search_result.dart';
-import '../services/feature_launch_dispatcher.dart';
-import '../services/search/app_search_service.dart';
-import '../services/search/calculator_service.dart';
-import '../services/search/recent_searches_store.dart';
-import '../state/apps_cubit.dart';
-import '../state/settings_cubit.dart';
-import '../widgets/icons/shaped_icon.dart';
-import '../widgets/icons/feature_icon.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_feature.dart';
+import 'package:smart_launcher_app/features/search/domain/entities/search_result.dart';
+import 'package:smart_launcher_app/core/platform/feature_launch_dispatcher.dart';
+import 'package:smart_launcher_app/features/search/data/app_search_service.dart';
+import 'package:smart_launcher_app/features/search/data/calculator_service.dart';
+import 'package:smart_launcher_app/features/search/data/recent_searches_store.dart';
+import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
+import 'package:smart_launcher_app/core/widgets/icons/shaped_icon.dart';
+import 'package:smart_launcher_app/core/widgets/icons/feature_icon.dart';
 
 /// A standard Android settings screen surfaced as a chip in Smart search. The
 /// [action] is an `android.provider.Settings.ACTION_*` string handled natively.

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../models/launcher_settings.dart';
-import 'date_time_widget.dart';
-import 'smartspace_card.dart';
+import 'package:smart_launcher_app/core/models/launcher_settings.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/smartspace/date_time_widget.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/smartspace/smartspace_card.dart';
 
 class SmartspaceView extends StatelessWidget {
   final LauncherSettings settings;

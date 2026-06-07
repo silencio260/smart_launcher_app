@@ -5,20 +5,20 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../models/app_info.dart';
-import '../../models/launcher_feature.dart';
-import '../../models/launcher_settings.dart';
-import '../../services/feature_launch_dispatcher.dart';
-import '../../services/launcher_service.dart';
-import '../../state/apps_cubit.dart';
-import '../../state/launcher_feature_cubit.dart';
-import '../../state/settings_cubit.dart';
-import '../../widgets/app_menu/launcher_app_context_menu.dart';
-import '../../widgets/icons/feature_icon.dart';
-import '../../widgets/icons/shaped_icon.dart';
-import '../../widgets/wallpaper/themed_wallpaper_background.dart';
-import '../app_library_page.dart';
-import '../discover_page.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_feature.dart';
+import 'package:smart_launcher_app/core/models/launcher_settings.dart';
+import 'package:smart_launcher_app/core/platform/feature_launch_dispatcher.dart';
+import 'package:smart_launcher_app/core/platform/launcher_service.dart';
+import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/launcher_feature_cubit.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
+import 'package:smart_launcher_app/core/widgets/app_menu/launcher_app_context_menu.dart';
+import 'package:smart_launcher_app/core/widgets/icons/feature_icon.dart';
+import 'package:smart_launcher_app/core/widgets/icons/shaped_icon.dart';
+import 'package:smart_launcher_app/core/widgets/wallpaper/themed_wallpaper_background.dart';
+import 'package:smart_launcher_app/features/app_library/presentation/screens/app_library_page.dart';
+import 'package:smart_launcher_app/features/discover/presentation/screens/discover_page.dart';
 
 class IosHomeView extends StatefulWidget {
   final LauncherSettings settings;

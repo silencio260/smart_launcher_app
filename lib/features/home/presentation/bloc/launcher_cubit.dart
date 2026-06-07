@@ -1,5 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../models/launcher_state.dart';
+import 'package:smart_launcher_app/core/models/launcher_state.dart';
 
 class LauncherCubit extends Cubit<LauncherState> {
   LauncherCubit() : super(LauncherState.normal);

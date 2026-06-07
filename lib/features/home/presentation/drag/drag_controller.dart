@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../models/item_info.dart';
+import 'package:smart_launcher_app/core/models/item_info.dart';
 
 class DragPayload {
   final ItemInfo item;

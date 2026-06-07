@@ -4,12 +4,13 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
-import '../models/app_info.dart';
-import '../models/launcher_feature.dart';
-import '../models/workspace_item_info.dart';
-import '../services/app_snapshot_cache.dart';
-import '../services/icons/decoded_icon_cache.dart';
-import '../services/launcher_service.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_feature.dart';
+import 'package:smart_launcher_app/core/models/workspace_item_info.dart';
+import 'package:smart_launcher_app/features/apps/data/app_snapshot_cache.dart';
+import 'package:smart_launcher_app/features/apps/data/repositories/apps_repo.dart';
+import 'package:smart_launcher_app/features/apps/domain/repositories/apps_base_repo.dart';
+import 'package:smart_launcher_app/core/icons/decoded_icon_cache.dart';
 
 class AppInstallEvent {
   final String packageName;
@@ -194,7 +195,11 @@ class AppsCubit extends Cubit<AppsState> {
   // BlocSelector on every workspace/dock/folder tile.
   final BadgeStore badges = BadgeStore();
 
-  AppsCubit() : super(AppsState());
+  final AppsBaseRepo _repo;
+
+  AppsCubit({AppsBaseRepo? repo})
+      : _repo = repo ?? const AppsRepo(),
+        super(AppsState());
 
   Stream<AppInstallEvent> get installEvents => _installEventsController.stream;
 
@@ -307,9 +312,14 @@ class AppsCubit extends Cubit<AppsState> {
       emit(state.copyWith(loading: true));
     }
     try {
-      final refresh = await LauncherService.refreshInstalledApps(
+      final refreshResult = await _repo.refreshInstalledApps(
         knownSnapshotKey: forceFull ? null : _snapshotKey,
       );
+      final refresh = refreshResult.fold((_) => null, (r) => r);
+      if (refresh == null) {
+        emit(state.copyWith(loading: false));
+        return;
+      }
       final snapshotKey = refresh.snapshotKey;
       if (!refresh.changed && snapshotKey != null) {
         _snapshotKey = snapshotKey;
@@ -317,8 +327,18 @@ class AppsCubit extends Cubit<AppsState> {
         return;
       }
 
-      final nativeApps =
-          refresh.apps ?? await LauncherService.getInstalledApps();
+      List<AppInfo> nativeApps;
+      if (refresh.apps != null) {
+        nativeApps = refresh.apps!;
+      } else {
+        final fetched = await _repo.getInstalledApps();
+        final list = fetched.fold((_) => null, (a) => a);
+        if (list == null) {
+          emit(state.copyWith(loading: false));
+          return;
+        }
+        nativeApps = list;
+      }
       final apps = _withInternalFeatures(nativeApps);
       _snapshotKey = snapshotKey;
       if (_drawerActive && state.apps.isNotEmpty) {

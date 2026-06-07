@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../models/launcher_feature.dart';
-import '../../widgets/icons/feature_icon.dart';
-import 'mini_app_chrome.dart';
+import 'package:smart_launcher_app/core/models/launcher_feature.dart';
+import 'package:smart_launcher_app/core/widgets/icons/feature_icon.dart';
+import 'package:smart_launcher_app/core/widgets/mini_app_chrome.dart';
 
 /// Shared design kit for the privacy mini-apps (App Locker, App Hider, File
 /// Vault). It mirrors the One UI patterns the clock app uses (see

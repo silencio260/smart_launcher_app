@@ -1,8 +1,8 @@
 import 'package:flutter/services.dart';
-import '../models/app_info.dart';
-import '../models/launcher_widget_info.dart';
-import '../models/widget_provider_info.dart';
-import '../utils/debug_flags.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_widget_info.dart';
+import 'package:smart_launcher_app/core/models/widget_provider_info.dart';
+import 'package:smart_launcher_app/core/utils/debug_flags.dart';
 
 class AppListRefresh {
   final bool changed;

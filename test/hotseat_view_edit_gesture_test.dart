@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:smart_launcher_app/models/app_info.dart';
-import 'package:smart_launcher_app/models/launcher_settings.dart';
-import 'package:smart_launcher_app/services/drag/drag_controller.dart';
-import 'package:smart_launcher_app/services/gestures/widget_resize_gesture_guard.dart';
-import 'package:smart_launcher_app/state/apps_cubit.dart';
-import 'package:smart_launcher_app/state/settings_cubit.dart';
-import 'package:smart_launcher_app/state/workspace_cubit.dart';
-import 'package:smart_launcher_app/widgets/dock/hotseat_view.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_settings.dart';
+import 'package:smart_launcher_app/features/home/presentation/drag/drag_controller.dart';
+import 'package:smart_launcher_app/features/home/presentation/gestures/widget_resize_gesture_guard.dart';
+import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
+import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/dock/hotseat_view.dart';
 
 void main() {
   tearDown(WidgetResizeGestureGuard.reset);

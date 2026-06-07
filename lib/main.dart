@@ -1,20 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'data/feature_hive_store.dart';
-import 'models/launcher_settings.dart';
-import 'services/clock_service.dart';
-import 'state/apps_cubit.dart';
-import 'state/launcher_cubit.dart';
-import 'state/launcher_feature_cubit.dart';
-import 'state/search_cubit.dart';
-import 'state/settings_cubit.dart';
-import 'state/workspace_cubit.dart';
-import 'screens/home_screen.dart';
-import 'widgets/workspace/route_coverage_scope.dart';
+import 'package:smart_launcher_app/bloc_observer.dart';
+import 'package:smart_launcher_app/container_injector.dart';
+import 'package:smart_launcher_app/core/storage/feature_hive_store.dart';
+import 'package:smart_launcher_app/features/clock/data/clock_service.dart';
+import 'package:smart_launcher_app/my_app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  Bloc.observer = const AppBlocObserver();
+  initApp();
   await FeatureHiveStore.init();
   await ClockService.init();
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -22,59 +18,5 @@ Future<void> main() async {
     statusBarColor: Colors.transparent,
     systemNavigationBarColor: Colors.transparent,
   ));
-  runApp(const SmartLauncherApp());
-}
-
-class SmartLauncherApp extends StatelessWidget {
-  const SmartLauncherApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MultiBlocProvider(
-      providers: [
-        BlocProvider(create: (_) => SettingsCubit()..load()),
-        BlocProvider(create: (_) => LauncherFeatureSettingsCubit()..load()),
-        BlocProvider(create: (_) => AppsCubit()..loadCachedThenRefresh()),
-        BlocProvider(create: (_) => WorkspaceCubit()..loadLayout()),
-        BlocProvider(create: (_) => LauncherCubit()),
-        BlocProvider(create: (_) => SearchCubit()),
-      ],
-      child: BlocBuilder<SettingsCubit, LauncherSettings>(
-        buildWhen: (prev, next) => prev.themeMode != next.themeMode,
-        builder: (context, settings) {
-          final themeMode = switch (settings.themeMode) {
-            ThemeMode2.light => ThemeMode.light,
-            ThemeMode2.dark => ThemeMode.dark,
-            ThemeMode2.system => ThemeMode.system,
-          };
-          return MaterialApp(
-            title: 'Smart Launcher',
-            debugShowCheckedModeBanner: false,
-            themeMode: themeMode,
-            color: Colors.transparent,
-            navigatorObservers: [homeRouteObserver],
-            theme: ThemeData(
-              colorScheme: ColorScheme.fromSeed(
-                seedColor: Colors.indigo,
-                brightness: Brightness.light,
-              ),
-              useMaterial3: true,
-              scaffoldBackgroundColor: Colors.transparent,
-              canvasColor: Colors.transparent,
-            ),
-            darkTheme: ThemeData(
-              colorScheme: ColorScheme.fromSeed(
-                seedColor: Colors.indigo,
-                brightness: Brightness.dark,
-              ),
-              useMaterial3: true,
-              scaffoldBackgroundColor: Colors.transparent,
-              canvasColor: Colors.transparent,
-            ),
-            home: const HomeScreen(),
-          );
-        },
-      ),
-    );
-  }
+  runApp(const MyApp());
 }
