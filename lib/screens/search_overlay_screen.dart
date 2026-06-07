@@ -29,8 +29,8 @@ class _SearchOverlayScreenState extends State<SearchOverlayScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) => _focusNode.requestFocus());
+    // Don't auto-focus: the keyboard should only appear once the user taps the
+    // search field.
   }
 
   @override

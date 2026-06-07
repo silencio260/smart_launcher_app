@@ -1952,7 +1952,7 @@ class _IosSpotlightState extends State<_IosSpotlight> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
                   child: TextField(
-                    autofocus: true,
+                    autofocus: false,
                     style: const TextStyle(color: Colors.white),
                     decoration: InputDecoration(
                       hintText: 'Search',

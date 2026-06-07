@@ -284,7 +284,7 @@ class _FolderViewState extends State<FolderView>
           color: Colors.transparent,
           child: TextField(
             controller: _titleController,
-            autofocus: true,
+            autofocus: false,
             style: const TextStyle(
                 color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
             textAlign: TextAlign.center,

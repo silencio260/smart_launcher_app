@@ -573,7 +573,7 @@ Future<String?> showMiniTextDialog(
                 children: [
                   TextField(
                     controller: controller,
-                    autofocus: true,
+                    autofocus: false,
                     onChanged: (_) => setState(() {}),
                     onSubmitted: (value) => Navigator.of(context)
                         .pop(value.trim().isEmpty ? null : value.trim()),

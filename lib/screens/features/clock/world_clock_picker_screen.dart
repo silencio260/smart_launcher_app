@@ -47,7 +47,7 @@ class _WorldClockPickerScreenState extends State<WorldClockPickerScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
             child: TextField(
-              autofocus: true,
+              autofocus: false,
               onChanged: (value) => setState(() => _query = value),
               decoration: InputDecoration(
                 hintText: 'Search city or country',

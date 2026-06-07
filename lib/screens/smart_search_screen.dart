@@ -67,8 +67,8 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
     _recentsStore.load().then((value) {
       if (mounted) setState(() => _recents = value);
     });
-    WidgetsBinding.instance
-        .addPostFrameCallback((_) => _focusNode.requestFocus());
+    // Don't auto-focus: the keyboard should only appear once the user taps the
+    // search field.
   }
 
   @override
