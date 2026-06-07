@@ -1,7 +1,9 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:smart_launcher_app/bloc_observer.dart';
+import 'package:smart_launcher_app/firebase_options.dart';
 import 'package:smart_launcher_app/container_injector.dart';
 import 'package:smart_launcher_app/core/storage/feature_hive_store.dart';
 import 'package:smart_launcher_app/features/clock/data/clock_service.dart';
@@ -9,6 +11,16 @@ import 'package:smart_launcher_app/my_app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    final app = await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    debugPrint('🔥 Firebase initialized: ${app.name} '
+        '(project: ${app.options.projectId})');
+  } catch (e, st) {
+    debugPrint('🔥 Firebase initialization FAILED: $e');
+    debugPrint('$st');
+  }
   Bloc.observer = const AppBlocObserver();
   initApp();
   await FeatureHiveStore.init();
