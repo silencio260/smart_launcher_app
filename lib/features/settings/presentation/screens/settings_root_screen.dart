@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/models/launcher_settings.dart';
 import 'package:smart_launcher_app/core/models/launcher_widget_info.dart';
 import 'package:smart_launcher_app/core/storage/mini_app_repositories.dart';
@@ -44,6 +45,7 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
   @override
   void initState() {
     super.initState();
+    AppAnalytics.settingsOpened();
     if (DebugFlags.settingsLogs) {
       debugPrint('SettingsLog SettingsRootScreen opened');
     }

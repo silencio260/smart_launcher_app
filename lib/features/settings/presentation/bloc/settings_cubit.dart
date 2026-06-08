@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:smart_launcher_app/core/analytics/app_events.dart';
+import 'package:smart_launcher_app/core/analytics/crash_context.dart';
 import 'package:smart_launcher_app/core/models/launcher_settings.dart';
 import 'package:smart_launcher_app/core/platform/launcher_service.dart';
 import 'package:smart_launcher_app/core/utils/debug_flags.dart';
@@ -21,13 +23,75 @@ class SettingsCubit extends Cubit<LauncherSettings> {
       } catch (_) {}
     }
     _applyDebugFlags(state);
+    _syncUserProperties(state);
   }
 
   Future<void> update(LauncherSettings settings) async {
+    final prev = state;
     emit(settings);
     _applyDebugFlags(settings);
+    _trackSettingsChange(prev, settings);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key, jsonEncode(_toJson(settings)));
+  }
+
+  /// Mirror config into analytics user properties + crash keys (non-PII).
+  void _syncUserProperties(LauncherSettings s) {
+    AppAnalytics.setUserProperty('theme', s.themeMode.name);
+    AppAnalytics.setUserProperty('icon_pack',
+        s.iconPackPackage.isEmpty ? 'default' : s.iconPackPackage);
+    AppAnalytics.setUserProperty('grid_size', '${s.gridColumns}x${s.gridRows}');
+    CrashContext.setString('theme', s.themeMode.name);
+    CrashContext.setString('grid_size', '${s.gridColumns}x${s.gridRows}');
+  }
+
+  /// Emit appearance/gesture/feature events for the fields that changed, and
+  /// keep user properties in sync. Diff-based so a settings save only fires for
+  /// what the user actually touched.
+  void _trackSettingsChange(LauncherSettings a, LauncherSettings b) {
+    if (a.themeMode != b.themeMode) {
+      AppAnalytics.appearanceChanged(setting: 'theme', value: b.themeMode.name);
+    }
+    if (a.iconShape != b.iconShape) {
+      AppAnalytics.appearanceChanged(setting: 'icon_shape', value: b.iconShape);
+    }
+    if (a.iconPackPackage != b.iconPackPackage) {
+      AppAnalytics.appearanceChanged(
+          setting: 'icon_pack',
+          value: b.iconPackPackage.isEmpty ? 'default' : 'custom');
+    }
+    if (a.gridColumns != b.gridColumns || a.gridRows != b.gridRows) {
+      AppAnalytics.appearanceChanged(
+          setting: 'grid_size', value: '${b.gridColumns}x${b.gridRows}');
+    }
+    if (a.discoverPageEnabled != b.discoverPageEnabled) {
+      AppAnalytics.featureToggled(
+          featureId: 'discover', enabled: b.discoverPageEnabled);
+    }
+    if (a.appLibraryPageEnabled != b.appLibraryPageEnabled) {
+      AppAnalytics.featureToggled(
+          featureId: 'app_library', enabled: b.appLibraryPageEnabled);
+    }
+    if (a.doubleTapAction != b.doubleTapAction) {
+      AppAnalytics.gestureSet(
+          gesture: 'double_tap', action: b.doubleTapAction.name);
+    }
+    if (a.swipeUpAction != b.swipeUpAction) {
+      AppAnalytics.gestureSet(gesture: 'swipe_up', action: b.swipeUpAction.name);
+    }
+    if (a.swipeDownAction != b.swipeDownAction) {
+      AppAnalytics.gestureSet(
+          gesture: 'swipe_down', action: b.swipeDownAction.name);
+    }
+    if (a.homeBtnAction != b.homeBtnAction) {
+      AppAnalytics.gestureSet(
+          gesture: 'home_button', action: b.homeBtnAction.name);
+    }
+    if (a.backBtnAction != b.backBtnAction) {
+      AppAnalytics.gestureSet(
+          gesture: 'back_button', action: b.backBtnAction.name);
+    }
+    _syncUserProperties(b);
   }
 
   void _applyDebugFlags(LauncherSettings s) {

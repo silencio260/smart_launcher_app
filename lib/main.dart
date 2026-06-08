@@ -6,7 +6,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:genrevibes_starter_kit/starter_kit.dart';
 import 'package:smart_launcher_app/bloc_observer.dart';
+import 'package:smart_launcher_app/core/analytics/analytics_config.dart';
+import 'package:smart_launcher_app/core/analytics/app_events.dart';
+import 'package:smart_launcher_app/core/analytics/install_id.dart';
 import 'package:smart_launcher_app/firebase_options.dart';
 import 'package:smart_launcher_app/container_injector.dart';
 import 'package:smart_launcher_app/core/storage/feature_hive_store.dart';
@@ -46,12 +50,40 @@ Future<void> main() async {
     initApp();
     await FeatureHiveStore.init();
     await ClockService.init();
+
+    // Anonymous, stable install id — groups crashes/sessions per install and
+    // seeds Mixpanel session replay. Set on Crashlytics immediately so even an
+    // early crash is attributable.
+    final installId = InstallId.getOrCreate();
+    await FirebaseCrashlytics.instance.setUserIdentifier(installId);
+
+    // Bring up the shared analytics stack: Firebase + Mixpanel fan-out.
+    // (Crashlytics stays wired directly here in main — not routed through the
+    // kit — to avoid double-reporting crashes.)
+    await StarterKit.initialize(
+      mixpanelDataSource: MixpanelRemoteDataSourceImpl(),
+    );
+    StarterKit.analytics.setUserId(installId);
+    AppAnalytics.appOpen();
+    StarterKit.retentionTracker.trackAppOpen(StarterKit.analytics);
+
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       systemNavigationBarColor: Colors.transparent,
     ));
-    runApp(const MyApp());
+
+    // Mixpanel session replay binds to the widget tree. With no token
+    // configured the wrapper is a transparent passthrough (replay disabled).
+    runApp(
+      AnalyticsConfig.hasMixpanelToken
+          ? StarterKit.mixpanelWrapper(
+              token: AnalyticsConfig.mixpanelToken,
+              distinctId: installId,
+              child: const MyApp(),
+            )
+          : const MyApp(),
+    );
   }, (error, stack) {
     FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
   });

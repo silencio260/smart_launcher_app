@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/storage/mini_app_repositories.dart';
 import 'package:smart_launcher_app/features/clock/data/clock_service.dart';
 import 'package:smart_launcher_app/core/platform/launcher_service.dart';
@@ -191,6 +192,7 @@ class _AlarmClockScreenState extends State<AlarmClockScreen>
   }
 
   Future<void> _toggleAlarm(ClockAlarmRecord alarm, bool value) async {
+    AppAnalytics.alarmToggled(enabled: value);
     await _clock.saveAndSchedule(alarm.copyWith(enabled: value));
     if (mounted) setState(() {});
   }
@@ -281,6 +283,7 @@ class _AlarmClockScreenState extends State<AlarmClockScreen>
               false;
         },
         onDismissed: (_) async {
+          AppAnalytics.alarmDeleted();
           await _clock.deleteAlarm(alarm.id);
           if (mounted) setState(() {});
         },
@@ -357,7 +360,10 @@ class _AlarmClockScreenState extends State<AlarmClockScreen>
         builder: (_) => WorldClockPickerScreen(repo: _clock),
       ),
     );
-    if (added == true && mounted) setState(() {});
+    if (added == true) {
+      AppAnalytics.worldClockAdded();
+      if (mounted) setState(() {});
+    }
   }
 
   Widget _buildWorldClock() {

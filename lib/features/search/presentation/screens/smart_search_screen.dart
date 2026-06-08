@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/models/app_info.dart';
 import 'package:smart_launcher_app/core/models/launcher_feature.dart';
 import 'package:smart_launcher_app/features/search/domain/entities/search_result.dart';
@@ -64,6 +65,8 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
   @override
   void initState() {
     super.initState();
+    AppAnalytics.miniAppOpened(AppAnalytics.miniAppSearch);
+    AppAnalytics.searchOpened(source: 'launcher');
     _recentsStore.load().then((value) {
       if (mounted) setState(() => _recents = value);
     });
@@ -73,6 +76,7 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
 
   @override
   void dispose() {
+    AppAnalytics.miniAppClosed(AppAnalytics.miniAppSearch);
     _focusNode.dispose();
     _controller.dispose();
     super.dispose();
@@ -133,9 +137,11 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
     _rememberQuery(_query);
     _close();
     if (result.componentName != null) {
-      FeatureLaunchDispatcher.launchKey(context, result.componentName!);
+      FeatureLaunchDispatcher.launchKey(context, result.componentName!,
+          source: 'search');
     } else if (result.packageName != null) {
-      FeatureLaunchDispatcher.launchPackage(context, result.packageName!);
+      FeatureLaunchDispatcher.launchPackage(context, result.packageName!,
+          source: 'search');
     }
   }
 
@@ -147,7 +153,17 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
     _system.invokeMethod('launchUrl', {'url': url});
   }
 
-  void _onResultTap(SearchResult result) {
+  void _onResultTap(SearchResult result, [int index = -1]) {
+    // Commit point: log the search outcome (lengths/flags only — never the raw
+    // query) plus which result was acted on.
+    AppAnalytics.searchPerformed(
+      queryLength: _query.trim().length,
+      resultCount: _results.length,
+    );
+    AppAnalytics.searchResultTapped(
+      resultType: _resultTypeName(result.type),
+      resultIndex: index,
+    );
     switch (result.type) {
       case SearchResultType.app:
         _launchApp(result);
@@ -160,7 +176,15 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
     }
   }
 
+  static String _resultTypeName(SearchResultType type) => switch (type) {
+        SearchResultType.app => 'app',
+        SearchResultType.webSearch => 'web',
+        SearchResultType.calculator => 'calculator',
+        _ => 'other',
+      };
+
   void _runRecent(String query) {
+    AppAnalytics.searchRecentRerun();
     _controller.text = query;
     _controller.selection =
         TextSelection.collapsed(offset: query.length);
@@ -206,7 +230,17 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
               style: const TextStyle(color: Colors.white, fontSize: 18),
               textInputAction: TextInputAction.search,
               onSubmitted: (_) {
-                if (_query.trim().isNotEmpty) _launchWeb();
+                if (_query.trim().isNotEmpty) {
+                  AppAnalytics.searchPerformed(
+                    queryLength: _query.trim().length,
+                    resultCount: _results.length,
+                  );
+                  AppAnalytics.searchResultTapped(
+                    resultType: 'web',
+                    resultIndex: -1,
+                  );
+                  _launchWeb();
+                }
               },
               decoration: InputDecoration(
                 hintText: 'Search apps and the web…',
@@ -262,7 +296,7 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
               ? Text(r.subtitle!,
                   style: const TextStyle(color: Colors.white54))
               : null,
-          onTap: () => _onResultTap(r),
+          onTap: () => _onResultTap(r, i),
         );
       },
     );
@@ -282,7 +316,7 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
             onTap: (app) {
               _rememberQuery(app.name);
               Navigator.pop(context);
-              FeatureLaunchDispatcher.launch(context, app);
+              FeatureLaunchDispatcher.launch(context, app, source: 'search');
             },
           ),
           const SizedBox(height: 24),

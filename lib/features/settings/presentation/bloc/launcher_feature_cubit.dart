@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/storage/feature_hive_store.dart';
 import 'package:smart_launcher_app/core/models/launcher_feature_settings.dart';
 import 'package:smart_launcher_app/core/platform/launcher_service.dart';
@@ -44,6 +45,8 @@ class LauncherFeatureSettingsCubit extends Cubit<LauncherFeatureSettings> {
   }
 
   Future<void> setAppLocked(String packageName, bool locked) {
+    // Count only — never log which package was locked (privacy / Play policy).
+    AppAnalytics.appLockToggle(enabled: locked);
     final current = state.lockedApps.toSet();
     if (locked) {
       current.add(packageName);

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:smart_launcher_app/config/theme_manager.dart';
 import 'package:smart_launcher_app/container_injector.dart';
+import 'package:smart_launcher_app/core/analytics/analytics_route_observer.dart';
 import 'package:smart_launcher_app/core/models/launcher_settings.dart';
 import 'package:smart_launcher_app/core/utils/app_strings.dart';
 import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.dart';
@@ -17,6 +18,9 @@ import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_
 /// locator) and configures `MaterialApp`.
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
+
+  /// Logs screen views for named routes (fans out to Firebase + Mixpanel).
+  static final _analyticsObserver = AnalyticsRouteObserver();
 
   @override
   Widget build(BuildContext context) {
@@ -42,7 +46,7 @@ class MyApp extends StatelessWidget {
             debugShowCheckedModeBanner: false,
             themeMode: themeMode,
             color: Colors.transparent,
-            navigatorObservers: [homeRouteObserver],
+            navigatorObservers: [homeRouteObserver, _analyticsObserver],
             theme: AppTheme.light,
             darkTheme: AppTheme.dark,
             home: const HomeScreen(),

@@ -4,16 +4,33 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 /// Global observer for all Blocs/Cubits.
 ///
-/// Wired in `main.dart` via `Bloc.observer = AppBlocObserver();`. Logs are
-/// gated behind [kDebugMode] so release builds stay silent.
+/// Wired in `main.dart` via `Bloc.observer = AppBlocObserver();`.
 class AppBlocObserver extends BlocObserver {
   const AppBlocObserver();
+
+  /// Cubits whose transitions are worth a Crashlytics breadcrumb. Kept short so
+  /// the breadcrumb buffer reflects meaningful navigation/state, not chatter.
+  static const _breadcrumbCubits = {
+    'LauncherCubit',
+    'WorkspaceCubit',
+    'SearchCubit',
+    'AppsCubit',
+    'SettingsCubit',
+    'LauncherFeatureSettingsCubit',
+  };
 
   @override
   void onChange(BlocBase bloc, Change change) {
     super.onChange(bloc, change);
+    final line =
+        '[Bloc] ${bloc.runtimeType} -> ${change.nextState.runtimeType}';
     if (kDebugMode) {
-      debugPrint('[Bloc] ${bloc.runtimeType} -> ${change.nextState.runtimeType}');
+      debugPrint(line);
+    }
+    // Leave a release breadcrumb for important cubits so a later crash report
+    // shows the trail of states that preceded it.
+    if (_breadcrumbCubits.contains(bloc.runtimeType.toString())) {
+      FirebaseCrashlytics.instance.log(line);
     }
   }
 
@@ -24,6 +41,8 @@ class AppBlocObserver extends BlocObserver {
     }
     // Report Cubit/Bloc exceptions as non-fatals (collection is gated to
     // release builds via setCrashlyticsCollectionEnabled in main()).
+    // NOTE: single capture path — do NOT also route through StarterKit.analytics
+    // (the kit's Firebase datasource calls the same Crashlytics API → dupes).
     FirebaseCrashlytics.instance.recordError(
       error,
       stackTrace,

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
+import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/models/app_info.dart';
 import 'package:smart_launcher_app/features/discover/domain/entities/rss_item.dart';
 import 'package:smart_launcher_app/features/discover/data/rss_service.dart';
@@ -84,6 +85,12 @@ class _DiscoverPageState extends State<DiscoverPage> {
 
   void _onSectionChanged() {
     final section = widget.activeSection?.value;
+    // Swiping INTO Discover is the real "opened" signal (the page is kept alive
+    // off-screen, so initState only fires once).
+    if (section == HomeSection.discover &&
+        _lastSection != HomeSection.discover) {
+      AppAnalytics.discoverOpened();
+    }
     // Re-organise the moment Discover stops being the active page. The widget
     // is kept alive off-screen, so this setState is invisible now and the user
     // simply arrives to a reshuffled, image-first feed on their next swipe in.
@@ -108,10 +115,12 @@ class _DiscoverPageState extends State<DiscoverPage> {
   }
 
   void _openArticle(RssItem item) {
+    AppAnalytics.discoverArticleOpened(sourceName: item.source);
     _system.invokeMethod('launchUrl', {'url': item.link});
   }
 
   Future<void> _manageSources() async {
+    AppAnalytics.discoverSourcesOpened();
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const AddNewsSourceScreen()),

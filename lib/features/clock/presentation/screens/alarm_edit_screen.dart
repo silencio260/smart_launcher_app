@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:uuid/uuid.dart';
 
+import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/storage/mini_app_repositories.dart';
 import 'package:smart_launcher_app/features/clock/data/clock_service.dart';
 import 'package:smart_launcher_app/core/platform/launcher_service.dart';
@@ -85,6 +86,14 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
 
   Future<void> _save() async {
     final record = _build();
+    if (_isNew) {
+      AppAnalytics.alarmCreated(
+        repeat: _repeatDays.isNotEmpty,
+        hasSound: _ringtoneUri != null,
+      );
+    } else {
+      AppAnalytics.alarmEdited();
+    }
     // An alarm that can't post a notification can't surface its ring UI on
     // Android 13+, so make sure we've asked before scheduling.
     await _ensureNotificationPermission();
@@ -161,6 +170,7 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
       ),
     );
     if (confirm != true) return;
+    AppAnalytics.alarmDeleted();
     await widget.repo.deleteAlarm(id);
     if (mounted) Navigator.pop(context, true);
   }

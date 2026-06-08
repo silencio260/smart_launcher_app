@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/models/app_info.dart';
 import 'package:smart_launcher_app/core/models/launcher_settings.dart';
 import 'package:smart_launcher_app/features/apps/data/app_categories.dart';
@@ -67,6 +68,14 @@ class _AppLibraryPageState extends State<AppLibraryPage> {
   ];
 
   String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    // Proxy for "opened": the page is built when the user first swipes to the
+    // App Library (kept alive thereafter).
+    AppAnalytics.appLibraryOpened();
+  }
 
   List<AppInfo> _visible(AppsState appsState, Set<String> hidden) => appsState
       .apps
@@ -282,6 +291,7 @@ class _AppLibraryPageState extends State<AppLibraryPage> {
   }
 
   void _openFolder(_LibraryFolder folder) {
+    AppAnalytics.appLibraryCategoryOpened(category: folder.title);
     // Behaves like a normal launcher folder — a centered panel that scales in
     // over a blurred, dim backdrop and dismisses on a tap/swipe outside — just
     // bigger, since the library categories hold far more apps than a home folder.

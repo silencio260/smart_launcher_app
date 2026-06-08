@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/models/app_info.dart';
 import 'package:smart_launcher_app/core/models/launcher_feature.dart';
 import 'package:smart_launcher_app/core/platform/feature_launch_dispatcher.dart';
@@ -60,6 +61,7 @@ Future<void> showLauncherAppContextMenu(
       icon: Icons.visibility_off_outlined,
       label: 'Hide app',
       onSelected: () {
+        AppAnalytics.appHiderToggle(hidden: true);
         final settings = settingsCubit.state;
         final hidden = settings.hiddenApps.toSet()..add(app.launcherKey);
         settingsCubit.update(
@@ -84,6 +86,8 @@ Future<void> showLauncherAppContextMenu(
         onSelected: () => LauncherService.uninstallApp(app.packageName),
       ),
   ];
+
+  AppAnalytics.appContextMenuOpened(actionsAvailable: items.length);
 
   final position =
       globalPosition == Offset.zero ? fallbackPosition : globalPosition;

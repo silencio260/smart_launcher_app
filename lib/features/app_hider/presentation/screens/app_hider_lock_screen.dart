@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/storage/mini_app_repositories.dart';
 import 'package:smart_launcher_app/core/platform/launcher_service.dart';
 import 'package:smart_launcher_app/features/clock/presentation/clock_theme.dart';
@@ -175,11 +176,19 @@ class _AppHiderLockScreenState extends State<AppHiderLockScreen> {
   }
 
   void _verify(String code) {
+    final method =
+        _type == AppHiderSecurityRepository.typePin ? 'pin' : 'pattern';
+    AppAnalytics.secureAuthAttempt(
+        miniApp: AppAnalytics.miniAppAppHider, method: method);
     if (_sec.verify(code)) {
+      AppAnalytics.secureAuthResult(
+          miniApp: AppAnalytics.miniAppAppHider, method: method, success: true);
       _sec.markUnlocked();
       widget.onUnlocked();
       return;
     }
+    AppAnalytics.secureAuthResult(
+        miniApp: AppAnalytics.miniAppAppHider, method: method, success: false);
     _fail(_type == AppHiderSecurityRepository.typePin
         ? 'Wrong PIN'
         : 'Wrong pattern');
@@ -194,10 +203,16 @@ class _AppHiderLockScreenState extends State<AppHiderLockScreen> {
   }
 
   Future<void> _useBiometric() async {
+    AppAnalytics.secureAuthAttempt(
+        miniApp: AppAnalytics.miniAppAppHider, method: 'fingerprint');
     final ok = await LauncherService.authenticateDevice(
       title: 'Unlock App Hider',
       description: 'Use your fingerprint or device lock',
     );
+    AppAnalytics.secureAuthResult(
+        miniApp: AppAnalytics.miniAppAppHider,
+        method: 'fingerprint',
+        success: ok);
     if (!mounted || !ok) return;
     await _sec.markUnlocked();
     widget.onUnlocked();

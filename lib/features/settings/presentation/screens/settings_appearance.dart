@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/models/launcher_settings.dart';
 import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
 
@@ -32,9 +33,27 @@ class SettingsAppearance extends StatelessWidget {
 }
 
 MaterialPageRoute<T> settingsRoute<T>(Widget child) {
+  // Single chokepoint for every settings sub-page: log which page was opened and
+  // give the route a name so the NavigatorObserver also records a screen view.
+  final page = _settingsPageLabel(child);
+  AppAnalytics.settingsSubpageOpened(page: page);
   return MaterialPageRoute<T>(
+    settings: RouteSettings(name: 'settings_$page'),
     builder: (_) => SettingsAppearance(child: child),
   );
+}
+
+/// Derives a snake_case page label from a settings screen's type, e.g.
+/// `GeneralSettingsScreen` -> `general`, `WidgetPickerScreen` -> `widget_picker`.
+String _settingsPageLabel(Widget child) {
+  var name = child.runtimeType
+      .toString()
+      .replaceAll('Settings', '')
+      .replaceAll('Screen', '');
+  final snake = name
+      .replaceAllMapped(RegExp(r'(?<=[a-z])[A-Z]'), (m) => '_${m.group(0)}')
+      .toLowerCase();
+  return snake.isEmpty ? 'settings' : snake;
 }
 
 Brightness _brightnessFor(BuildContext context, LauncherSettings settings) {

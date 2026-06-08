@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/storage/mini_app_repositories.dart';
 import 'package:smart_launcher_app/core/platform/launcher_service.dart';
 import 'package:smart_launcher_app/features/clock/presentation/clock_theme.dart';
@@ -174,11 +175,19 @@ class _VaultLockScreenState extends State<VaultLockScreen> {
   }
 
   void _verify(String code) {
+    final method =
+        _type == VaultSecurityRepository.typePin ? 'pin' : 'pattern';
+    AppAnalytics.secureAuthAttempt(
+        miniApp: AppAnalytics.miniAppVault, method: method);
     if (_sec.verify(code)) {
+      AppAnalytics.secureAuthResult(
+          miniApp: AppAnalytics.miniAppVault, method: method, success: true);
       _sec.markUnlocked();
       widget.onUnlocked();
       return;
     }
+    AppAnalytics.secureAuthResult(
+        miniApp: AppAnalytics.miniAppVault, method: method, success: false);
     _fail(_type == VaultSecurityRepository.typePin
         ? 'Wrong PIN'
         : 'Wrong pattern');
@@ -193,10 +202,14 @@ class _VaultLockScreenState extends State<VaultLockScreen> {
   }
 
   Future<void> _useBiometric() async {
+    AppAnalytics.secureAuthAttempt(
+        miniApp: AppAnalytics.miniAppVault, method: 'fingerprint');
     final ok = await LauncherService.authenticateDevice(
       title: 'Unlock Vault',
       description: 'Use your fingerprint or device lock',
     );
+    AppAnalytics.secureAuthResult(
+        miniApp: AppAnalytics.miniAppVault, method: 'fingerprint', success: ok);
     if (!mounted || !ok) return;
     await _sec.markUnlocked();
     widget.onUnlocked();

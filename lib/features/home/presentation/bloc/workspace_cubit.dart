@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/models/workspace_item_info.dart';
 import 'package:smart_launcher_app/core/models/launcher_feature.dart';
 import 'package:smart_launcher_app/core/models/folder_info.dart';
@@ -188,7 +189,16 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
 
   void setCurrentPage(int page) {
     final maxPage = state.pages.isEmpty ? 0 : state.pages.length - 1;
-    emit(state.copyWith(currentPage: page.clamp(0, maxPage)));
+    final target = page.clamp(0, maxPage);
+    final from = state.currentPage;
+    if (target != from) {
+      AppAnalytics.workspacePageChanged(
+        fromIndex: from,
+        toIndex: target,
+        type: 'home',
+      );
+    }
+    emit(state.copyWith(currentPage: target));
   }
 
   void setClockPage(int page) {

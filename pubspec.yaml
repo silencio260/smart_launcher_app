@@ -10,8 +10,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  genrevibes_starter_kit:
+    path: packages/genrevibes_starter_kit
   firebase_core: ^3.6.0
   firebase_crashlytics: ^4.1.3
+  firebase_analytics: ^11.0.0 # aligned with genrevibes_starter_kit (must match its firebase_analytics constraint)
   cupertino_icons: ^1.0.8
   shared_preferences: ^2.3.2
   flutter_bloc: ^9.0.0
