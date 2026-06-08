@@ -16,6 +16,7 @@ import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.da
 import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
 import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
 import 'package:smart_launcher_app/core/utils/debug_flags.dart';
+import 'package:smart_launcher_app/features/settings/presentation/screens/analytics_debug_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/general_settings_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/home_screen_settings_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/launcher_themes_screen.dart';
@@ -295,6 +296,16 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                       );
                     },
                   ),
+              if (kDebugMode)
+                (c) => _Tile(
+                      icon: Icons.analytics_outlined,
+                      title: 'Analytics',
+                      subtitle: 'Retention metrics & tracked events catalog',
+                      onTap: () => Navigator.push(
+                        c,
+                        settingsRoute(const AnalyticsDebugScreen()),
+                      ),
+                    ),
               if (kDebugMode) (_) => const _AfterCallDebugPanel(),
               if (kDebugMode) (_) => const _InstallAssistantDebugPanel(),
               if (kDebugMode) (_) => const _AlarmDebugPanel(),
