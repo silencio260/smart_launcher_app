@@ -1,3 +1,4 @@
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -21,6 +22,14 @@ class AppBlocObserver extends BlocObserver {
     if (kDebugMode) {
       debugPrint('[Bloc] ${bloc.runtimeType} ERROR: $error');
     }
+    // Report Cubit/Bloc exceptions as non-fatals (collection is gated to
+    // release builds via setCrashlyticsCollectionEnabled in main()).
+    FirebaseCrashlytics.instance.recordError(
+      error,
+      stackTrace,
+      reason: '${bloc.runtimeType} error',
+      fatal: false,
+    );
     super.onError(bloc, error, stackTrace);
   }
 }

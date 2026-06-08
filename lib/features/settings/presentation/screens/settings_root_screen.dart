@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -293,6 +296,14 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
               if (kDebugMode) (_) => const _AfterCallDebugPanel(),
               if (kDebugMode) (_) => const _InstallAssistantDebugPanel(),
               if (kDebugMode) (_) => const _AlarmDebugPanel(),
+              // Deliberately NOT gated by kDebugMode: Crashlytics collection is
+              // disabled in debug (see main.dart), so the only useful place to
+              // exercise it is a release build. Temporary — strip before launch.
+              (_) => const _SubSectionHeader(
+                    icon: Icons.warning_amber_outlined,
+                    title: 'Crashlytics',
+                  ),
+              (_) => const _CrashlyticsDebugPanel(),
               (_) => const _SubSectionHeader(
                     icon: Icons.article_outlined,
                     title: 'Logs',
@@ -681,6 +692,99 @@ class _InstallAssistantDebugPanelState
                     _busy ? null : () => _showAssistantOverlay(removed: true),
                 icon: const Icon(Icons.delete_outline),
                 label: const Text('Show uninstall modal'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Temporary tester for verifying Firebase Crashlytics wiring end-to-end.
+///
+/// Unlike the other dev panels this is NOT gated behind [kDebugMode], because
+/// collection is disabled in debug (`setCrashlyticsCollectionEnabled(!kDebugMode)`
+/// in main.dart) — reports only upload from a release build. Exercises all three
+/// capture paths:
+///   • fatal native crash (`crash()`) → uploads on the *next* app launch,
+///   • non-fatal `recordError(..., fatal: false)`,
+///   • uncaught async error → caught by the `runZonedGuarded` handler in main().
+///
+/// Strip this panel (and its list entry/header) before shipping.
+class _CrashlyticsDebugPanel extends StatelessWidget {
+  const _CrashlyticsDebugPanel();
+
+  void _toast(BuildContext context, String message) {
+    ScaffoldMessenger.of(context)
+      ..removeCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'CRASHLYTICS TESTER',
+            style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            kDebugMode
+                ? 'Collection is OFF in debug — install a RELEASE build, then '
+                    'tap a button below. Forced crashes upload on the next launch.'
+                : 'Tap to send a test event to Crashlytics. A forced crash uploads '
+                    'on the next app launch; non-fatals upload in the background.',
+            style: const TextStyle(fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilledButton.tonalIcon(
+                onPressed: () {
+                  _toast(context,
+                      'Recorded non-fatal. Check Crashlytics in a minute or two.');
+                  FirebaseCrashlytics.instance.recordError(
+                    Exception('Test non-fatal from Settings'),
+                    StackTrace.current,
+                    reason: 'Crashlytics tester',
+                    fatal: false,
+                  );
+                },
+                icon: const Icon(Icons.report_gmailerrorred_outlined),
+                label: const Text('Log non-fatal'),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: () {
+                  _toast(context, 'Throwing uncaught async error…');
+                  // Escapes to the runZonedGuarded handler in main().
+                  Future<void>.delayed(
+                    const Duration(milliseconds: 150),
+                    () => throw Exception('Test uncaught async from Settings'),
+                  );
+                },
+                icon: const Icon(Icons.bolt_outlined),
+                label: const Text('Throw async error'),
+              ),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () {
+                  _toast(context,
+                      'Crashing now — REOPEN the app to upload the report.');
+                  // Small delay so the toast paints before the native crash.
+                  Future<void>.delayed(
+                    const Duration(milliseconds: 400),
+                    () => FirebaseCrashlytics.instance.crash(),
+                  );
+                },
+                icon: const Icon(Icons.dangerous_outlined),
+                label: const Text('Force crash'),
               ),
             ],
           ),
