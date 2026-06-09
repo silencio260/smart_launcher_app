@@ -56,8 +56,8 @@ class AnalyticsDebugScreen extends StatelessWidget {
             subtitle: Text(
               hasMixpanel
                   ? 'Token configured — events + session replay active.'
-                  : 'No MIXPANEL_TOKEN — SDK is a no-op, nothing is sent. '
-                      'Add it via --dart-define / env JSON.',
+                  : 'No mixpanel_token in the active env file — SDK is a '
+                      'no-op, nothing is sent. Set it in env/<flavor>.json.',
             ),
             isThreeLine: true,
           ),
