@@ -117,7 +117,8 @@ class _RetentionMetricsScreen extends StatelessWidget {
               const _GroupHeader('Engagement'),
               _MetricTile('Total app opens', '${tracker.getTotalAppOpens()}'),
               _MetricTile('Total sessions', '${engagement['total_sessions']}'),
-              _MetricTile('Sessions today', '${tracker.getSessionCountToday()}'),
+              _MetricTile(
+                  'Sessions today', '${tracker.getSessionCountToday()}'),
               _MetricTile(
                 'Active days (last 35)',
                 '${engagement['active_days_count']}',
@@ -247,9 +248,36 @@ const List<_EventGroup> _eventCatalog = [
     _EventDef('drawer_opened', ['open_method']),
     _EventDef('app_context_menu_opened', ['actions_available']),
   ]),
+  _EventGroup('Ads', [
+    _EventDef('ad_lifecycle', [
+      'ad_type',
+      'action',
+      'result',
+      'source',
+      'test_ads',
+      'error',
+    ]),
+    _EventDef('ad_impression', [
+      'ad_platform',
+      'ad_source',
+      'ad_format',
+      'ad_unit_name',
+      'value',
+      'currency',
+    ]),
+    _EventDef('ad_revenue', [
+      'value',
+      'currency',
+      'ad_source',
+      'ad_unit_id',
+      'ad_format',
+      'ad_network',
+    ]),
+  ]),
   _EventGroup('C2 · Smart search', [
     _EventDef('search_opened', ['source']),
-    _EventDef('search_performed', ['query_length', 'result_count', 'has_results']),
+    _EventDef(
+        'search_performed', ['query_length', 'result_count', 'has_results']),
     _EventDef('search_result_tapped', ['result_type', 'result_index']),
     _EventDef('search_recent_rerun'),
   ]),
@@ -302,8 +330,7 @@ const List<_EventGroup> _eventCatalog = [
 class _TrackedEventsScreen extends StatelessWidget {
   const _TrackedEventsScreen();
 
-  int get _total =>
-      _eventCatalog.fold(0, (sum, g) => sum + g.events.length);
+  int get _total => _eventCatalog.fold(0, (sum, g) => sum + g.events.length);
 
   @override
   Widget build(BuildContext context) {

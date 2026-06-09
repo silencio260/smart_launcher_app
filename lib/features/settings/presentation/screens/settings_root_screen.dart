@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:smart_launcher_app/core/analytics/app_events.dart';
+import 'package:smart_launcher_app/core/ads/test_ads_config.dart';
 import 'package:smart_launcher_app/core/models/launcher_settings.dart';
 import 'package:smart_launcher_app/core/models/launcher_widget_info.dart';
 import 'package:smart_launcher_app/core/storage/mini_app_repositories.dart';
@@ -17,6 +18,7 @@ import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_
 import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
 import 'package:smart_launcher_app/core/utils/debug_flags.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/analytics_debug_screen.dart';
+import 'package:smart_launcher_app/features/settings/presentation/screens/ads_debug_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/general_settings_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/home_screen_settings_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/launcher_themes_screen.dart';
@@ -304,6 +306,16 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                       onTap: () => Navigator.push(
                         c,
                         settingsRoute(const AnalyticsDebugScreen()),
+                      ),
+                    ),
+              if (TestAdsConfig.shouldShowDebugEntry())
+                (c) => _Tile(
+                      icon: Icons.ad_units_outlined,
+                      title: 'Ads',
+                      subtitle: 'Test ads loader and lifecycle events',
+                      onTap: () => Navigator.push(
+                        c,
+                        settingsRoute(const AdsDebugScreen()),
                       ),
                     ),
               if (kDebugMode) (_) => const _AfterCallDebugPanel(),

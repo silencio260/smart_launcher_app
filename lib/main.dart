@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:genrevibes_starter_kit/starter_kit.dart';
 import 'package:smart_launcher_app/bloc_observer.dart';
+import 'package:smart_launcher_app/core/ads/test_ads_config.dart';
 import 'package:smart_launcher_app/core/analytics/analytics_config.dart';
 import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/analytics/install_id.dart';
@@ -63,6 +64,10 @@ Future<void> main() async {
     await StarterKit.initialize(
       mixpanelDataSource: MixpanelRemoteDataSourceImpl(),
     );
+    final testAdsConfig = TestAdsConfig.fromAppEnv();
+    if (testAdsConfig != null) {
+      StarterKit.adsBloc.add(AdsInitialize(config: testAdsConfig));
+    }
     StarterKit.analytics.setUserId(installId);
     AppAnalytics.appOpen();
     StarterKit.retentionTracker.trackAppOpen(StarterKit.analytics);

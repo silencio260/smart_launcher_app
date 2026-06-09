@@ -16,6 +16,8 @@ class AppAnalytics {
   AppAnalytics._();
 
   static AnalyticsService get _a => StarterKit.analytics;
+  static bool get _analyticsReady =>
+      StarterKit.sl.isRegistered<AnalyticsBloc>();
 
   /// Identifiers for our own mini-apps.
   static const miniAppClock = 'clock';
@@ -38,25 +40,36 @@ class AppAnalytics {
   // --- Generic passthroughs ---
 
   static void event(String name, {Map<String, dynamic>? params}) {
-    _a.logEvent(name, parameters: params);
+    if (_analyticsReady) {
+      _a.logEvent(name, parameters: params);
+    }
     CrashContext.log(name);
   }
 
   static void screenView(String screen) {
-    _a.logScreenView(screen);
+    if (_analyticsReady) {
+      _a.logScreenView(screen);
+    }
     CrashContext.setActiveScreen(screen);
   }
 
-  static void setUserProperty(String name, String value) =>
+  static void setUserProperty(String name, String value) {
+    if (_analyticsReady) {
       _a.setUserProperty(name, value);
+    }
+  }
 
   // --- C0: lifecycle & user model ---
 
-  static void appOpen() => _a.logAppOpen();
+  static void appOpen() {
+    if (_analyticsReady) {
+      _a.logAppOpen();
+    }
+  }
 
   static void launcherSetDefault(bool isDefault) {
     event('launcher_set_default', params: {'is_default': isDefault});
-    _a.setUserProperty('default_launcher', '$isDefault');
+    setUserProperty('default_launcher', '$isDefault');
     CrashContext.setBool('default_launcher', isDefault);
   }
 
@@ -90,6 +103,25 @@ class AppAnalytics {
   static void appContextMenuOpened({required int actionsAvailable}) =>
       event('app_context_menu_opened',
           params: {'actions_available': actionsAvailable});
+
+  // --- Ads test instrumentation ---
+
+  static void adLifecycle({
+    required String adType,
+    required String action,
+    required String result,
+    String source = 'dev_panel',
+    bool testAds = true,
+    String? error,
+  }) =>
+      event('ad_lifecycle', params: {
+        'ad_type': adType,
+        'action': action,
+        'result': result,
+        'source': source,
+        'test_ads': testAds,
+        if (error != null) 'error': error,
+      });
 
   // --- C2: smart search (NO raw query text) ---
 
@@ -153,7 +185,8 @@ class AppAnalytics {
         'success': success,
       });
 
-  static void vaultItemImported({required String mediaType, required int count}) =>
+  static void vaultItemImported(
+          {required String mediaType, required int count}) =>
       event('vault_item_imported',
           params: {'media_type': mediaType, 'count': count});
 
@@ -224,11 +257,13 @@ class AppAnalytics {
   static void settingsSubpageOpened({required String page}) =>
       event('settings_subpage_opened', params: {'page': page});
 
-  static void featureToggled({required String featureId, required bool enabled}) =>
+  static void featureToggled(
+          {required String featureId, required bool enabled}) =>
       event('feature_toggled',
           params: {'feature_id': featureId, 'enabled': enabled});
 
-  static void appearanceChanged({required String setting, required String value}) =>
+  static void appearanceChanged(
+          {required String setting, required String value}) =>
       event('appearance_changed', params: {'setting': setting, 'value': value});
 
   static void gestureSet({required String gesture, required String action}) =>
