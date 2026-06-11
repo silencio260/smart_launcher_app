@@ -238,6 +238,14 @@ const List<_EventGroup> _eventCatalog = [
   ]),
   _EventGroup('C0 · Lifecycle & user model', [
     _EventDef('app_open'),
+    _EventDef('first_open', [
+      'Firebase automatic',
+      'Mixpanel mirror on first retained open',
+    ]),
+    _EventDef('app_remove', [
+      'Firebase automatic uninstall signal',
+      'not client-side trackable after uninstall',
+    ]),
     _EventDef('launcher_set_default', ['is_default']),
   ]),
   _EventGroup('C1 · Home / workspace', [
@@ -249,6 +257,7 @@ const List<_EventGroup> _eventCatalog = [
     _EventDef('app_context_menu_opened', ['actions_available']),
   ]),
   _EventGroup('Ads', [
+    _EventDef('ad_click', ['ad_type']),
     _EventDef('ad_lifecycle', [
       'ad_type',
       'action',
@@ -317,6 +326,8 @@ const List<_EventGroup> _eventCatalog = [
     _EventDef('appearance_changed', ['setting', 'value']),
     _EventDef('gesture_set', ['gesture', 'action']),
     _EventDef('settings_export', ['success']),
+    _EventDef('app_install_event', ['event_type', 'source']),
+    _EventDef('installed_app_removed', ['source']),
   ]),
   _EventGroup('Retention (from RetentionTracker)', [
     _EventDef('retention_app_opened', [
@@ -335,6 +346,7 @@ const List<_EventGroup> _eventCatalog = [
     _EventDef('retention_third_session'),
     _EventDef('retention_fourth_session'),
     _EventDef('retention_fifth_session'),
+    _EventDef('retention_day_0_returned'),
     _EventDef('retention_day_1_returned'),
     _EventDef('retention_day_3_returned'),
     _EventDef('retention_day_7_returned'),
@@ -361,9 +373,10 @@ class _TrackedEventsScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
             child: Text(
               '$_total events. Names below are exactly what is sent to Firebase '
-              '(and Mixpanel when a token is set). Privacy rules: no package/app '
-              'names, no raw search text, PINs, patterns, or file names — only '
-              'lengths, counts, and flags.',
+              'and Mixpanel when app code can emit them. Some Firebase '
+              'automatic events are called out explicitly. Privacy rules: no '
+              'package/app names, no raw search text, PINs, patterns, or file '
+              'names — only lengths, counts, and flags.',
               style: const TextStyle(fontSize: 12),
             ),
           ),

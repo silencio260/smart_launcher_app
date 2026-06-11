@@ -11,6 +11,7 @@ import 'package:smart_launcher_app/features/apps/data/app_snapshot_cache.dart';
 import 'package:smart_launcher_app/features/apps/data/repositories/apps_repo.dart';
 import 'package:smart_launcher_app/features/apps/domain/repositories/apps_base_repo.dart';
 import 'package:smart_launcher_app/core/icons/decoded_icon_cache.dart';
+import 'package:smart_launcher_app/core/analytics/app_events.dart';
 
 class AppInstallEvent {
   final String packageName;
@@ -74,12 +75,12 @@ class AppsState extends Equatable {
   }) {
     final nextApps = apps ?? this.apps;
     final unchanged = identical(nextApps, this.apps);
-    final nextMap =
-        unchanged ? appsByPackage : {for (final a in nextApps) a.packageName: a};
+    final nextMap = unchanged
+        ? appsByPackage
+        : {for (final a in nextApps) a.packageName: a};
     final nextKeyMap =
         unchanged ? appsByKey : {for (final a in nextApps) a.launcherKey: a};
-    final nextFeatureMap =
-        unchanged ? appsByFeatureId : _featureMap(nextApps);
+    final nextFeatureMap = unchanged ? appsByFeatureId : _featureMap(nextApps);
     return AppsState._(
       apps: nextApps,
       loading: loading ?? this.loading,
@@ -239,6 +240,19 @@ class AppsCubit extends Cubit<AppsState> {
           if (pkg != null && pkg.isNotEmpty) {
             _pendingIconEvictions.add(pkg);
             final eventType = data['eventType']?.toString() ?? 'changed';
+            AppAnalytics.event(
+              'app_install_event',
+              params: {
+                'event_type': eventType,
+                'source': 'package_broadcast',
+              },
+            );
+            if (eventType == 'removed') {
+              AppAnalytics.event(
+                'installed_app_removed',
+                params: {'source': 'package_broadcast'},
+              );
+            }
             _installEventsController.add(
               AppInstallEvent(packageName: pkg, eventType: eventType),
             );

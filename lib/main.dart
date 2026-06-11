@@ -10,7 +10,6 @@ import 'package:genrevibes_starter_kit/starter_kit.dart';
 import 'package:smart_launcher_app/bloc_observer.dart';
 import 'package:smart_launcher_app/core/ads/test_ads_config.dart';
 import 'package:smart_launcher_app/core/analytics/analytics_config.dart';
-import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/analytics/install_id.dart';
 import 'package:smart_launcher_app/firebase_options.dart';
 import 'package:smart_launcher_app/container_injector.dart';
@@ -63,14 +62,14 @@ Future<void> main() async {
     // kit — to avoid double-reporting crashes.)
     await StarterKit.initialize(
       mixpanelDataSource: MixpanelRemoteDataSourceImpl(),
+      analyticsUserId: installId,
+      mixpanelToken: AnalyticsConfig.mixpanelToken,
+      mixpanelDistinctId: installId,
     );
     final testAdsConfig = TestAdsConfig.fromAppEnv();
     if (testAdsConfig != null) {
       StarterKit.adsBloc.add(AdsInitialize(config: testAdsConfig));
     }
-    StarterKit.analytics.setUserId(installId);
-    AppAnalytics.appOpen();
-    StarterKit.retentionTracker.trackAppOpen(StarterKit.analytics);
 
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
