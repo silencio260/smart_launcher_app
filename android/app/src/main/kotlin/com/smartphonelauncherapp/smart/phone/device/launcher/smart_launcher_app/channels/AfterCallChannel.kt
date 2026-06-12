@@ -23,23 +23,29 @@ import io.flutter.plugin.common.MethodChannel
 class AfterCallChannel(private val context: Context) {
 
     fun register(messenger: BinaryMessenger) {
+        if (!FEATURE_ENABLED) {
+            setReceiverEnabled(false)
+        }
         MethodChannel(messenger, CHANNEL).also {
             it.setMethodCallHandler { call, result ->
                 when (call.method) {
                     "setEnabled" -> {
-                        setReceiverEnabled(call.argument<Boolean>("enabled") ?: false)
+                        val requested = call.argument<Boolean>("enabled") ?: false
+                        setReceiverEnabled(FEATURE_ENABLED && requested)
                         result.success(true)
                     }
-                    "isEnabled" -> result.success(isReceiverEnabled())
+                    "isEnabled" -> result.success(FEATURE_ENABLED && isReceiverEnabled())
                     // Debug-only: raise the card now, with no real call. Lets the
                     // feature be tested without dialing. Honors the overlay grant
                     // exactly as a real call would.
                     "showOverlayNow" -> {
-                        AfterCallOverlay.show(context)
+                        if (FEATURE_ENABLED) {
+                            AfterCallOverlay.show(context)
+                        }
                         result.success(true)
                     }
                     "consumePendingAction" -> {
-                        val action = pendingAction
+                        val action = if (FEATURE_ENABLED) pendingAction else null
                         pendingAction = null
                         result.success(action)
                     }
@@ -72,11 +78,16 @@ class AfterCallChannel(private val context: Context) {
     companion object {
         private const val CHANNEL = "com.genrevibes.smartlauncher/after_call"
 
+        // TEMP: after-call is disabled while the feature is paused. Flip back
+        // to true to re-enable the receiver, debug card, and pending actions.
+        private const val FEATURE_ENABLED = false
+
         @Volatile
         private var pendingAction: String? = null
 
         /** Stash an overlay action; Dart pulls it via consumePendingAction(). */
         fun deliver(action: String?) {
+            if (!FEATURE_ENABLED) return
             if (action.isNullOrEmpty()) return
             pendingAction = action
         }

@@ -318,8 +318,12 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                         settingsRoute(const AdsDebugScreen()),
                       ),
                     ),
-              if (kDebugMode) (_) => const _AfterCallDebugPanel(),
-              if (kDebugMode) (_) => const _InstallAssistantDebugPanel(),
+              // TEMP: After Call is disabled; keep the debug panel out of Dev
+              // View so it cannot arm or preview the paused feature.
+              // if (kDebugMode) (_) => const _AfterCallDebugPanel(),
+              // TEMP: Install & Uninstall Assistant is disabled; keep the debug
+              // panel out of Dev View so it cannot preview the paused feature.
+              // if (kDebugMode) (_) => const _InstallAssistantDebugPanel(),
               if (kDebugMode) (_) => const _AlarmDebugPanel(),
               // Deliberately NOT gated by kDebugMode: Crashlytics collection is
               // disabled in debug (see main.dart), so the only useful place to

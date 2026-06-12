@@ -32,20 +32,23 @@ class SmartLauncherApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        if (isAssistantEnabled(this)) register()
+        if (FEATURE_ENABLED && isAssistantEnabled(this)) register()
     }
 
     /** Begin listening for package add/remove. Idempotent. */
     fun register() {
+        if (!FEATURE_ENABLED) return
         if (callback != null) return
         val apps = getSystemService(Context.LAUNCHER_APPS_SERVICE) as? LauncherApps ?: return
         val cb = object : LauncherApps.Callback() {
             override fun onPackageAdded(packageName: String, user: UserHandle) {
+                if (!FEATURE_ENABLED) return
                 if (packageName == this@SmartLauncherApplication.packageName) return
                 InstallAssistantOverlay.showInstalled(this@SmartLauncherApplication, packageName)
             }
 
             override fun onPackageRemoved(packageName: String, user: UserHandle) {
+                if (!FEATURE_ENABLED) return
                 if (packageName == this@SmartLauncherApplication.packageName) return
                 // Read last-known label/icon happens inside the overlay; do it before
                 // any cache invalidation elsewhere wipes the cached icon file.
@@ -94,22 +97,27 @@ class SmartLauncherApplication : Application() {
         private const val PREFS = "install_assistant"
         private const val KEY_ENABLED = "enabled"
 
+        // TEMP: Install/Uninstall Assistant is disabled while the feature is
+        // paused. Flip back to true to re-enable package detection.
+        private const val FEATURE_ENABLED = false
+
         @Volatile
         var instance: SmartLauncherApplication? = null
             private set
 
         fun isAssistantEnabled(context: Context): Boolean =
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            FEATURE_ENABLED && context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .getBoolean(KEY_ENABLED, false)
 
         fun setAssistantEnabled(context: Context, enabled: Boolean) {
+            val shouldEnable = FEATURE_ENABLED && enabled
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit()
-                .putBoolean(KEY_ENABLED, enabled)
+                .putBoolean(KEY_ENABLED, shouldEnable)
                 .apply()
             val app = instance
             if (app != null) {
-                if (enabled) app.register() else app.unregister()
+                if (shouldEnable) app.register() else app.unregister()
             }
         }
     }
