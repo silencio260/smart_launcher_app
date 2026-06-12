@@ -66,7 +66,7 @@ class WidgetProviderCacheService {
 
   static const _fileName = 'widget_picker_cache_v1.bin';
   static const _magic = 0x57504331; // 'WPC1'
-  static const _version = 1;
+  static const _version = 2;
 
   Future<List<WidgetProviderInfo>?> load(WidgetCacheKey key) async {
     try {

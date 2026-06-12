@@ -16,11 +16,12 @@
         android:textSize="36sp"
         android:textStyle="bold"/>
 
-    <TextView
+    <TextClock
         android:id="@+id/widget_subtitle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Clock"
-        android:textColor="#F5A623"
+        android:format12Hour="EEE  MMM d"
+        android:format24Hour="EEE  MMM d"
+        android:textColor="#E2E2E6"
         android:textSize="13sp"/>
 </LinearLayout>

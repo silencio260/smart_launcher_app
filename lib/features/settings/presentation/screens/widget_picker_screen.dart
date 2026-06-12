@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
 import 'package:smart_launcher_app/core/models/launcher_widget_info.dart';
 import 'package:smart_launcher_app/core/models/widget_provider_info.dart';
 import 'package:smart_launcher_app/core/platform/launcher_service.dart';
@@ -11,6 +12,7 @@ import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.da
 import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
 import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
 import 'package:smart_launcher_app/core/utils/debug_flags.dart';
+import 'package:smart_launcher_app/core/widgets/icons/feature_icon.dart';
 import 'package:smart_launcher_app/core/widgets/icons/shaped_icon.dart';
 import 'package:smart_launcher_app/features/home/presentation/widgets/workspace/widget_grid_math.dart';
 
@@ -48,6 +50,9 @@ class WidgetPickerScreen extends StatefulWidget {
   State<WidgetPickerScreen> createState() => _WidgetPickerScreenState();
 }
 
+const _androidLauncherPackage =
+    'com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app';
+
 class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
   List<WidgetProviderInfo> _providers = [];
   bool _loading = true;
@@ -67,24 +72,83 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
     required double cellWidth,
     required double cellHeight,
     required double gap,
-  }) {
+  }) async {
     final override = widget.fetchWidgets;
-    if (override != null) {
-      return override(
-        gridColumns: gridColumns,
-        gridRows: gridRows,
-        cellWidth: cellWidth,
-        cellHeight: cellHeight,
-        gap: gap,
-      );
+    final providers = override != null
+        ? await override(
+            gridColumns: gridColumns,
+            gridRows: gridRows,
+            cellWidth: cellWidth,
+            cellHeight: cellHeight,
+            gap: gap,
+          )
+        : await LauncherService.getAvailableWidgets(
+            gridColumns: gridColumns,
+            gridRows: gridRows,
+            cellWidth: cellWidth,
+            cellHeight: cellHeight,
+            gap: gap,
+          );
+    return _visiblePlatformWidgets(providers);
+  }
+
+  List<WidgetProviderInfo> _visiblePlatformWidgets(
+    List<WidgetProviderInfo> providers,
+  ) {
+    return providers
+        .where((provider) => provider.packageName != _androidLauncherPackage)
+        .toList(growable: false);
+  }
+
+  Uint8List? _launcherAppIcon(List<AppInfo> apps) {
+    for (final app in apps) {
+      if (app.packageName == _androidLauncherPackage) return app.icon;
     }
-    return LauncherService.getAvailableWidgets(
-      gridColumns: gridColumns,
-      gridRows: gridRows,
-      cellWidth: cellWidth,
-      cellHeight: cellHeight,
-      gap: gap,
-    );
+    return null;
+  }
+
+  Uint8List? _iconForPackage(
+    String packageName,
+    List<AppInfo> apps,
+    List<WidgetProviderInfo> providers,
+  ) {
+    if (packageName == WorkspaceCubit.defaultClockProviderPackage) {
+      return _launcherAppIcon(apps) ?? _firstProviderIcon(providers);
+    }
+    for (final app in apps) {
+      final icon = app.icon;
+      if (app.packageName == packageName && icon != null && icon.isNotEmpty) {
+        return icon;
+      }
+    }
+    return _firstProviderIcon(providers);
+  }
+
+  Uint8List? _firstProviderIcon(List<WidgetProviderInfo> providers) {
+    for (final provider in providers) {
+      final icon = provider.appIcon;
+      if (icon != null && icon.isNotEmpty) return icon;
+    }
+    return null;
+  }
+
+  String _appNameForPackage(
+    String packageName,
+    WidgetProviderInfo fallbackProvider,
+  ) {
+    if (packageName == WorkspaceCubit.defaultClockProviderPackage) {
+      return 'Smart Launcher';
+    }
+    return fallbackProvider.appName.isNotEmpty
+        ? fallbackProvider.appName
+        : packageName.split('.').last;
+  }
+
+  String? _featureIconForPackage(String packageName) {
+    if (packageName == WorkspaceCubit.defaultClockProviderPackage) {
+      return 'clock';
+    }
+    return null;
   }
 
   @override
@@ -138,10 +202,12 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
     );
 
     final cached = await _cache.load(key);
+    final visibleCached =
+        cached == null ? null : _visiblePlatformWidgets(cached);
     if (!mounted) return;
-    if (cached != null && cached.isNotEmpty) {
+    if (visibleCached != null && visibleCached.isNotEmpty) {
       setState(() {
-        _providers = [_builtinClockProvider(), ...cached];
+        _providers = [_builtinClockProvider(), ...visibleCached];
         _loading = false;
         _refreshing = true;
         _error = '';
@@ -303,8 +369,7 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
   }
 
   bool _isBuiltinClock(WidgetProviderInfo provider) =>
-      provider.packageName == WorkspaceCubit.defaultClockProviderPackage &&
-      provider.providerClass == WorkspaceCubit.defaultClockProviderClass;
+      _isBuiltinClockProvider(provider);
 
   WidgetProviderInfo _builtinClockProvider() => const WidgetProviderInfo(
         packageName: WorkspaceCubit.defaultClockProviderPackage,
@@ -323,20 +388,23 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
   Future<void> _activateBuiltinClock() async {
     final workspace = context.read<WorkspaceCubit>();
     final settings = context.read<SettingsCubit>().state;
-    final added = workspace.ensureDefaultClockWidget(
+    final result = workspace.placeDefaultClockWidget(
       settings.gridColumns,
       settings.gridRows,
     );
     if (!mounted) return;
-    if (!added) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Clock is already on your home screen.'),
-        ),
-      );
-      return;
+    switch (result) {
+      case DefaultClockWidgetPlacement.added:
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        return;
+      case DefaultClockWidgetPlacement.noRoom:
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No room for the clock widget on the first page.'),
+          ),
+        );
+        return;
     }
-    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   (int, int) _initialSpanForProvider(WidgetProviderInfo provider) {
@@ -435,12 +503,9 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
             ..sort((a, b) =>
                 a.label.toLowerCase().compareTo(b.label.toLowerCase()));
           final isExpanded = _expanded.contains(pkg);
-          final appIcon =
-              apps.where((a) => a.packageName == pkg).firstOrNull?.icon ??
-                  providers.first.appIcon;
-          final appName = providers.first.appName.isNotEmpty
-              ? providers.first.appName
-              : pkg.split('.').last;
+          final appIcon = _iconForPackage(pkg, apps, providers);
+          final appName = _appNameForPackage(pkg, providers.first);
+          final featureIconId = _featureIconForPackage(pkg);
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -449,6 +514,7 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
               ListTile(
                 leading: _WidgetAppIcon(
                   iconBytes: appIcon,
+                  featureId: featureIconId,
                   shape: settings.iconShape,
                 ),
                 title: Text(
@@ -478,6 +544,7 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
                 ...providers.map((p) => _WidgetTile(
                       provider: p,
                       appIcon: appIcon,
+                      featureIconId: featureIconId,
                       iconShape: settings.iconShape,
                       gridColumns: settings.gridColumns,
                       gridRows: settings.gridRows,
@@ -512,9 +579,100 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
   }
 }
 
+bool _isBuiltinClockProvider(WidgetProviderInfo provider) =>
+    provider.packageName == WorkspaceCubit.defaultClockProviderPackage &&
+    provider.providerClass == WorkspaceCubit.defaultClockProviderClass;
+
+class _BuiltinClockPreview extends StatelessWidget {
+  const _BuiltinClockPreview();
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final hour = now.hour % 12 == 0 ? 12 : now.hour % 12;
+    final minute = now.minute.toString().padLeft(2, '0');
+    final suffix = now.hour >= 12 ? 'PM' : 'AM';
+    const days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+    const months = [
+      'JAN',
+      'FEB',
+      'MAR',
+      'APR',
+      'MAY',
+      'JUN',
+      'JUL',
+      'AUG',
+      'SEP',
+      'OCT',
+      'NOV',
+      'DEC',
+    ];
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.black,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '$hour:$minute',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 48,
+                        fontWeight: FontWeight.w300,
+                        letterSpacing: 0,
+                        height: 1,
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8, bottom: 7),
+                      child: Text(
+                        suffix,
+                        style: const TextStyle(
+                          color: Color(0xFFB8B8BE),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${days[now.weekday - 1]}  ${months[now.month - 1]} ${now.day}',
+                  style: const TextStyle(
+                    color: Color(0xFFB8B8BE),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _WidgetTile extends StatelessWidget {
   final WidgetProviderInfo provider;
   final Uint8List? appIcon;
+  final String? featureIconId;
   final String iconShape;
   final int gridColumns;
   final int gridRows;
@@ -526,6 +684,7 @@ class _WidgetTile extends StatelessWidget {
   const _WidgetTile({
     required this.provider,
     required this.appIcon,
+    this.featureIconId,
     required this.iconShape,
     required this.gridColumns,
     required this.gridRows,
@@ -545,8 +704,9 @@ class _WidgetTile extends StatelessWidget {
       cellHeight: cellHeight,
     );
 
-    final useExpandedPreview =
-        provider.previewIsGenerated && provider.previewImage != null;
+    final isBuiltinClock = _isBuiltinClockProvider(provider);
+    final useExpandedPreview = isBuiltinClock ||
+        (provider.previewIsGenerated && provider.previewImage != null);
 
     return Padding(
       padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
@@ -558,7 +718,11 @@ class _WidgetTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             useExpandedPreview
-                ? _buildExpandedPreview(minCellsX, minCellsY)
+                ? _buildExpandedPreview(
+                    minCellsX,
+                    minCellsY,
+                    isBuiltinClock,
+                  )
                 : _buildCompactRow(minCellsX, minCellsY),
             if (showDebugOverlay) _buildDebugInfo(minCellsX, minCellsY),
           ],
@@ -567,7 +731,11 @@ class _WidgetTile extends StatelessWidget {
     );
   }
 
-  Widget _buildExpandedPreview(int minCellsX, int minCellsY) {
+  Widget _buildExpandedPreview(
+    int minCellsX,
+    int minCellsY,
+    bool isBuiltinClock,
+  ) {
     final aspectRatio = (minCellsX / minCellsY).clamp(0.5, 4.0);
     final previewHeight = (220.0 * minCellsY / minCellsX).clamp(140.0, 280.0);
     return Column(
@@ -584,11 +752,13 @@ class _WidgetTile extends StatelessWidget {
               child: Center(
                 child: AspectRatio(
                   aspectRatio: aspectRatio,
-                  child: Image.memory(
-                    provider.previewImage!,
-                    fit: BoxFit.contain,
-                    filterQuality: FilterQuality.medium,
-                  ),
+                  child: isBuiltinClock
+                      ? const _BuiltinClockPreview()
+                      : Image.memory(
+                          provider.previewImage!,
+                          fit: BoxFit.contain,
+                          filterQuality: FilterQuality.medium,
+                        ),
                 ),
               ),
             ),
@@ -598,7 +768,12 @@ class _WidgetTile extends StatelessWidget {
           padding: const EdgeInsets.all(12),
           child: Row(
             children: [
-              _WidgetAppIcon(iconBytes: appIcon, shape: iconShape, size: 32),
+              _WidgetAppIcon(
+                iconBytes: appIcon,
+                featureId: featureIconId,
+                shape: iconShape,
+                size: 32,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -661,6 +836,7 @@ class _WidgetTile extends StatelessWidget {
                           bottom: 4,
                           child: _WidgetAppIcon(
                             iconBytes: appIcon,
+                            featureId: featureIconId,
                             shape: iconShape,
                             size: 16,
                           ),
@@ -679,6 +855,7 @@ class _WidgetTile extends StatelessWidget {
                         bottom: 4,
                         child: _WidgetAppIcon(
                           iconBytes: appIcon,
+                          featureId: featureIconId,
                           shape: iconShape,
                           size: 16,
                         ),
@@ -842,11 +1019,13 @@ class _WidgetTile extends StatelessWidget {
 
 class _WidgetAppIcon extends StatelessWidget {
   final Uint8List? iconBytes;
+  final String? featureId;
   final String shape;
   final double size;
 
   const _WidgetAppIcon({
     required this.iconBytes,
+    this.featureId,
     required this.shape,
     this.size = 40,
   });
@@ -858,18 +1037,20 @@ class _WidgetAppIcon extends StatelessWidget {
       height: size,
       child: iconBytes != null
           ? ShapedIcon(iconBytes: iconBytes, shape: shape, size: size)
-          : DecoratedBox(
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(size * 0.28),
-                border: Border.all(color: Colors.white12),
-              ),
-              child: Icon(
-                Icons.apps_rounded,
-                size: size * 0.55,
-                color: Colors.white54,
-              ),
-            ),
+          : featureId != null
+              ? FeatureIcon(featureId: featureId, size: size)
+              : DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(size * 0.28),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: Icon(
+                    Icons.apps_rounded,
+                    size: size * 0.55,
+                    color: Colors.white54,
+                  ),
+                ),
     );
   }
 }

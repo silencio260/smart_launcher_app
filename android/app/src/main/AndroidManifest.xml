@@ -310,6 +310,7 @@
         <receiver
             android:name=".widgets.ClockWidgetProvider"
             android:exported="true"
+            android:icon="@mipmap/ic_feature_clock"
             android:label="Clock">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
@@ -317,42 +318,6 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_clock"/>
-        </receiver>
-
-        <receiver
-            android:name=".widgets.FileLockerWidgetProvider"
-            android:exported="true"
-            android:label="File Locker">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_file_locker"/>
-        </receiver>
-
-        <receiver
-            android:name=".widgets.AppLockerWidgetProvider"
-            android:exported="true"
-            android:label="App Locker">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_app_locker"/>
-        </receiver>
-
-        <receiver
-            android:name=".widgets.AppHiderWidgetProvider"
-            android:exported="true"
-            android:label="App Hider">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_app_hider"/>
         </receiver>
 
         <meta-data

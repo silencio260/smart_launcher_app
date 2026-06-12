@@ -91,6 +91,11 @@ class WorkspaceState extends Equatable {
   List<Object?> get props => [pages, currentPage, isLocked, folders, clockPage];
 }
 
+enum DefaultClockWidgetPlacement {
+  added,
+  noRoom,
+}
+
 class WorkspaceCubit extends Cubit<WorkspaceState> {
   static const _key = 'workspace_layout_v1';
   static const defaultClockProviderPackage = 'com.genrevibes.smartlauncher';
@@ -214,25 +219,54 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
 
   WorkspacePage _emptyPage() => WorkspacePage({});
 
-  LauncherWidgetInfo _defaultClockWidget() => LauncherWidgetInfo(
-        id: defaultClockWidgetId,
-        appWidgetId: defaultClockWidgetId,
-        providerPackage: defaultClockProviderPackage,
-        providerClass: defaultClockProviderClass,
-        isCustomWidget: true,
-        minResizeWidth: defaultClockMinSpanX * 110,
-        minResizeHeight: defaultClockMinSpanY * 110,
-        maxResizeWidth: defaultClockMaxSpanX * 110,
-        maxResizeHeight: defaultClockMaxSpanY * 110,
-        spanX: defaultClockMaxSpanX,
-        spanY: defaultClockMaxSpanY,
-      );
+  LauncherWidgetInfo _defaultClockWidget({int? widgetId}) {
+    final id = widgetId ?? defaultClockWidgetId;
+    return LauncherWidgetInfo(
+      id: id,
+      appWidgetId: id,
+      providerPackage: defaultClockProviderPackage,
+      providerClass: defaultClockProviderClass,
+      isCustomWidget: true,
+      minResizeWidth: defaultClockMinSpanX * 110,
+      minResizeHeight: defaultClockMinSpanY * 110,
+      maxResizeWidth: defaultClockMaxSpanX * 110,
+      maxResizeHeight: defaultClockMaxSpanY * 110,
+      spanX: defaultClockMaxSpanX,
+      spanY: defaultClockMaxSpanY,
+    );
+  }
+
+  bool _isDefaultClockWidgetInfo(LauncherWidgetInfo widget) {
+    return widget.isCustomWidget &&
+        widget.providerPackage == defaultClockProviderPackage &&
+        widget.providerClass == defaultClockProviderClass;
+  }
 
   bool _isDefaultClockSlot(SlotContent content) {
-    return content is WidgetSlot &&
-        content.widget.isCustomWidget &&
-        content.widget.providerPackage == defaultClockProviderPackage &&
-        content.widget.providerClass == defaultClockProviderClass;
+    return content is WidgetSlot && _isDefaultClockWidgetInfo(content.widget);
+  }
+
+  int _nextDefaultClockWidgetId(List<WorkspacePage> pages) {
+    var next = defaultClockWidgetId;
+    void inspect(LauncherWidgetInfo widget) {
+      if (_isDefaultClockWidgetInfo(widget) && widget.appWidgetId <= next) {
+        next = widget.appWidgetId - 1;
+      }
+    }
+
+    for (final page in pages) {
+      for (final content in page.slots.values) {
+        switch (content) {
+          case WidgetSlot(:final widget):
+            inspect(widget);
+          case WidgetStackSlot(:final widgets):
+            widgets.forEach(inspect);
+          case AppSlot() || FolderSlot() || EmptySlot():
+            break;
+        }
+      }
+    }
+    return next;
   }
 
   WorkspacePage _pageWithDefaultClock() {
@@ -272,8 +306,25 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     final hasClock =
         pages.any((page) => page.slots.values.any(_isDefaultClockSlot));
     if (hasClock) return false;
+    return _placeDefaultClockWidget(pages, columns, rows) ==
+        DefaultClockWidgetPlacement.added;
+  }
 
-    final clock = _defaultClockWidget().copyWith(
+  DefaultClockWidgetPlacement placeDefaultClockWidget(int columns, int rows) {
+    final pages = state.pages.isEmpty
+        ? <WorkspacePage>[_emptyPage()]
+        : List<WorkspacePage>.from(state.pages);
+    return _placeDefaultClockWidget(pages, columns, rows);
+  }
+
+  DefaultClockWidgetPlacement _placeDefaultClockWidget(
+    List<WorkspacePage> pages,
+    int columns,
+    int rows,
+  ) {
+    final clock = _defaultClockWidget(
+      widgetId: _nextDefaultClockWidgetId(pages),
+    ).copyWith(
       spanX: _defaultClockWidget().spanX.clamp(1, columns),
       spanY: _defaultClockWidget().spanY.clamp(1, rows),
     );
@@ -286,14 +337,14 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
       columns,
       rows,
     );
-    if (slot == null) return false;
+    if (slot == null) return DefaultClockWidgetPlacement.noRoom;
 
     final slots = Map<int, SlotContent>.from(firstPage.slots)
       ..[slot] = WidgetSlot(clock);
     pages[0] = WorkspacePage(slots);
     emit(state.copyWith(pages: pages, clockPage: 0));
     saveLayout();
-    return true;
+    return DefaultClockWidgetPlacement.added;
   }
 
   int _firstFreeAppSlotInPage(
