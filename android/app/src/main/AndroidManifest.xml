@@ -1,9 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- App discovery -->
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
-
     <!-- Discover RSS feed fetching -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
@@ -68,10 +65,20 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
-        <!-- Icon pack query -->
+        <!-- Icon pack queries -->
+        <intent>
+            <action android:name="org.adw.ActivityStarter.THEMES"/>
+        </intent>
         <intent>
             <action android:name="org.adw.launcher.icons.ACTION_PICK_ICON"/>
         </intent>
+        <!-- Widget provider visibility -->
+        <intent>
+            <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+        </intent>
+        <!-- Alarm clock fallbacks used when standard AlarmClock intents fail. -->
+        <package android:name="com.google.android.deskclock"/>
+        <package android:name="com.android.deskclock"/>
     </queries>
 
     <application
