@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:smart_launcher_app/config/theme_manager.dart';
 import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/models/launcher_settings.dart';
 import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
@@ -90,14 +91,10 @@ Color _backgroundFor(
 
 ThemeData _settingsTheme(BuildContext context, Brightness brightness) {
   final base = Theme.of(context);
-  final colorScheme = ColorScheme.fromSeed(
-    seedColor: base.colorScheme.primary,
-    brightness: brightness,
-  );
-  return ThemeData(
+  final colorScheme = AppTheme.schemeFor(brightness);
+  return base.copyWith(
     colorScheme: colorScheme,
     brightness: brightness,
-    useMaterial3: true,
     scaffoldBackgroundColor: Colors.transparent,
     canvasColor: Colors.transparent,
     appBarTheme: AppBarTheme(

@@ -50,12 +50,6 @@
     <!-- Widget hosting -->
     <uses-permission android:name="android.permission.BIND_APPWIDGET"/>
 
-    <!-- External storage for backup export (legacy API <29) -->
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28"/>
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32"/>
-
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />

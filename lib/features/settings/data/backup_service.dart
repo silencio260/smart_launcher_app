@@ -8,6 +8,7 @@ import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cub
 
 class BackupService {
   static const _version = 1;
+  static const _enabled = false;
 
   final SettingsCubit settingsCubit;
   final WorkspaceCubit workspaceCubit;
@@ -20,6 +21,7 @@ class BackupService {
   });
 
   Future<String?> export() async {
+    if (!_enabled) return null;
     try {
       final data = _buildPayload();
       final json = const JsonEncoder.withIndent('  ').convert(data);
@@ -34,6 +36,7 @@ class BackupService {
   }
 
   Future<bool> importFromFile(String path) async {
+    if (!_enabled) return false;
     try {
       final json = await File(path).readAsString();
       final data = jsonDecode(json) as Map<String, dynamic>;

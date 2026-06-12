@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 const miniAppBackground = Color(0xFF000000);
 const miniAppSurface = Color(0xFF1C1C1E);
 const miniAppSurface2 = Color(0xFF2A2A2D);
-const miniAppAccent = Color(0xFFF5A623);
+const miniAppAccent = Colors.white;
 const miniAppMuted = Color(0xFF8E8E93);
 
 class MiniAppScrollBehavior extends MaterialScrollBehavior {
@@ -40,7 +40,12 @@ class MiniAppScaffold extends StatelessWidget {
         scaffoldBackgroundColor: miniAppBackground,
         colorScheme: const ColorScheme.dark(
           primary: miniAppAccent,
+          onPrimary: Colors.black,
+          secondary: miniAppAccent,
+          onSecondary: Colors.black,
           surface: miniAppSurface,
+          onSurface: Colors.white,
+          onSurfaceVariant: Color(0xFFE2E2E6),
           surfaceTint: Colors.transparent,
         ),
         appBarTheme: const AppBarTheme(
@@ -58,8 +63,9 @@ class MiniAppScaffold extends StatelessWidget {
           ),
           trackColor: WidgetStateProperty.resolveWith(
             (states) =>
-                states.contains(WidgetState.selected) ? miniAppAccent : null,
+                states.contains(WidgetState.selected) ? miniAppMuted : null,
           ),
+          trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
         ),
       ),
       child: Scaffold(

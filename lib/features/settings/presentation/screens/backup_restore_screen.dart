@@ -23,14 +23,14 @@ class BackupRestoreScreen extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.upload_outlined),
             title: const Text('Export Backup'),
-            subtitle: const Text('Save settings and layout to file'),
-            onTap: () => _export(context),
+            subtitle: const Text('Temporarily disabled'),
+            enabled: false,
           ),
           ListTile(
             leading: const Icon(Icons.download_outlined),
             title: const Text('Import Backup'),
-            subtitle: const Text('Restore from exported file'),
-            onTap: () => _import(context),
+            subtitle: const Text('Temporarily disabled'),
+            enabled: false,
           ),
           const Divider(),
           ListTile(
@@ -42,18 +42,6 @@ class BackupRestoreScreen extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-
-  Future<void> _export(BuildContext context) async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Backup export coming soon')),
-    );
-  }
-
-  Future<void> _import(BuildContext context) async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Backup import coming soon')),
     );
   }
 

@@ -6,22 +6,19 @@ import 'package:smart_launcher_app/core/widgets/mini_app_chrome.dart';
 
 /// Shared design kit for the privacy mini-apps (App Locker, App Hider, File
 /// Vault). It mirrors the One UI patterns the clock app uses (see
-/// `clock/clock_theme.dart`) but parameterises the accent so each feature keeps
-/// its own brand colour (red / indigo / teal) without touching the shared
-/// orange baked into [MiniAppScaffold].
+/// `clock/clock_theme.dart`) while keeping selected controls monochrome.
 ///
 /// Reuse-first: branded icons come from [FeatureIcon], neutral surfaces from
 /// [mini_app_chrome.dart]. Nothing here mutates the global theme constants.
 
-/// The accent for a feature, single-sourced from the launcher catalog
-/// (`file_locker` teal, `app_hider` indigo, `app_locker` red). Falls back to
-/// the shared orange for unknown ids.
+/// The accent for a feature, single-sourced from the launcher catalog. The
+/// catalog is intentionally monochrome so mini-app controls stay black/white.
 Color accentForFeature(String featureId) =>
     LauncherFeatureCatalog.fromId(featureId)?.color ?? miniAppAccent;
 
 /// Wraps the ambient theme so in-app selection states and switches render in
-/// [accent] instead of the shared orange. Apply with a [Theme] around the
-/// screen body, exactly like `clockThemeOf` does for the clock.
+/// [accent]. Apply with a [Theme] around the screen body, exactly like
+/// `clockThemeOf` does for the clock.
 ThemeData miniAppThemeOf(BuildContext context, Color accent) {
   final base = Theme.of(context);
   return base.copyWith(

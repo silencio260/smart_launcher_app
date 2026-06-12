@@ -81,11 +81,11 @@ class FolderSettingsScreen extends StatelessWidget {
   void _pickColor(
       BuildContext context, SettingsCubit cubit, LauncherSettings s) {
     final options = <(String, Color)>[
-      ('Dark', Colors.black54),
-      ('Blue', Colors.blue.shade900),
-      ('Purple', Colors.purple.shade900),
-      ('Green', Colors.green.shade900),
-      ('Red', Colors.red.shade900),
+      ('Black', Colors.black87),
+      ('Dark Gray', Colors.grey.shade900),
+      ('Gray', Colors.grey.shade800),
+      ('Light Gray', Colors.grey.shade700),
+      ('White', Colors.white70),
     ];
     showDialog(
       context: context,

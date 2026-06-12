@@ -111,19 +111,19 @@ class LauncherFeatureCatalog {
 
   static const notesArtwork = LauncherFeatureArtwork(
     id: 'notes',
-    color: Color(0xFF312E81),
+    color: Color(0xFF171719),
     assetPath: 'assets/feature_icons/ic_feature_notes.png',
   );
 
   static const weatherArtwork = LauncherFeatureArtwork(
     id: 'weather',
-    color: Color(0xFF075985),
+    color: Color(0xFF171719),
     assetPath: 'assets/feature_icons/ic_feature_weather.png',
   );
 
   static const browserArtwork = LauncherFeatureArtwork(
     id: 'browser',
-    color: Color(0xFF172554),
+    color: Color(0xFF171719),
     assetPath: 'assets/feature_icons/ic_feature_browser.png',
   );
 
@@ -132,7 +132,7 @@ class LauncherFeatureCatalog {
     aliasClassName: fileLockerClass,
     title: 'File Locker',
     subtitle: 'Hide private files in an encrypted vault',
-    color: Color(0xFF26A69A),
+    color: Colors.white,
     artworkId: 'file_locker',
   );
 
@@ -141,7 +141,7 @@ class LauncherFeatureCatalog {
     aliasClassName: appHiderClass,
     title: 'App Hider',
     subtitle: 'Hide apps from drawer and search',
-    color: Color(0xFF5C6BC0),
+    color: Colors.white,
     artworkId: 'app_hider',
   );
 
@@ -150,7 +150,7 @@ class LauncherFeatureCatalog {
     aliasClassName: appLockerClass,
     title: 'App Locker',
     subtitle: 'Require unlock for apps opened here',
-    color: Color(0xFFEF5350),
+    color: Colors.white,
     artworkId: 'app_locker',
   );
 
@@ -159,7 +159,7 @@ class LauncherFeatureCatalog {
     aliasClassName: clockClass,
     title: 'Clock',
     subtitle: 'Alarms, timers, and stopwatch shortcuts',
-    color: Color(0xFFFFB300),
+    color: Colors.white,
     artworkId: 'clock',
   );
 

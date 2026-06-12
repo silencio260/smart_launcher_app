@@ -86,7 +86,7 @@ class DockSettingsScreen extends StatelessWidget {
       Colors.white,
       Colors.grey.shade900,
       Colors.blueGrey.shade900,
-      Colors.deepPurple.shade900,
+      Colors.grey.shade800,
     ];
     showDialog(
       context: context,
