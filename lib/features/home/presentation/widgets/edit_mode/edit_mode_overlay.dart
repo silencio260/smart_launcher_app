@@ -6,7 +6,9 @@ import 'package:smart_launcher_app/core/models/app_info.dart';
 import 'package:smart_launcher_app/core/models/folder_info.dart';
 import 'package:smart_launcher_app/core/models/launcher_feature.dart';
 import 'package:smart_launcher_app/core/models/launcher_settings.dart';
+import 'package:smart_launcher_app/core/models/launcher_widget_info.dart';
 import 'package:smart_launcher_app/core/models/workspace_item_info.dart';
+import 'package:smart_launcher_app/core/widgets/clock_widget.dart';
 import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.dart';
 import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
 import 'package:smart_launcher_app/core/widgets/icons/feature_icon.dart';
@@ -651,13 +653,11 @@ class _PagePreview extends StatelessWidget {
           showLabel: settings.showLabels,
         );
       case WidgetSlot(:final widget):
-        return _WidgetTile(appWidgetId: widget.appWidgetId);
+        return _WidgetTile(widgetInfo: widget);
       case WidgetStackSlot(:final widgets):
-        final firstId = widgets
-            .map((w) => w.appWidgetId)
-            .firstWhere((id) => id > 0, orElse: () => -1);
+        final previewWidget = _stackPreviewWidget(widgets);
         return _WidgetTile(
-          appWidgetId: firstId > 0 ? firstId : null,
+          widgetInfo: previewWidget,
           isStack: true,
         );
       case EmptySlot():
@@ -666,6 +666,22 @@ class _PagePreview extends StatelessWidget {
   }
 
   AppInfo? _liveAppFor(WorkspaceItemInfo item) => appsState.resolveItem(item);
+
+  LauncherWidgetInfo? _stackPreviewWidget(List<LauncherWidgetInfo> widgets) {
+    for (final widget in widgets) {
+      if (_isDefaultClockWidget(widget)) return widget;
+    }
+    for (final widget in widgets) {
+      if (widget.appWidgetId > 0) return widget;
+    }
+    return widgets.isEmpty ? null : widgets.first;
+  }
+
+  bool _isDefaultClockWidget(LauncherWidgetInfo widget) {
+    return widget.isCustomWidget &&
+        widget.providerPackage == WorkspaceCubit.defaultClockProviderPackage &&
+        widget.providerClass == WorkspaceCubit.defaultClockProviderClass;
+  }
 }
 
 class _AppTile extends StatelessWidget {
@@ -867,14 +883,15 @@ class _FolderPreviewIcon extends StatelessWidget {
 }
 
 class _WidgetTile extends StatelessWidget {
-  final int? appWidgetId;
+  final LauncherWidgetInfo? widgetInfo;
   final bool isStack;
 
-  const _WidgetTile({required this.appWidgetId, this.isStack = false});
+  const _WidgetTile({required this.widgetInfo, this.isStack = false});
 
   @override
   Widget build(BuildContext context) {
-    final id = appWidgetId;
+    final widgetInfo = this.widgetInfo;
+    final id = widgetInfo?.appWidgetId;
     return Container(
       margin: const EdgeInsets.all(2),
       clipBehavior: Clip.antiAlias,
@@ -882,23 +899,33 @@ class _WidgetTile extends StatelessWidget {
         color: Colors.white.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: id != null && id > 0
-          ? AndroidView(
-              key: ValueKey('edit-overlay-$id'),
-              viewType: 'com.genrevibes.smartlauncher/widget_host_view',
-              creationParams: {'appWidgetId': id},
-              creationParamsCodec: const StandardMessageCodec(),
-            )
-          : Center(
-              child: Icon(
-                isStack
-                    ? Icons.dashboard_customize_outlined
-                    : Icons.widgets_outlined,
-                color: Colors.white.withValues(alpha: 0.85),
-                size: 18,
-              ),
-            ),
+      child: _isDefaultClockWidget(widgetInfo)
+          ? const Center(child: ClockWidget())
+          : id != null && id > 0
+              ? AndroidView(
+                  key: ValueKey('edit-overlay-$id'),
+                  viewType: 'com.genrevibes.smartlauncher/widget_host_view',
+                  creationParams: {'appWidgetId': id},
+                  creationParamsCodec: const StandardMessageCodec(),
+                )
+              : Center(
+                  child: Icon(
+                    isStack
+                        ? Icons.dashboard_customize_outlined
+                        : Icons.widgets_outlined,
+                    color: Colors.white.withValues(alpha: 0.85),
+                    size: 18,
+                  ),
+                ),
     );
+  }
+
+  bool _isDefaultClockWidget(LauncherWidgetInfo? widgetInfo) {
+    return widgetInfo != null &&
+        widgetInfo.isCustomWidget &&
+        widgetInfo.providerPackage ==
+            WorkspaceCubit.defaultClockProviderPackage &&
+        widgetInfo.providerClass == WorkspaceCubit.defaultClockProviderClass;
   }
 }
 
