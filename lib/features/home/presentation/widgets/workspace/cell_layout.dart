@@ -30,6 +30,8 @@ import 'package:smart_launcher_app/features/home/presentation/widgets/workspace/
 
 // sourcePage == -3 means the drag originated from the app drawer (no removal needed)
 const int kDrawerSourcePage = -3;
+const _androidLauncherPackage =
+    'com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app';
 
 typedef WorkspaceDropResolver = ({int page, int slot})? Function(
   Offset globalPosition,
@@ -3166,16 +3168,36 @@ class _CellLayoutViewState extends State<CellLayoutView>
   }
 
   void _openSelectedWidgetInfo(SlotContent content) {
-    // Placeholder — the app info / widget settings sheet isn't wired yet.
-    // Surfacing a SnackBar keeps the affordance discoverable until we ship
-    // the real sheet.
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    messenger?.showSnackBar(
-      const SnackBar(
-        content: Text('Widget info coming soon'),
-        duration: Duration(milliseconds: 1200),
-      ),
+    final widgetInfo = switch (content) {
+      WidgetSlot(:final widget) => widget,
+      WidgetStackSlot(:final widgets, :final currentIndex) =>
+        widgets.isEmpty ? null : widgets[currentIndex],
+      AppSlot() || FolderSlot() || EmptySlot() => null,
+    };
+    if (widgetInfo == null) return;
+
+    final packageName = _appInfoPackageForWidget(widgetInfo);
+    _clearWidgetResizeSelection();
+    unawaited(
+      LauncherService.openAppSettings(packageName).catchError((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          const SnackBar(
+            content: Text('Could not open app info'),
+            duration: Duration(milliseconds: 1200),
+          ),
+        );
+      }),
     );
+  }
+
+  String _appInfoPackageForWidget(LauncherWidgetInfo widgetInfo) {
+    if (widgetInfo.providerPackage ==
+            WorkspaceCubit.defaultClockProviderPackage &&
+        widgetInfo.providerClass == WorkspaceCubit.defaultClockProviderClass) {
+      return _androidLauncherPackage;
+    }
+    return widgetInfo.providerPackage;
   }
 
   void _pickWidgetForNewStack() {

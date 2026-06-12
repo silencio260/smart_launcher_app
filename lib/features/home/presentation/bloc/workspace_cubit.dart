@@ -317,6 +317,30 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     return _placeDefaultClockWidget(pages, columns, rows);
   }
 
+  LauncherWidgetInfo defaultClockWidgetForSelection(int columns, int rows) {
+    final pages = state.pages.isEmpty
+        ? <WorkspacePage>[_emptyPage()]
+        : List<WorkspacePage>.from(state.pages);
+    final baseClock = _defaultClockWidget(
+      widgetId: _nextDefaultClockWidgetId(pages),
+    );
+    return baseClock.copyWith(
+      spanX: baseClock.spanX.clamp(1, columns),
+      spanY: baseClock.spanY.clamp(1, rows),
+    );
+  }
+
+  ({LauncherWidgetInfo widget, int page, int slot})
+      addDefaultClockWidgetToFirstAvailableSlot(int columns, int rows) {
+    final clock = defaultClockWidgetForSelection(columns, rows);
+    final placement = addWidgetToFirstAvailableSlot(clock, columns, rows);
+    return (
+      widget: clock,
+      page: placement.page,
+      slot: placement.slot,
+    );
+  }
+
   DefaultClockWidgetPlacement _placeDefaultClockWidget(
     List<WorkspacePage> pages,
     int columns,

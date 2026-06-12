@@ -59,6 +59,9 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
   bool _refreshing = false;
   String _error = '';
   bool _loadedInitialWidgets = false;
+  bool _requestedLauncherApps = false;
+  bool _requestedLauncherPackageIcon = false;
+  Uint8List? _launcherPackageIcon;
 
   // Which app package names are expanded
   final Set<String> _expanded = {};
@@ -100,9 +103,30 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
         .toList(growable: false);
   }
 
-  Uint8List? _launcherAppIcon(List<AppInfo> apps) {
+  Uint8List? _preferredLauncherIconForPackage(
+    String packageName,
+    List<AppInfo> apps,
+  ) {
+    Uint8List? fallback;
     for (final app in apps) {
-      if (app.packageName == _androidLauncherPackage) return app.icon;
+      if (app.packageName != packageName) continue;
+      final icon = app.icon;
+      if (icon == null || icon.isEmpty) continue;
+      if (!app.isInternalFeature) return icon;
+      fallback ??= icon;
+    }
+    return fallback;
+  }
+
+  Uint8List? _realLauncherAppIcon(List<AppInfo> apps) {
+    final packageIcon = _launcherPackageIcon;
+    if (packageIcon != null && packageIcon.isNotEmpty) return packageIcon;
+    for (final app in apps) {
+      if (app.packageName != _androidLauncherPackage || app.isInternalFeature) {
+        continue;
+      }
+      final icon = app.icon;
+      if (icon != null && icon.isNotEmpty) return icon;
     }
     return null;
   }
@@ -113,15 +137,10 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
     List<WidgetProviderInfo> providers,
   ) {
     if (packageName == WorkspaceCubit.defaultClockProviderPackage) {
-      return _launcherAppIcon(apps) ?? _firstProviderIcon(providers);
+      return _realLauncherAppIcon(apps);
     }
-    for (final app in apps) {
-      final icon = app.icon;
-      if (app.packageName == packageName && icon != null && icon.isNotEmpty) {
-        return icon;
-      }
-    }
-    return _firstProviderIcon(providers);
+    return _preferredLauncherIconForPackage(packageName, apps) ??
+        _firstProviderIcon(providers);
   }
 
   Uint8List? _firstProviderIcon(List<WidgetProviderInfo> providers) {
@@ -144,12 +163,7 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
         : packageName.split('.').last;
   }
 
-  String? _featureIconForPackage(String packageName) {
-    if (packageName == WorkspaceCubit.defaultClockProviderPackage) {
-      return 'clock';
-    }
-    return null;
-  }
+  String? _featureIconForPackage(String packageName) => null;
 
   @override
   void initState() {
@@ -159,9 +173,39 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _ensureLauncherAppsLoaded();
+    _ensureLauncherPackageIconLoaded();
     if (_loadedInitialWidgets) return;
     _loadedInitialWidgets = true;
     _bootstrap();
+  }
+
+  void _ensureLauncherAppsLoaded() {
+    if (_requestedLauncherApps) return;
+    final appsCubit = context.read<AppsCubit>();
+    if (appsCubit.state.apps.isNotEmpty || appsCubit.state.loading) return;
+    _requestedLauncherApps = true;
+    unawaited(appsCubit.loadCachedThenRefresh());
+  }
+
+  void _ensureLauncherPackageIconLoaded() {
+    if (_requestedLauncherPackageIcon) return;
+    _requestedLauncherPackageIcon = true;
+    unawaited(_loadLauncherPackageIcon());
+  }
+
+  Future<void> _loadLauncherPackageIcon() async {
+    try {
+      final icon =
+          await LauncherService.getPackageIcon(_androidLauncherPackage);
+      if (!mounted || icon == null || icon.isEmpty) return;
+      setState(() {
+        _launcherPackageIcon = icon;
+      });
+    } catch (_) {
+      // Do not fall back to feature aliases here: this package also owns
+      // mini-app aliases, which can make the Smart Launcher widget show Notes.
+    }
   }
 
   ({double cellWidth, double cellHeight, int gridColumns, int gridRows})
@@ -388,23 +432,25 @@ class _WidgetPickerScreenState extends State<WidgetPickerScreen> {
   Future<void> _activateBuiltinClock() async {
     final workspace = context.read<WorkspaceCubit>();
     final settings = context.read<SettingsCubit>().state;
-    final result = workspace.placeDefaultClockWidget(
+
+    if (widget.onWidgetPicked != null) {
+      final info = workspace.defaultClockWidgetForSelection(
+        settings.gridColumns,
+        settings.gridRows,
+      );
+      widget.onWidgetPicked!.call(info);
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      return;
+    }
+
+    final placement = workspace.addDefaultClockWidgetToFirstAvailableSlot(
       settings.gridColumns,
       settings.gridRows,
     );
+    widget.onWidgetAdded?.call(placement.widget, placement.page);
     if (!mounted) return;
-    switch (result) {
-      case DefaultClockWidgetPlacement.added:
-        Navigator.of(context).popUntil((route) => route.isFirst);
-        return;
-      case DefaultClockWidgetPlacement.noRoom:
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No room for the clock widget on the first page.'),
-          ),
-        );
-        return;
-    }
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   (int, int) _initialSpanForProvider(WidgetProviderInfo provider) {

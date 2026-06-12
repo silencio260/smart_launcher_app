@@ -188,6 +188,24 @@ class AppsChannel(private val activity: Activity) {
                             result.success(null)
                         }
                     }
+                    "getPackageIcon" -> {
+                        val pkg = call.argument<String>("packageName")
+                        if (pkg != null) {
+                            ioExecutor.execute {
+                                val bytes = try {
+                                    AppQueryHelper.getCachedAppIconBytes(
+                                        activity.packageManager,
+                                        pkg
+                                    )
+                                } catch (_: Exception) {
+                                    null
+                                }
+                                activity.runOnUiThread { result.success(bytes) }
+                            }
+                        } else {
+                            result.success(null)
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }

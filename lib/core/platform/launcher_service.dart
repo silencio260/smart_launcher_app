@@ -87,6 +87,14 @@ class LauncherService {
     await _apps.invokeMethod('openAppSettings', {'packageName': packageName});
   }
 
+  static Future<Uint8List?> getPackageIcon(String packageName) async {
+    final raw = await _apps.invokeMethod<Uint8List?>(
+      'getPackageIcon',
+      {'packageName': packageName},
+    );
+    return raw;
+  }
+
   /// Opens a URL with the system handler. Handles web links, `mailto:` feedback
   /// addresses, and `market://` / Play Store listings alike. Returns false if no
   /// app could handle the intent.
