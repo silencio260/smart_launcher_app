@@ -47,6 +47,10 @@ class _EditModeOverlayState extends State<EditModeOverlay>
   int _displayedPage = 0;
   bool _didAlignInitialPage = false;
   double _itemExtent = 1;
+  final GlobalKey _removeTargetKey = GlobalKey();
+  int? _draggingPageIndex;
+  Offset? _lastPointerGlobalPosition;
+  bool _draggingOverRemoveTarget = false;
 
   @override
   void initState() {
@@ -108,6 +112,46 @@ class _EditModeOverlayState extends State<EditModeOverlay>
     }
   }
 
+  void _handlePointerMove(PointerMoveEvent event) {
+    _lastPointerGlobalPosition = event.position;
+    if (_draggingPageIndex == null) return;
+    final hovering = _isPointerOverRemoveTarget(event.position);
+    if (hovering != _draggingOverRemoveTarget) {
+      setState(() => _draggingOverRemoveTarget = hovering);
+    }
+  }
+
+  bool _isPointerOverRemoveTarget(Offset globalPosition) {
+    final context = _removeTargetKey.currentContext;
+    if (context == null) return false;
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return false;
+    final rect = box.localToGlobal(Offset.zero) & box.size;
+    return rect.inflate(12).contains(globalPosition);
+  }
+
+  void _handleReorderStart(int index) {
+    if (index >= context.read<WorkspaceCubit>().state.pages.length) return;
+    setState(() {
+      _draggingPageIndex = index;
+      _draggingOverRemoveTarget = false;
+    });
+  }
+
+  void _handleReorderEnd(int index) {
+    final deleteIndex = _draggingPageIndex;
+    final shouldDelete = deleteIndex != null &&
+        _lastPointerGlobalPosition != null &&
+        _isPointerOverRemoveTarget(_lastPointerGlobalPosition!);
+    setState(() {
+      _draggingPageIndex = null;
+      _draggingOverRemoveTarget = false;
+    });
+    if (shouldDelete) {
+      _confirmRemovePage(deleteIndex);
+    }
+  }
+
   void _addPage() {
     final cubit = context.read<WorkspaceCubit>();
     cubit.addPage();
@@ -152,6 +196,7 @@ class _EditModeOverlayState extends State<EditModeOverlay>
     if (!mounted) return;
     final target = _displayedPage.clamp(0, (newLength - 1).clamp(0, newLength));
     setState(() => _displayedPage = target);
+    widget.onPageSelected(target);
   }
 
   void _onReorder(int oldIndex, int newIndex) {
@@ -164,6 +209,9 @@ class _EditModeOverlayState extends State<EditModeOverlay>
     if (oldIndex == newIndex) return;
     final cubit = context.read<WorkspaceCubit>();
     cubit.movePage(oldIndex, newIndex);
+    if (_draggingPageIndex == oldIndex) {
+      _draggingPageIndex = newIndex;
+    }
     setState(() => _displayedPage = newIndex);
   }
 
@@ -171,43 +219,50 @@ class _EditModeOverlayState extends State<EditModeOverlay>
   Widget build(BuildContext context) {
     return FadeTransition(
       opacity: _fadeAnim,
-      child: GestureDetector(
-        onTap: _dismiss,
-        behavior: HitTestBehavior.opaque,
-        child: SafeArea(
-          child: BlocBuilder<WorkspaceCubit, WorkspaceState>(
-            builder: (context, state) {
-              // _displayedPage == -1 means the add-page card is centered;
-              // no dot should be active in that case.
-              final activeIndex = _displayedPage < 0
-                  ? -1
-                  : _displayedPage.clamp(0, state.pages.length - 1);
-              return Column(
-                children: [
-                  const SizedBox(height: 6),
-                  const _HomeBadge(),
-                  const SizedBox(height: 10),
-                  _RemoveDropTarget(
-                    enabled: state.pages.length > 1,
-                    onAccept: _confirmRemovePage,
-                  ),
-                  const SizedBox(height: 10),
-                  const _HairlineDivider(),
-                  const SizedBox(height: 12),
-                  Expanded(child: _buildPagesRow(state)),
-                  const SizedBox(height: 12),
-                  _PageDots(
-                    count: state.pages.length,
-                    active: activeIndex,
-                    onAddPage: _addPage,
-                    onDotTap: _jumpToPage,
-                  ),
-                  const SizedBox(height: 22),
-                  _buildBottomBar(),
-                  const SizedBox(height: 8),
-                ],
-              );
-            },
+      child: Listener(
+        onPointerMove: _handlePointerMove,
+        child: GestureDetector(
+          onTap: _dismiss,
+          behavior: HitTestBehavior.opaque,
+          child: SafeArea(
+            child: BlocBuilder<WorkspaceCubit, WorkspaceState>(
+              builder: (context, state) {
+                // _displayedPage == -1 means the add-page card is centered;
+                // no dot should be active in that case.
+                final activeIndex = _displayedPage < 0
+                    ? -1
+                    : _displayedPage.clamp(0, state.pages.length - 1);
+                return Column(
+                  children: [
+                    const SizedBox(height: 6),
+                    const _HomeBadge(),
+                    const SizedBox(height: 10),
+                    _RemoveDropTarget(
+                      key: _removeTargetKey,
+                      enabled: state.pages.length > 1,
+                      hovering: _draggingOverRemoveTarget,
+                      onTap: activeIndex >= 0 && state.pages.length > 1
+                          ? () => _confirmRemovePage(activeIndex)
+                          : null,
+                    ),
+                    const SizedBox(height: 10),
+                    const _HairlineDivider(),
+                    const SizedBox(height: 12),
+                    Expanded(child: _buildPagesRow(state)),
+                    const SizedBox(height: 12),
+                    _PageDots(
+                      count: state.pages.length,
+                      active: activeIndex,
+                      onAddPage: _addPage,
+                      onDotTap: _jumpToPage,
+                    ),
+                    const SizedBox(height: 22),
+                    _buildBottomBar(),
+                    const SizedBox(height: 8),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -235,6 +290,8 @@ class _EditModeOverlayState extends State<EditModeOverlay>
           // +1 for the trailing add-page card (not part of the cubit state).
           itemCount: state.pages.length + 1,
           onReorder: _onReorder,
+          onReorderStart: _handleReorderStart,
+          onReorderEnd: _handleReorderEnd,
           // Slow the edge auto-scroll way down so neighbors don't whip past
           // when the dragged page gets near the left/right edge. Stock value
           // is ~50; 8 makes it a calm crawl.
@@ -384,36 +441,38 @@ class _HomeBadge extends StatelessWidget {
 
 class _RemoveDropTarget extends StatelessWidget {
   final bool enabled;
-  final ValueChanged<int> onAccept;
+  final bool hovering;
+  final VoidCallback? onTap;
 
-  const _RemoveDropTarget({required this.enabled, required this.onAccept});
+  const _RemoveDropTarget({
+    super.key,
+    required this.enabled,
+    required this.hovering,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return DragTarget<int>(
-      onWillAcceptWithDetails: (_) => enabled,
-      onAcceptWithDetails: (details) => onAccept(details.data),
-      builder: (_, candidate, __) {
-        final hovering = candidate.isNotEmpty;
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          curve: Curves.easeOut,
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: hovering
-                ? Colors.red.withValues(alpha: 0.85)
-                : Colors.transparent,
-            shape: BoxShape.circle,
-          ),
-          child: Icon(
-            hovering ? Icons.delete_forever : Icons.delete_outline,
-            color:
-                enabled ? Colors.white : Colors.white.withValues(alpha: 0.35),
-            size: 24,
-          ),
-        );
-      },
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: hovering
+              ? Colors.red.withValues(alpha: 0.85)
+              : Colors.transparent,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          hovering ? Icons.delete_forever : Icons.delete_outline,
+          color: enabled ? Colors.white : Colors.white.withValues(alpha: 0.35),
+          size: 24,
+        ),
+      ),
     );
   }
 }
