@@ -282,16 +282,26 @@ class _IosStylePreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _PreviewShell(
-      child: Column(
-        children: [
-          Wrap(
-            spacing: 5,
-            runSpacing: 5,
-            children: List.generate(8, (_) => const _PreviewIcon(size: 12)),
-          ),
-          const Spacer(),
-          const _PreviewPill(),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          const spacing = 4.0;
+          final iconSize =
+              ((constraints.maxWidth - spacing * 3) / 4).clamp(8.0, 10.0);
+          return Column(
+            children: [
+              Wrap(
+                spacing: spacing,
+                runSpacing: spacing,
+                children: List.generate(
+                  8,
+                  (_) => _PreviewIcon(size: iconSize),
+                ),
+              ),
+              const Spacer(),
+              const _PreviewPill(),
+            ],
+          );
+        },
       ),
     );
   }
