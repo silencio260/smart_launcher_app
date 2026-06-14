@@ -13,7 +13,9 @@ import 'package:smart_launcher_app/features/clock/data/clock_service.dart';
 import 'package:smart_launcher_app/core/platform/launcher_service.dart';
 import 'package:smart_launcher_app/features/clock/presentation/screens/alarm_edit_screen.dart';
 import 'package:smart_launcher_app/features/clock/presentation/clock_theme.dart';
+import 'package:smart_launcher_app/features/clock/presentation/screens/clock_onboarding.dart';
 import 'package:smart_launcher_app/features/clock/presentation/screens/world_clock_picker_screen.dart';
+import 'package:smart_launcher_app/features/onboarding/data/onboarding_store.dart';
 import 'package:smart_launcher_app/core/widgets/mini_app_chrome.dart';
 
 class AlarmClockScreen extends StatefulWidget {
@@ -45,9 +47,6 @@ class _AlarmClockScreenState extends State<AlarmClockScreen>
 
   static const _goodMorningSettingsKey = 'good_morning_enabled';
 
-  // Only auto-prompt for notifications once per app session.
-  static bool _notificationPromptShown = false;
-
   @override
   void initState() {
     super.initState();
@@ -61,20 +60,6 @@ class _AlarmClockScreenState extends State<AlarmClockScreen>
     });
     _loadPermissions();
     _loadGoodMorningSetting();
-    _maybePromptNotifications();
-  }
-
-  /// Notifications gate the entire ring UI on Android 13+, so ask up front the
-  /// first time the clock is opened rather than waiting for the user to notice
-  /// the setup banner.
-  Future<void> _maybePromptNotifications() async {
-    if (_notificationPromptShown) return;
-    _notificationPromptShown = true;
-    final status = await Permission.notification.status;
-    if (!status.isGranted && !status.isPermanentlyDenied) {
-      await Permission.notification.request();
-      await _loadPermissions();
-    }
   }
 
   @override
@@ -128,6 +113,15 @@ class _AlarmClockScreenState extends State<AlarmClockScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (!OnboardingStore.isMiniAppOnboardedSync('alarm_clock')) {
+      return ClockOnboarding(
+        onContinue: () {
+          OnboardingStore.markMiniAppOnboarded('alarm_clock');
+          setState(() {});
+        },
+        onBack: () => Navigator.of(context).pop(),
+      );
+    }
     final titles = ['Alarm', 'World clock', 'Stopwatch', 'Timer'];
     return MiniAppScaffold(
       title: titles[_tab],

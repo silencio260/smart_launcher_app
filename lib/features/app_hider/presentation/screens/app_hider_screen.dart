@@ -9,7 +9,9 @@ import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.da
 import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
 import 'package:smart_launcher_app/core/widgets/icons/shaped_icon.dart';
 import 'package:smart_launcher_app/features/app_hider/presentation/screens/app_hider_lock_screen.dart';
+import 'package:smart_launcher_app/features/app_hider/presentation/screens/app_hider_onboarding.dart';
 import 'package:smart_launcher_app/features/app_hider/presentation/screens/app_hider_settings_screen.dart';
+import 'package:smart_launcher_app/features/onboarding/data/onboarding_store.dart';
 import 'package:smart_launcher_app/features/clock/presentation/clock_theme.dart';
 import 'package:smart_launcher_app/core/widgets/mini_app_chrome.dart';
 import 'package:smart_launcher_app/core/widgets/mini_app_kit.dart';
@@ -56,6 +58,15 @@ class _AppHiderScreenState extends State<AppHiderScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!OnboardingStore.isMiniAppOnboardedSync(_featureId)) {
+      return AppHiderOnboarding(
+        onContinue: () {
+          OnboardingStore.markMiniAppOnboarded(_featureId);
+          setState(() {});
+        },
+        onBack: () => Navigator.of(context).pop(),
+      );
+    }
     if (!_unlocked) {
       return AppHiderLockScreen(
         security: _sec,

@@ -7,6 +7,8 @@ import 'package:smart_launcher_app/core/platform/launcher_service.dart';
 import 'package:smart_launcher_app/features/clock/presentation/clock_theme.dart';
 import 'package:smart_launcher_app/core/widgets/mini_app_chrome.dart';
 import 'package:smart_launcher_app/core/widgets/mini_app_kit.dart';
+import 'package:smart_launcher_app/features/file_locker/presentation/screens/file_locker_onboarding.dart';
+import 'package:smart_launcher_app/features/onboarding/data/onboarding_store.dart';
 import 'package:smart_launcher_app/features/vault/presentation/screens/vault_lock_screen.dart';
 import 'package:smart_launcher_app/features/vault/presentation/screens/vault_settings_screen.dart';
 import 'package:smart_launcher_app/features/vault/presentation/screens/vault_viewer_screen.dart';
@@ -170,6 +172,15 @@ class _FileLockerScreenState extends State<FileLockerScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (!OnboardingStore.isMiniAppOnboardedSync('file_locker')) {
+      return FileLockerOnboarding(
+        onContinue: () {
+          OnboardingStore.markMiniAppOnboarded('file_locker');
+          setState(() {});
+        },
+        onBack: () => Navigator.of(context).pop(),
+      );
+    }
     if (!_unlocked) {
       return VaultLockScreen(
         security: _sec,

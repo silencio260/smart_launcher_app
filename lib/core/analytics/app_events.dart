@@ -73,6 +73,38 @@ class AppAnalytics {
     CrashContext.setBool('default_launcher', isDefault);
   }
 
+  // --- First-run onboarding ---
+
+  static void onboardingStarted() => event('onboarding_started');
+
+  static void onboardingPageViewed(String page) =>
+      event('onboarding_page_viewed', params: {'page': page});
+
+  /// User tapped "Set as default" in onboarding (opens the system role dialog).
+  static void onboardingDefaultRequested() =>
+      event('onboarding_default_requested');
+
+  /// User left onboarding via "Not now" without setting the launcher default.
+  static void onboardingSkipped() => event('onboarding_skipped');
+
+  static void onboardingCompleted({required bool setDefault}) =>
+      event('onboarding_completed', params: {'set_default': setDefault});
+
+  static void miniAppOnboardingStarted({required String featureId}) => event(
+        'mini_app_onboarding_started',
+        params: {'feature_id': featureId},
+      );
+
+  static void miniAppOnboardingSkipped({required String featureId}) => event(
+        'mini_app_onboarding_skipped',
+        params: {'feature_id': featureId},
+      );
+
+  static void miniAppOnboardingCompleted({required String featureId}) => event(
+        'mini_app_onboarding_completed',
+        params: {'feature_id': featureId},
+      );
+
   // --- C1: home / workspace (aggregate only — NO package names) ---
 
   /// External (third-party) app launched. Logs source + position only.

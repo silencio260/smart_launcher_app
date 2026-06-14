@@ -58,3 +58,4 @@ lib/firebase_options.dart
 # CocoIndex Code (ccc)
 /.cocoindex_code/
 android/app/google-services.json
+/app promotional assets/

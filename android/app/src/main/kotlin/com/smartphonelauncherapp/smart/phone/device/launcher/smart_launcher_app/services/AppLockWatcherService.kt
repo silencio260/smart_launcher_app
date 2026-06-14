@@ -18,6 +18,7 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.R
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.AppLockOverlay
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.AppLockStore
 
@@ -246,7 +247,7 @@ class AppLockWatcherService : Service() {
         }
         builder.setContentTitle("App Lock is on")
             .setContentText("Protecting your locked apps")
-            .setSmallIcon(applicationInfo.icon)
+            .setSmallIcon(R.drawable.ic_stat_smart_launcher)
             .setOngoing(true)
             .setContentIntent(pending)
             .setCategory(Notification.CATEGORY_SERVICE)

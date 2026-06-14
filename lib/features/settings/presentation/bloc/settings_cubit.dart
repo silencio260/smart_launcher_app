@@ -38,8 +38,9 @@ class SettingsCubit extends Cubit<LauncherSettings> {
   /// Mirror config into analytics user properties + crash keys (non-PII).
   void _syncUserProperties(LauncherSettings s) {
     AppAnalytics.setUserProperty('theme', s.themeMode.name);
-    AppAnalytics.setUserProperty('icon_pack',
-        s.iconPackPackage.isEmpty ? 'default' : s.iconPackPackage);
+    AppAnalytics.setUserProperty('home_style', s.homeMode.name);
+    AppAnalytics.setUserProperty(
+        'icon_pack', s.iconPackPackage.isEmpty ? 'default' : s.iconPackPackage);
     AppAnalytics.setUserProperty('grid_size', '${s.gridColumns}x${s.gridRows}');
     CrashContext.setString('theme', s.themeMode.name);
     CrashContext.setString('grid_size', '${s.gridColumns}x${s.gridRows}');
@@ -51,6 +52,10 @@ class SettingsCubit extends Cubit<LauncherSettings> {
   void _trackSettingsChange(LauncherSettings a, LauncherSettings b) {
     if (a.themeMode != b.themeMode) {
       AppAnalytics.appearanceChanged(setting: 'theme', value: b.themeMode.name);
+    }
+    if (a.homeMode != b.homeMode) {
+      AppAnalytics.appearanceChanged(
+          setting: 'home_style', value: b.homeMode.name);
     }
     if (a.iconShape != b.iconShape) {
       AppAnalytics.appearanceChanged(setting: 'icon_shape', value: b.iconShape);
@@ -77,7 +82,8 @@ class SettingsCubit extends Cubit<LauncherSettings> {
           gesture: 'double_tap', action: b.doubleTapAction.name);
     }
     if (a.swipeUpAction != b.swipeUpAction) {
-      AppAnalytics.gestureSet(gesture: 'swipe_up', action: b.swipeUpAction.name);
+      AppAnalytics.gestureSet(
+          gesture: 'swipe_up', action: b.swipeUpAction.name);
     }
     if (a.swipeDownAction != b.swipeDownAction) {
       AppAnalytics.gestureSet(

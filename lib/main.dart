@@ -15,6 +15,7 @@ import 'package:smart_launcher_app/firebase_options.dart';
 import 'package:smart_launcher_app/container_injector.dart';
 import 'package:smart_launcher_app/core/storage/feature_hive_store.dart';
 import 'package:smart_launcher_app/features/clock/data/clock_service.dart';
+import 'package:smart_launcher_app/features/onboarding/data/onboarding_store.dart';
 import 'package:smart_launcher_app/my_app.dart';
 
 Future<void> main() async {
@@ -50,6 +51,10 @@ Future<void> main() async {
     initApp();
     await FeatureHiveStore.init();
     await ClockService.init();
+
+    // Warm the onboarding-completion flag so the home gate can route to the
+    // first-run flow or the launcher synchronously (no first-frame flash).
+    await OnboardingStore.preload();
 
     // Anonymous, stable install id — groups crashes/sessions per install and
     // seeds Mixpanel session replay. Set on Crashlytics immediately so even an

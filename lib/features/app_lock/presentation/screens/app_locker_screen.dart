@@ -10,7 +10,9 @@ import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.da
 import 'package:smart_launcher_app/features/settings/presentation/bloc/launcher_feature_cubit.dart';
 import 'package:smart_launcher_app/core/widgets/icons/shaped_icon.dart';
 import 'package:smart_launcher_app/features/app_lock/presentation/screens/app_lock_lock_screen.dart';
+import 'package:smart_launcher_app/features/app_lock/presentation/screens/app_lock_onboarding.dart';
 import 'package:smart_launcher_app/features/app_lock/presentation/screens/app_lock_protection_guide.dart';
+import 'package:smart_launcher_app/features/onboarding/data/onboarding_store.dart';
 import 'package:smart_launcher_app/features/app_lock/presentation/screens/app_lock_settings_screen.dart';
 import 'package:smart_launcher_app/features/clock/presentation/clock_theme.dart';
 import 'package:smart_launcher_app/core/widgets/mini_app_chrome.dart';
@@ -100,6 +102,15 @@ class _AppLockerScreenState extends State<AppLockerScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (!OnboardingStore.isMiniAppOnboardedSync('app_locker')) {
+      return AppLockOnboarding(
+        onContinue: () {
+          OnboardingStore.markMiniAppOnboarded('app_locker');
+          setState(() {});
+        },
+        onBack: () => Navigator.of(context).pop(),
+      );
+    }
     if (!_unlocked) {
       return AppLockLockScreen(
         security: _sec,

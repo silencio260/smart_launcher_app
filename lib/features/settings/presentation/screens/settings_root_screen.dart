@@ -19,6 +19,7 @@ import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cub
 import 'package:smart_launcher_app/core/utils/debug_flags.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/analytics_debug_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/ads_debug_screen.dart';
+import 'package:smart_launcher_app/features/onboarding/presentation/screens/onboarding_debug_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/general_settings_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/home_screen_settings_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/launcher_themes_screen.dart';
@@ -306,6 +307,16 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                       onTap: () => Navigator.push(
                         c,
                         settingsRoute(const AnalyticsDebugScreen()),
+                      ),
+                    ),
+              if (kDebugMode)
+                (c) => _Tile(
+                      icon: Icons.flag_outlined,
+                      title: 'Onboarding',
+                      subtitle: 'Preview & reset first-run and mini-app flows',
+                      onTap: () => Navigator.push(
+                        c,
+                        settingsRoute(const OnboardingDebugScreen()),
                       ),
                     ),
               if (TestAdsConfig.shouldShowDebugEntry())

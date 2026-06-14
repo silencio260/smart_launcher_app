@@ -78,7 +78,8 @@
     <application
         android:label="Smart Launcher"
         android:name=".SmartLauncherApplication"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round">
 
         <!-- Test-only AdMob App ID. Replace with this app's real App ID before release ads. -->
         <meta-data

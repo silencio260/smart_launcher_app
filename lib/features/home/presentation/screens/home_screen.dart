@@ -56,6 +56,8 @@ import 'package:smart_launcher_app/features/settings/presentation/screens/wallpa
 import 'package:smart_launcher_app/features/settings/presentation/screens/widget_picker_screen.dart';
 import 'package:smart_launcher_app/features/home/presentation/screens/themes/ios_home_view.dart';
 import 'package:smart_launcher_app/features/home/presentation/screens/themes/minimal_home_view.dart';
+import 'package:smart_launcher_app/features/onboarding/data/onboarding_store.dart';
+import 'package:smart_launcher_app/features/onboarding/presentation/widgets/default_launcher_nudge.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -69,6 +71,11 @@ class _HomeScreenState extends State<HomeScreen>
   final _dragController = DragController();
   final _routeCovered = ValueNotifier<bool>(false);
   OverlayEntry? _appInfoTooltip;
+  // Persistent "set as default home app" reminder, shown after onboarding was
+  // skipped. Lives in the root overlay (like _appInfoTooltip) but is hidden
+  // whenever the drawer / edit mode / a pushed route covers the home surface.
+  OverlayEntry? _defaultNudge;
+  bool _defaultNudgeEligible = false;
   bool _drawerOpen = false;
   bool _drawerDraggingToHome = false;
   bool _editMode = false;
@@ -127,7 +134,7 @@ class _HomeScreenState extends State<HomeScreen>
       // is stashed natively; drain it the same way.
       _consumeInstallAssistantAction();
       ClockRepository().rescheduleEnabledAlarms();
-      _maybePromptDefaultLauncher();
+      _evaluateDefaultNudgeEligibility();
     });
     _dragController.addListener(_onDragChange);
     _dragController.onRevertDisplacements = (displacements) {
@@ -158,6 +165,7 @@ class _HomeScreenState extends State<HomeScreen>
     // them alive while covered keeps hybrid composition costing per-frame work
     // and janks scroll on the page on top.
     _routeCovered.value = true;
+    _refreshDefaultNudge();
     if (DebugFlags.routeCoverageLogs) {
       debugPrint('DrawerPerf RouteCoverage covered=true');
     }
@@ -167,6 +175,7 @@ class _HomeScreenState extends State<HomeScreen>
   void didPopNext() {
     // The route on top was popped; we're visible again. Re-mount widgets.
     _routeCovered.value = false;
+    _refreshDefaultNudge();
     if (DebugFlags.routeCoverageLogs) {
       debugPrint('DrawerPerf RouteCoverage covered=false');
     }
@@ -183,6 +192,8 @@ class _HomeScreenState extends State<HomeScreen>
     _chromeOpacity.dispose();
     _chromeSlide.dispose();
     _activeSection.dispose();
+    _defaultNudge?.remove();
+    _defaultNudge = null;
     super.dispose();
   }
 
@@ -191,6 +202,9 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
+    // The home role may have been granted from the system dialog while we were
+    // away; re-evaluate whether the "set as default" nudge still applies.
+    _evaluateDefaultNudgeEligibility();
     // Always refresh badges — cheap, and notification counts go stale fast.
     context.read<AppsCubit>().refreshBadges();
     // A warm resume can be an after-call overlay tap; drain any pending action.
@@ -213,6 +227,7 @@ class _HomeScreenState extends State<HomeScreen>
     DrawerPerf.event('home.openDrawer');
     context.read<AppsCubit>().setDrawerActive(true);
     setState(() => _drawerOpen = true);
+    _refreshDefaultNudge();
     SchedulerBinding.instance.addPostFrameCallback((_) {
       DrawerPerf.event('home.openDrawer.firstPostFrame');
     });
@@ -225,6 +240,7 @@ class _HomeScreenState extends State<HomeScreen>
       _drawerOpen = false;
       _drawerDraggingToHome = false;
     });
+    _refreshDefaultNudge();
     context.read<LauncherCubit>().goToState(ls.LauncherState.normal);
     _scheduleDrawerIconPrewarm(context.read<AppsCubit>().state.apps);
     DrawerPerf.endSession();
@@ -234,6 +250,7 @@ class _HomeScreenState extends State<HomeScreen>
     _dismissAppInfoTooltip();
     _syncCurrentPageToVisibleWorkspacePage();
     setState(() => _editMode = true);
+    _refreshDefaultNudge();
     // Push the same global lock per-widget resize uses, so EVERY swipe path
     // (workspace touch listener, dock GestureDetector, etc.) sees one source
     // of truth for "is the home screen in an edit-like mode?".
@@ -259,6 +276,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _exitEditMode() {
     setState(() => _editMode = false);
+    _refreshDefaultNudge();
     WidgetResizeGestureGuard.setOverlayActive(false);
     // Only clear the dismiss hook if we own it (cell_layout may also wire
     // it for per-widget selection). Safe to null here because the overlay
@@ -349,41 +367,50 @@ class _HomeScreenState extends State<HomeScreen>
 
   static const _seededFlagKey = 'default_layout_seeded_v1';
   static const _featureSeededFlagKey = 'launcher_feature_icons_seeded_v1';
-  static const _promptedDefaultLauncherKey = 'prompted_default_launcher_v1';
 
-  // One-shot first-launch prompt to become the default home app. Skips if it's
-  // already the default or the user has already been asked once.
-  Future<void> _maybePromptDefaultLauncher() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool(_promptedDefaultLauncherKey) == true) return;
-    if (await LauncherService.isDefaultLauncher()) {
-      await prefs.setBool(_promptedDefaultLauncherKey, true);
-      return;
-    }
+  // Resolves whether the "set as default" nudge should ever appear: only when
+  // the user hasn't dismissed it and we don't already hold the home role. The
+  // first-launch prompt itself now lives in the onboarding flow; this is the
+  // gentler follow-up for users who skipped it.
+  Future<void> _evaluateDefaultNudgeEligibility() async {
+    final dismissed = await OnboardingStore.isNudgeDismissed();
+    final isDefault = dismissed || await LauncherService.isDefaultLauncher();
     if (!mounted) return;
-    final accepted = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Set as default home app?'),
-        content: const Text(
-          'Make Smart Launcher your home screen so it opens when you press '
-          'the home button.',
+    _defaultNudgeEligible = !dismissed && !isDefault;
+    _refreshDefaultNudge();
+  }
+
+  // Shows or removes the nudge overlay based on the cached eligibility and the
+  // current home surface state — hidden whenever the drawer, edit mode, or a
+  // pushed route covers the launcher so it never floats over them.
+  void _refreshDefaultNudge() {
+    final shouldShow = _defaultNudgeEligible &&
+        mounted &&
+        !_drawerOpen &&
+        !_editMode &&
+        !_routeCovered.value;
+    if (shouldShow && _defaultNudge == null) {
+      final overlay = Overlay.of(context);
+      final topInset = MediaQuery.of(context).padding.top;
+      _defaultNudge = OverlayEntry(
+        builder: (_) => Positioned(
+          top: topInset + 8,
+          left: 16,
+          right: 16,
+          child: DefaultLauncherNudge(
+            onTap: () => LauncherService.requestHomeRole(),
+            onDismiss: () {
+              OnboardingStore.dismissNudge();
+              _defaultNudgeEligible = false;
+              _refreshDefaultNudge();
+            },
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Not now'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Set default'),
-          ),
-        ],
-      ),
-    );
-    await prefs.setBool(_promptedDefaultLauncherKey, true);
-    if (accepted == true) {
-      await LauncherService.requestHomeRole();
+      );
+      overlay.insert(_defaultNudge!);
+    } else if (!shouldShow && _defaultNudge != null) {
+      _defaultNudge!.remove();
+      _defaultNudge = null;
     }
   }
 

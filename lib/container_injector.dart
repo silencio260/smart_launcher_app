@@ -4,6 +4,7 @@ import 'package:smart_launcher_app/features/apps/domain/repositories/apps_base_r
 import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.dart';
 import 'package:smart_launcher_app/features/home/presentation/bloc/launcher_cubit.dart';
 import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
+import 'package:smart_launcher_app/features/onboarding/presentation/bloc/onboarding_cubit.dart';
 import 'package:smart_launcher_app/features/search/presentation/bloc/search_cubit.dart';
 import 'package:smart_launcher_app/features/settings/presentation/bloc/launcher_feature_cubit.dart';
 import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
@@ -28,6 +29,7 @@ void initApp() {
   initHome();
   initSearch();
   initSettings();
+  initOnboarding();
 }
 
 /// Shared, cross-feature singletons (repositories/services).
@@ -54,4 +56,8 @@ void initSettings() {
   sl.registerFactory<LauncherFeatureSettingsCubit>(
     () => LauncherFeatureSettingsCubit(),
   );
+}
+
+void initOnboarding() {
+  sl.registerFactory<OnboardingCubit>(() => OnboardingCubit());
 }

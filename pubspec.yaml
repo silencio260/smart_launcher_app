@@ -47,5 +47,6 @@ flutter:
   uses-material-design: true
   assets:
     - assets/feature_icons/
+    - assets/onboarding/
     - assets/ios_theme/
     - assets/ios_theme/wallpaper/

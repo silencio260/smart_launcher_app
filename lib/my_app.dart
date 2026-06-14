@@ -11,6 +11,8 @@ import 'package:smart_launcher_app/features/home/presentation/bloc/launcher_cubi
 import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
 import 'package:smart_launcher_app/features/home/presentation/screens/home_screen.dart';
 import 'package:smart_launcher_app/features/home/presentation/widgets/workspace/route_coverage_scope.dart';
+import 'package:smart_launcher_app/features/onboarding/data/onboarding_store.dart';
+import 'package:smart_launcher_app/features/onboarding/presentation/screens/onboarding_screen.dart';
 import 'package:smart_launcher_app/features/search/presentation/bloc/search_cubit.dart';
 import 'package:smart_launcher_app/features/settings/presentation/bloc/launcher_feature_cubit.dart';
 import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
@@ -52,7 +54,9 @@ class MyApp extends StatelessWidget {
             navigatorObservers: [homeRouteObserver, _analyticsObserver],
             theme: AppTheme.light,
             darkTheme: AppTheme.dark,
-            home: const HomeScreen(),
+            home: OnboardingStore.isCompletedSync
+                ? const HomeScreen()
+                : const OnboardingScreen(),
           );
         },
       ),
