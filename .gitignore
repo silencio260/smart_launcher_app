@@ -44,6 +44,15 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# ─── Android signing (contain secrets — never commit) ────────────────────────
+# Keystores live outside the repo (~/app_key_stores/...). These guard against
+# anything signing-related ever landing inside the project tree.
+android/key.properties
+**/*.jks
+**/*.keystore
+# key.properties.example is tracked on purpose — it shows key names but no secrets
+!android/key.properties.example
+
 # ─── Environment files (contain secrets — never commit) ──────────────────────
 env/
 # env.example.json is tracked on purpose — it shows key names but no secrets
