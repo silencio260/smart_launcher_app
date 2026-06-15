@@ -109,7 +109,13 @@ class _GestureTile extends StatelessWidget {
       context: context,
       builder: (_) => SimpleDialog(
         title: Text(label),
+        // sleepScreen and openRecents are intentionally excluded: they required
+        // the accessibility service (BIND_ACCESSIBILITY_SERVICE), which has been
+        // removed to avoid Play-policy rejection. The enum values are kept for
+        // backward-compat with any persisted prefs, just not offered here.
         children: GestureAction.values
+            .where((a) =>
+                a != GestureAction.sleepScreen && a != GestureAction.openRecents)
             .map((a) => ListTile(
                   leading: Icon(
                     current == a

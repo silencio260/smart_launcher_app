@@ -240,7 +240,7 @@ class BackupService {
       folderMaxRows: d['folderMaxRows'] as int? ?? 3,
       showFolderLabels: d['showFolderLabels'] as bool? ?? true,
       doubleTapAction: enumAt(
-          GestureAction.values, 'doubleTapAction', GestureAction.sleepScreen),
+          GestureAction.values, 'doubleTapAction', GestureAction.none),
       swipeUpAction: enumAt(
           GestureAction.values, 'swipeUpAction', GestureAction.openDrawer),
       swipeDownAction: enumAt(GestureAction.values, 'swipeDownAction',

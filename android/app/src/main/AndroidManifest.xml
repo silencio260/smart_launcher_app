@@ -279,7 +279,13 @@
             </intent-filter>
         </service>
 
-        <!-- Accessibility service for sleep screen / recents actions -->
+        <!-- Accessibility service for sleep screen / recents actions.
+             Commented out: BIND_ACCESSIBILITY_SERVICE is a top Play-rejection
+             risk when used for non-accessibility purposes, and this service only
+             powered two optional gestures (Sleep Screen / Open Recents). Those
+             options have been removed from the Gestures picker. Re-enable this
+             block only if those gestures are reinstated. -->
+        <!--
         <service
             android:name=".services.LauncherAccessibilityService"
             android:exported="true"
@@ -292,6 +298,7 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config"/>
         </service>
+        -->
 
         <!-- After-call detector. Listens only to call-state changes (no caller
              identity) to fire the post-call overlay. Declared disabled and

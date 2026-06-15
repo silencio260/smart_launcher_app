@@ -193,7 +193,10 @@ class LauncherSettings extends Equatable {
     this.folderMaxColumns = 3,
     this.folderMaxRows = 3,
     this.showFolderLabels = true,
-    this.doubleTapAction = GestureAction.sleepScreen,
+    // Default was sleepScreen, which required the (now-removed) accessibility
+    // service — so it did nothing for most users. Defaults to none; users can
+    // assign any accessibility-free action (Search, Drawer, etc.).
+    this.doubleTapAction = GestureAction.none,
     this.swipeUpAction = GestureAction.openDrawer,
     this.swipeDownAction = GestureAction.openNotifications,
     this.twoFingerSwipeUpAction = GestureAction.none,
