@@ -24,7 +24,8 @@ import 'package:smart_launcher_app/features/settings/presentation/screens/genera
 import 'package:smart_launcher_app/features/settings/presentation/screens/home_screen_settings_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/launcher_themes_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/settings_appearance.dart';
-import 'package:smart_launcher_app/features/settings/presentation/screens/smartspace_settings_screen.dart';
+// Smartspace settings screen removed (dead Calendar Events toggle).
+// import 'package:smart_launcher_app/features/settings/presentation/screens/smartspace_settings_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/dock_settings_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/drawer_settings_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/folder_settings_screen.dart';
@@ -153,15 +154,18 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                       ),
                     ),
                   ),
-              (c) => _Tile(
-                    icon: Icons.wb_sunny_outlined,
-                    title: 'Smartspace',
-                    subtitle: 'Clock, date, cards',
-                    onTap: () => Navigator.push(
-                      c,
-                      settingsRoute(const SmartspaceSettingsScreen()),
-                    ),
-                  ),
+              // Smartspace settings screen removed: it exposed the dead
+              // Calendar Events toggle. (Its working bits — time format / next
+              // alarm — fall back to defaults.) Re-add when reinstated.
+              // (c) => _Tile(
+              //       icon: Icons.wb_sunny_outlined,
+              //       title: 'Smartspace',
+              //       subtitle: 'Clock, date, cards',
+              //       onTap: () => Navigator.push(
+              //         c,
+              //         settingsRoute(const SmartspaceSettingsScreen()),
+              //       ),
+              //     ),
               (c) => _Tile(
                     icon: Icons.dock,
                     title: 'Dock',

@@ -111,8 +111,10 @@ class MainActivity : FlutterActivity() {
         AppLockChannel(this).register(messenger)
         WallpaperChannel(this).register(messenger)
         notificationChannel = NotificationChannel(this).also { it.register(messenger) }
-        ContactsChannel(this).register(messenger)
-        CalendarChannel(this).register(messenger)
+        // Contacts search + Calendar events are unimplemented features (see
+        // AndroidManifest comment); their channels are left unregistered.
+        // ContactsChannel(this).register(messenger)
+        // CalendarChannel(this).register(messenger)
         AfterCallChannel(this).register(messenger)
         InstallAssistantChannel(this).register(messenger)
         LocationChannel(this).register(messenger)

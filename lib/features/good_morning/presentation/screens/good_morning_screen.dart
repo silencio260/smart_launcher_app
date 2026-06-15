@@ -22,12 +22,8 @@ class GoodMorningScreen extends StatefulWidget {
 }
 
 class _GoodMorningScreenState extends State<GoodMorningScreen> {
-  static const _calendar =
-      MethodChannel('com.genrevibes.smartlauncher/calendar');
-
+  // Calendar events feature removed (READ_CALENDAR dropped).
   _WeatherInfo? _weather;
-  _CalendarSummary _calendarSummary = const _CalendarSummary(
-      title: 'Nothing planned', subtitle: '0 events today');
   String _nextAlarm = 'Next alarm is not set';
   bool _loadingWeather = true;
 
@@ -40,7 +36,6 @@ class _GoodMorningScreenState extends State<GoodMorningScreen> {
   Future<void> _load() async {
     await Future.wait([
       _loadNextAlarm(),
-      _loadCalendar(),
       _loadWeather(),
     ]);
   }
@@ -59,40 +54,8 @@ class _GoodMorningScreenState extends State<GoodMorningScreen> {
     } catch (_) {}
   }
 
-  Future<void> _loadCalendar() async {
-    try {
-      final status = await Permission.calendarFullAccess.status;
-      if (!status.isGranted) return;
-      final raw = await _calendar.invokeMethod<List<dynamic>>('getEventsToday');
-      final events = raw ?? const <dynamic>[];
-      if (!mounted) return;
-      setState(() {
-        _calendarSummary = events.isEmpty
-            ? const _CalendarSummary(
-                title: 'Nothing planned',
-                subtitle: '0 events today',
-              )
-            : _CalendarSummary(
-                title: events.length == 1
-                    ? '1 event today'
-                    : '${events.length} events today',
-                subtitle: _eventSubtitle(events.first),
-              );
-      });
-    } catch (_) {}
-  }
-
-  String _eventSubtitle(dynamic raw) {
-    if (raw is! Map) return 'Calendar ready';
-    final title = raw['title']?.toString();
-    final start = raw['dtStart'];
-    if (start is int) {
-      final time = DateFormat('h:mm a')
-          .format(DateTime.fromMillisecondsSinceEpoch(start));
-      return title == null || title.isEmpty ? time : '$title at $time';
-    }
-    return title == null || title.isEmpty ? 'Calendar ready' : title;
-  }
+  // _loadCalendar / _eventSubtitle removed: Calendar events feature was never
+  // wired (READ_CALENDAR was never requested) and the permission is dropped.
 
   Future<void> _loadWeather() async {
     try {
@@ -249,12 +212,6 @@ class _GoodMorningScreenState extends State<GoodMorningScreen> {
                 ),
                 const SizedBox(height: 58),
                 _WeatherCard(weather: _weather, loading: _loadingWeather),
-                const SizedBox(height: 14),
-                _InfoCard(
-                  icon: Icons.calendar_month_rounded,
-                  title: _calendarSummary.title,
-                  subtitle: _calendarSummary.subtitle,
-                ),
                 const SizedBox(height: 14),
                 _InfoCard(
                   icon: Icons.music_note_rounded,
@@ -485,9 +442,3 @@ class _WeatherInfo {
   });
 }
 
-class _CalendarSummary {
-  final String title;
-  final String subtitle;
-
-  const _CalendarSummary({required this.title, required this.subtitle});
-}

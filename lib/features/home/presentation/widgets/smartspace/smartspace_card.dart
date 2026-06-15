@@ -10,8 +10,8 @@ class SmartspaceCard extends StatefulWidget {
 }
 
 class _SmartspaceCardState extends State<SmartspaceCard> {
-  static const _calendar =
-      MethodChannel('com.genrevibes.smartlauncher/calendar');
+  // Calendar events feature removed (READ_CALENDAR dropped). The card now only
+  // surfaces the next alarm.
   static const _alarm = MethodChannel('com.genrevibes.smartlauncher/alarm');
 
   _CardData? _data;
@@ -23,25 +23,6 @@ class _SmartspaceCardState extends State<SmartspaceCard> {
   }
 
   Future<void> _load() async {
-    try {
-      final event = await _calendar.invokeMethod<Map>('getNextEvent');
-      if (event != null && mounted) {
-        final dtStart = event['dtStart'] as int?;
-        if (dtStart != null) {
-          final dt = DateTime.fromMillisecondsSinceEpoch(dtStart);
-          final diff = dt.difference(DateTime.now());
-          if (diff.inMinutes <= 30 && diff.inMinutes >= 0) {
-            setState(() => _data = _CardData(
-                  icon: Icons.event,
-                  text: event['title'] as String? ?? 'Event',
-                  subtitle: DateFormat('h:mm a').format(dt),
-                ));
-            return;
-          }
-        }
-      }
-    } catch (_) {}
-
     try {
       final alarm = await _alarm.invokeMethod<Map>('getNextAlarm');
       if (alarm != null && mounted) {

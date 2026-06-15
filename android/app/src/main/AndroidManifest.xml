@@ -17,11 +17,13 @@
          Commented out to drop the unnecessary Data safety declaration. -->
     <!-- <uses-permission android:name="android.permission.CAMERA"/> -->
 
-    <!-- Contacts search in search overlay -->
-    <uses-permission android:name="android.permission.READ_CONTACTS"/>
-
-    <!-- Calendar events in Smartspace -->
-    <uses-permission android:name="android.permission.READ_CALENDAR"/>
+    <!-- Contacts search + Calendar events were never fully wired (contact
+         search has no Dart caller; calendar permission was never requested at
+         runtime), so both features produced nothing. Commented out along with
+         their dead code to drop the unused Data safety declarations. Re-enable
+         only if the features are actually implemented. -->
+    <!-- <uses-permission android:name="android.permission.READ_CONTACTS"/> -->
+    <!-- <uses-permission android:name="android.permission.READ_CALENDAR"/> -->
 
     <!-- Notification badges (runtime permission on API 33+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>

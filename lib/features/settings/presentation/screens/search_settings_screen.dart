@@ -27,11 +27,8 @@ class SearchSettingsScreen extends StatelessWidget {
             subtitle: Text('Opens Google in browser'),
             trailing: Icon(Icons.check, color: Colors.green),
           ),
-          ListTile(
-            leading: Icon(Icons.person_outline),
-            title: Text('Contact Search'),
-            subtitle: Text('Requires contacts permission'),
-          ),
+          // Contact Search removed: the feature was never wired (no Dart caller
+          // for the contacts channel), and READ_CONTACTS has been dropped.
         ],
       ),
     );
