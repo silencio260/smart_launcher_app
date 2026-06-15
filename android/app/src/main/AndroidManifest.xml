@@ -28,11 +28,15 @@
     <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
-    <!-- Alarm scheduling + reliable ringing. SCHEDULE_EXACT_ALARM is user-
-         grantable; USE_EXACT_ALARM (Android 13+) is install-time and exempts
-         the alarm-clock use case. WAKE_LOCK keeps the CPU up while ringing and
-         USE_FULL_SCREEN_INTENT lets the alarm surface over the lockscreen. -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <!-- Alarm scheduling + reliable ringing. USE_EXACT_ALARM (Android 13+) is
+         the install-time grant Google blesses for alarm-clock apps and covers
+         13+ on its own (no form, not revocable). SCHEDULE_EXACT_ALARM is the
+         user-revocable/flagged one, so it's bounded to Android 12 (maxSdkVersion
+         32) — the only versions that still need it, where it's auto-granted.
+         WAKE_LOCK keeps the CPU up while ringing and USE_FULL_SCREEN_INTENT lets
+         the alarm surface over the lockscreen. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
