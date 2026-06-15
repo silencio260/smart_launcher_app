@@ -25,6 +25,16 @@ class NotificationChannel(private val activity: Activity) {
                         activity.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                         result.success(true)
                     }
+                    "isNotificationAccessGranted" -> {
+                        val enabled = Settings.Secure.getString(
+                            activity.contentResolver,
+                            "enabled_notification_listeners"
+                        )
+                        val pkg = activity.packageName
+                        val granted = enabled != null &&
+                            enabled.split(":").any { it.startsWith("$pkg/") }
+                        result.success(granted)
+                    }
                     else -> result.notImplemented()
                 }
             }

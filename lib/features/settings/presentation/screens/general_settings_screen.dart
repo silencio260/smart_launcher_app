@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:smart_launcher_app/core/models/launcher_settings.dart';
+import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.dart';
 import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/icon_shape_picker_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/settings_appearance.dart';
@@ -56,10 +57,18 @@ class GeneralSettingsScreen extends StatelessWidget {
               _SectionHeader('Notification Badges'),
               SwitchListTile(
                 title: const Text('Show Badges'),
+                subtitle:
+                    const Text('Requires notification access permission'),
                 secondary: const Icon(Icons.notifications_outlined),
                 value: s.notificationBadgesEnabled,
-                onChanged: (v) =>
-                    cubit.update(s.copyWith(notificationBadgesEnabled: v)),
+                onChanged: (v) async {
+                  cubit.update(s.copyWith(notificationBadgesEnabled: v));
+                  final apps = context.read<AppsCubit>();
+                  apps.setBadgesEnabled(v);
+                  if (v && !await apps.isNotificationAccessGranted()) {
+                    await apps.requestNotificationAccess();
+                  }
+                },
               ),
               SwitchListTile(
                 title: const Text('Show Count'),

@@ -183,6 +183,7 @@ class AppsCubit extends Cubit<AppsState> {
   Timer? _installReloadDebounce;
   Map<String, int>? _pendingBadges;
   bool _badgeFlushScheduled = false;
+  bool _badgesEnabled = true;
   final Set<String> _pendingIconEvictions = <String>{};
   String? _snapshotKey;
   bool _loadedSnapshot = false;
@@ -204,9 +205,43 @@ class AppsCubit extends Cubit<AppsState> {
 
   Stream<AppInstallEvent> get installEvents => _installEventsController.stream;
 
+  // Toggles whether notification badges are shown. When turned off we clear
+  // every tile's count (so dots disappear immediately) and stop applying
+  // native pushes; turning it back on pulls a fresh snapshot.
+  void setBadgesEnabled(bool enabled) {
+    if (_badgesEnabled == enabled) return;
+    _badgesEnabled = enabled;
+    if (!enabled) {
+      _pendingBadges = null;
+      badges.update(const {});
+    } else {
+      refreshBadges();
+    }
+  }
+
+  // Opens the system "Notification access" settings screen so the user can
+  // grant access to our NotificationListenerService.
+  Future<void> requestNotificationAccess() async {
+    try {
+      await _notificationChannel.invokeMethod('requestNotificationAccess');
+    } catch (_) {}
+  }
+
+  // Whether the user has granted notification-listener access to this app.
+  Future<bool> isNotificationAccessGranted() async {
+    try {
+      return await _notificationChannel
+              .invokeMethod<bool>('isNotificationAccessGranted') ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   void startBadgeListening() {
     _badgeSub ??= _badgeEvents.receiveBroadcastStream().listen(
       (data) {
+        if (!_badgesEnabled) return;
         if (data is! Map) return;
         // Native sends a full snapshot on every notification change. During
         // a burst (e.g. a chat thread emitting many posts) we'd otherwise
@@ -280,6 +315,7 @@ class AppsCubit extends Cubit<AppsState> {
   }
 
   Future<void> refreshBadges() async {
+    if (!_badgesEnabled) return;
     try {
       final raw =
           await _notificationChannel.invokeMethod<Map>('getBadgeCounts');

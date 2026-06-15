@@ -117,6 +117,11 @@ class _HomeScreenState extends State<HomeScreen>
       systemNavigationBarColor: Colors.transparent,
     ));
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      context
+          .read<AppsCubit>()
+          .setBadgesEnabled(
+            context.read<SettingsCubit>().state.notificationBadgesEnabled,
+          );
       context.read<AppsCubit>().startBadgeListening();
       context.read<AppsCubit>().startAppInstallListening();
       // Keep the native package detector's flag in lockstep with the Dart toggle,
