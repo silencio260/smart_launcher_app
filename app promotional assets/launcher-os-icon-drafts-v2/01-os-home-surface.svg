@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">OS Home Surface</title>
+  <desc id="desc">Adaptive launcher icon showing a home screen surface with app tiles and a dock.</desc>
+  <defs>
+    <linearGradient id="bg" x1="152" y1="104" x2="872" y2="928" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1220"/>
+      <stop offset="0.52" stop-color="#102D4A"/>
+      <stop offset="1" stop-color="#050914"/>
+    </linearGradient>
+    <linearGradient id="plate" x1="280" y1="208" x2="744" y2="832" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#EAF8FF"/>
+      <stop offset="1" stop-color="#BFD1E2"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="354" y1="270" x2="680" y2="744" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5DFFE0"/>
+      <stop offset="1" stop-color="#3370FF"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="34" stdDeviation="34" flood-color="#000000" flood-opacity="0.36"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" rx="230" fill="url(#bg)"/>
+  <circle cx="760" cy="230" r="130" fill="#FFFFFF" opacity="0.07"/>
+  <circle cx="260" cy="786" r="150" fill="#45E6CC" opacity="0.08"/>
+  <g filter="url(#shadow)">
+    <rect x="262" y="214" width="500" height="596" rx="126" fill="url(#plate)"/>
+    <rect x="310" y="278" width="404" height="440" rx="86" fill="#0D2035" opacity="0.12"/>
+    <rect x="342" y="320" width="92" height="92" rx="30" fill="#13C8B7"/>
+    <rect x="466" y="320" width="92" height="92" rx="30" fill="#3670FF"/>
+    <rect x="590" y="320" width="92" height="92" rx="30" fill="#BAC7D8"/>
+    <rect x="342" y="444" width="92" height="92" rx="30" fill="#8BE9DD"/>
+    <rect x="466" y="444" width="92" height="92" rx="30" fill="#FFFFFF"/>
+    <rect x="590" y="444" width="92" height="92" rx="30" fill="#9EB9FF"/>
+    <rect x="342" y="612" width="340" height="64" rx="32" fill="#0B1220"/>
+    <circle cx="410" cy="644" r="22" fill="#5DFFE0"/>
+    <circle cx="512" cy="644" r="22" fill="#FFFFFF" opacity="0.9"/>
+    <circle cx="614" cy="644" r="22" fill="#3370FF"/>
+  </g>
+  <path d="M418 760h188" stroke="#FFFFFF" stroke-width="30" stroke-linecap="round" opacity="0.8"/>
+</svg>

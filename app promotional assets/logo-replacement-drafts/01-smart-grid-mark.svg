@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Smart Grid Mark</title>
+  <desc id="desc">A rounded launcher icon with an organized app grid, a home cue, and a smart highlight tile.</desc>
+  <defs>
+    <linearGradient id="bg" x1="144" y1="80" x2="880" y2="944" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#101827"/>
+      <stop offset="0.52" stop-color="#123B52"/>
+      <stop offset="1" stop-color="#0C2533"/>
+    </linearGradient>
+    <linearGradient id="tileHot" x1="318" y1="300" x2="706" y2="720" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#56F0D0"/>
+      <stop offset="1" stop-color="#3D78FF"/>
+    </linearGradient>
+    <linearGradient id="tileCool" x1="260" y1="238" x2="722" y2="810" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#EAF7FF" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#99B8C8" stop-opacity="0.68"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="34" stdDeviation="34" flood-color="#000000" flood-opacity="0.34"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" rx="228" fill="url(#bg)"/>
+  <path d="M512 140c158 0 300 98 354 246 56 154 0 326-134 420-128 90-300 90-428 0-134-94-190-266-134-420 54-148 196-246 342-246Z" fill="#FFFFFF" opacity="0.05"/>
+  <g filter="url(#softShadow)">
+    <rect x="270" y="258" width="132" height="132" rx="38" fill="url(#tileCool)" opacity="0.94"/>
+    <rect x="446" y="258" width="132" height="132" rx="38" fill="url(#tileCool)" opacity="0.78"/>
+    <rect x="622" y="258" width="132" height="132" rx="38" fill="url(#tileCool)" opacity="0.94"/>
+    <rect x="270" y="434" width="132" height="132" rx="38" fill="url(#tileCool)" opacity="0.72"/>
+    <rect x="446" y="434" width="132" height="132" rx="38" fill="url(#tileHot)"/>
+    <rect x="622" y="434" width="132" height="132" rx="38" fill="url(#tileCool)" opacity="0.72"/>
+    <rect x="270" y="610" width="132" height="132" rx="38" fill="url(#tileCool)" opacity="0.94"/>
+    <rect x="446" y="610" width="132" height="132" rx="38" fill="url(#tileCool)" opacity="0.78"/>
+    <rect x="622" y="610" width="132" height="132" rx="38" fill="url(#tileCool)" opacity="0.94"/>
+  </g>
+  <path d="M512 360 664 484v184c0 22-18 40-40 40h-64V586h-96v122h-64c-22 0-40-18-40-40V484l152-124Z" fill="#FFFFFF" opacity="0.96"/>
+  <path d="M389 491 512 390l123 101" fill="none" stroke="#0D3953" stroke-width="48" stroke-linecap="round" stroke-linejoin="round" opacity="0.23"/>
+  <circle cx="706" cy="316" r="34" fill="#56F0D0"/>
+  <path d="M730 292 758 264" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round"/>
+</svg>

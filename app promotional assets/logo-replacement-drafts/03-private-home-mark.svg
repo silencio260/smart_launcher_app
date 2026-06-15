@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Private Home Mark</title>
+  <desc id="desc">A secure launcher mark that combines a home screen with a privacy shield.</desc>
+  <defs>
+    <linearGradient id="bg" x1="166" y1="76" x2="858" y2="948" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#102238"/>
+      <stop offset="0.5" stop-color="#173B61"/>
+      <stop offset="1" stop-color="#081220"/>
+    </linearGradient>
+    <linearGradient id="shield" x1="284" y1="212" x2="746" y2="824" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#79FFE1"/>
+      <stop offset="0.48" stop-color="#43B7FF"/>
+      <stop offset="1" stop-color="#4866FF"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="36" stdDeviation="34" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" rx="228" fill="url(#bg)"/>
+  <path d="M204 242c108-82 255-116 394-72 146 46 250 162 284 296" fill="none" stroke="#FFFFFF" stroke-width="28" stroke-linecap="round" opacity="0.09"/>
+  <path d="M512 178 770 278v210c0 178-106 304-258 370-152-66-258-192-258-370V278l258-100Z" fill="url(#shield)" filter="url(#shadow)"/>
+  <path d="M512 226 722 308v178c0 142-79 247-210 310-131-63-210-168-210-310V308l210-82Z" fill="#09233C" opacity="0.18"/>
+  <path d="M512 334 666 460v196c0 22-18 40-40 40h-62V574H460v122h-62c-22 0-40-18-40-40V460l154-126Z" fill="#FFFFFF"/>
+  <path d="M390 466 512 366l122 100" fill="none" stroke="#173B61" stroke-width="46" stroke-linecap="round" stroke-linejoin="round" opacity="0.18"/>
+  <rect x="426" y="438" width="66" height="66" rx="20" fill="#16BFAF"/>
+  <rect x="532" y="438" width="66" height="66" rx="20" fill="#3862FF"/>
+  <path d="M504 596c0-18 14-32 32-32s32 14 32 32v32h-64v-32Z" fill="#102238" opacity="0.18"/>
+  <circle cx="738" cy="298" r="22" fill="#FFFFFF"/>
+</svg>

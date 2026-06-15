@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Adaptive Launcher Cells</title>
+  <desc id="desc">Rounded adaptive cells arranged as a launcher OS mark with a central launch point.</desc>
+  <defs>
+    <linearGradient id="bg" x1="132" y1="86" x2="890" y2="936" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F8FBFF"/>
+      <stop offset="0.56" stop-color="#DCEAF5"/>
+      <stop offset="1" stop-color="#BFD2E1"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="278" y1="220" x2="790" y2="776" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#54D8FF"/>
+      <stop offset="1" stop-color="#315DFF"/>
+    </linearGradient>
+    <linearGradient id="mint" x1="222" y1="292" x2="642" y2="826" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6EFFE1"/>
+      <stop offset="1" stop-color="#00A996"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="30" stdDeviation="32" flood-color="#16334A" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" rx="230" fill="url(#bg)"/>
+  <g filter="url(#shadow)">
+    <rect x="278" y="226" width="230" height="230" rx="68" fill="url(#mint)"/>
+    <rect x="536" y="226" width="230" height="230" rx="68" fill="url(#blue)"/>
+    <rect x="278" y="484" width="230" height="230" rx="68" fill="#10233B"/>
+    <rect x="536" y="484" width="230" height="230" rx="68" fill="#FFFFFF"/>
+  </g>
+  <path d="M512 356 674 512 512 668 350 512 512 356Z" fill="#FFFFFF"/>
+  <path d="M512 414 614 512 512 610 410 512 512 414Z" fill="#11243D"/>
+  <path d="M512 456 570 512 512 568 454 512 512 456Z" fill="url(#blue)"/>
+  <rect x="392" y="754" width="240" height="42" rx="21" fill="#11243D" opacity="0.42"/>
+  <circle cx="716" cy="304" r="24" fill="#FFFFFF"/>
+</svg>

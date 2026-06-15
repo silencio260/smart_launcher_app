@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Drawer Search Core</title>
+  <desc id="desc">A launcher app drawer grid with a search core and subtle OS pulse.</desc>
+  <defs>
+    <radialGradient id="bg" cx="31%" cy="20%" r="90%">
+      <stop offset="0" stop-color="#72FFE2"/>
+      <stop offset="0.42" stop-color="#2DB7D7"/>
+      <stop offset="1" stop-color="#2437B5"/>
+    </radialGradient>
+    <linearGradient id="panel" x1="286" y1="202" x2="748" y2="830" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#DAECFF"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="34" stdDeviation="34" flood-color="#062057" flood-opacity="0.32"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" rx="230" fill="url(#bg)"/>
+  <path d="M212 540c74-156 204-236 390-236 88 0 164 18 230 54" fill="none" stroke="#FFFFFF" stroke-width="36" stroke-linecap="round" opacity="0.26"/>
+  <g filter="url(#shadow)">
+    <rect x="288" y="218" width="448" height="588" rx="116" fill="url(#panel)"/>
+    <rect x="356" y="310" width="88" height="88" rx="30" fill="#13C7B8"/>
+    <rect x="468" y="310" width="88" height="88" rx="30" fill="#3264FF"/>
+    <rect x="580" y="310" width="88" height="88" rx="30" fill="#B8C6D7"/>
+    <rect x="356" y="422" width="88" height="88" rx="30" fill="#8BE6DB"/>
+    <rect x="468" y="422" width="88" height="88" rx="30" fill="#FFFFFF"/>
+    <rect x="580" y="422" width="88" height="88" rx="30" fill="#9AB1FF"/>
+    <rect x="356" y="534" width="88" height="88" rx="30" fill="#BDD0E4"/>
+    <rect x="468" y="534" width="88" height="88" rx="30" fill="#10233B"/>
+    <rect x="580" y="534" width="88" height="88" rx="30" fill="#55D9FF"/>
+  </g>
+  <circle cx="642" cy="656" r="76" fill="none" stroke="#FFFFFF" stroke-width="44"/>
+  <path d="M700 714 782 796" stroke="#FFFFFF" stroke-width="50" stroke-linecap="round"/>
+  <circle cx="228" cy="634" r="34" fill="#FFFFFF" opacity="0.92"/>
+</svg>
