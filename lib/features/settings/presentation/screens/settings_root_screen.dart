@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/ads/test_ads_config.dart';
+import 'package:smart_launcher_app/core/config/app_env.dart';
 import 'package:smart_launcher_app/core/models/launcher_settings.dart';
 import 'package:smart_launcher_app/core/models/launcher_widget_info.dart';
 import 'package:smart_launcher_app/core/storage/mini_app_repositories.dart';
@@ -251,6 +252,13 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                       settingsRoute(const HelpFeedbackScreen()),
                     ),
                   ),
+              // The entire Developer Options section is hidden outside a
+              // development build. We gate on AppEnv.developmentMode (set by
+              // dev.json / special_dev.json) rather than kDebugMode, because a
+              // debug binary can be run against release env files — in that
+              // case developmentMode is false and the section must not show.
+              // Individual tiles below add their own finer-grained guards.
+              if (AppEnv.developmentMode) ...[
               (_) => const Divider(),
               (_) => const _SectionHeader(
                     icon: Icons.science_outlined,
@@ -340,9 +348,11 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
               // panel out of Dev View so it cannot preview the paused feature.
               // if (kDebugMode) (_) => const _InstallAssistantDebugPanel(),
               if (kDebugMode) (_) => const _AlarmDebugPanel(),
-              // Deliberately NOT gated by kDebugMode: Crashlytics collection is
-              // disabled in debug (see main.dart), so the only useful place to
-              // exercise it is a release build. Temporary — strip before launch.
+              // Crashlytics collection is disabled in debug (see main.dart),
+              // so this panel can't actually exercise reporting; it's kept here
+              // only for local inspection and rides the section-wide
+              // developmentMode guard above so it never ships. Temporary —
+              // strip before launch.
               (_) => const _SubSectionHeader(
                     icon: Icons.warning_amber_outlined,
                     title: 'Crashlytics',
@@ -417,6 +427,7 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                       );
                     },
                   ),
+              ],
             ];
             return ListView.builder(
               itemCount: items.length,
