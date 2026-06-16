@@ -166,6 +166,20 @@ class _HomeScreenState extends State<HomeScreen>
       _consumeInstallAssistantAction();
       ClockRepository().rescheduleEnabledAlarms();
       _evaluateDefaultNudgeEligibility();
+      // Seed from the CURRENT cubit state, not just future emits. The
+      // BlocListeners below only fire on changes after they subscribe, so if
+      // apps + workspace already settled before this mounted (e.g. after the
+      // Dev "Simulate fresh install" reload, or a fast cold start), the seed
+      // would otherwise never run and the first-run cover would hang until the
+      // failsafe. These calls are idempotent (guarded by _did* flags).
+      if (!mounted) return;
+      _ensureDefaultClockWidget(
+        context.read<WorkspaceCubit>().state,
+        context.read<SettingsCubit>().state,
+      );
+      _maybeSeedDefaultLayout();
+      _maybeSeedFeatureApps();
+      _maybeRevealHome();
     });
     _dragController.addListener(_onDragChange);
     _dragController.onRevertDisplacements = (displacements) {

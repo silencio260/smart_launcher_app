@@ -200,9 +200,15 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
     // Reset the live cubits so the running process reflects the wipe without a
     // cold restart: settings → defaults, workspace → empty (fresh-install), and
     // apps → reload from scratch (drives the home initializing cover).
-    settingsCubit.reset();
+    await settingsCubit.reset();
     await workspaceCubit.loadLayout();
-    await appsCubit.resetForFreshInstall();
+    // Fire-and-forget: the apps reload runs the slow cold icon rasterization.
+    // Awaiting it would hang this handler (and freeze on the settings screen)
+    // until every icon is rebuilt, then settle apps BEFORE the post-onboarding
+    // HomeScreen mounts — which is exactly the "already-settled" timing that
+    // skips the seed listeners. Letting it run in the background instead makes
+    // the apps load during onboarding, mirroring a genuine fresh install.
+    unawaited(appsCubit.resetForFreshInstall());
   }
 
   @override

@@ -52,33 +52,9 @@ class AppsChannel(private val activity: Activity) {
                         val knownSnapshotKey = call.argument<String>("snapshotKey")
                         ioExecutor.execute {
                             try {
-                                val snapshotKey = AppQueryHelper.getLauncherSnapshotKey(activity)
-                                if (
-                                    knownSnapshotKey != null &&
-                                    knownSnapshotKey == snapshotKey &&
-                                    AppQueryHelper.hasValidLauncherIconCache(activity)
-                                ) {
-                                    activity.runOnUiThread {
-                                        result.success(
-                                            mapOf(
-                                                "changed" to false,
-                                                "snapshotKey" to snapshotKey,
-                                            )
-                                        )
-                                    }
-                                    return@execute
-                                }
-
-                                val apps = AppQueryHelper.getLauncherActivities(activity)
-                                activity.runOnUiThread {
-                                    result.success(
-                                        mapOf(
-                                            "changed" to true,
-                                            "snapshotKey" to snapshotKey,
-                                            "apps" to apps,
-                                        )
-                                    )
-                                }
+                                val payload =
+                                    AppQueryHelper.getAppsIfChanged(activity, knownSnapshotKey)
+                                activity.runOnUiThread { result.success(payload) }
                             } catch (e: Exception) {
                                 activity.runOnUiThread {
                                     result.error("GET_APPS_ERROR", e.message, null)

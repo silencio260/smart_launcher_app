@@ -10,6 +10,8 @@ import android.graphics.drawable.Drawable
 import android.os.Build
 import java.io.File
 import java.security.MessageDigest
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
 
 object AppQueryHelper {
 
@@ -59,6 +61,15 @@ object AppQueryHelper {
     private data class CachedIcon(val lastUpdateTime: Long, val bytes: ByteArray)
     private val iconCache = HashMap<String, CachedIcon>(256)
 
+    // Bounded pool for parallel icon rasterization. Sized to the device's CPU
+    // count (clamped) so a fresh-install enumeration of ~150 apps rasterizes
+    // across cores instead of one-at-a-time on a single IO thread — the latter
+    // is what made the first app list take several seconds to appear. The
+    // cache lookups it fans out to are individually synchronized.
+    private val rasterPool = Executors.newFixedThreadPool(
+        Runtime.getRuntime().availableProcessors().coerceIn(2, 6),
+    ) { r -> Thread(r, "icon-raster").apply { isDaemon = true } }
+
     /** Wipes every rasterized icon — the in-memory cache and the on-disk
      *  cache directory — so the next enumeration re-rasterizes from scratch.
      *  Backs the Dev View "Simulate fresh install" maintenance action. */
@@ -98,44 +109,106 @@ object AppQueryHelper {
         context: Context,
         includeIconBytes: Boolean = false,
     ): List<Map<String, Any?>> {
+        val entries = queryLauncherActivities(context, includeIconSource = true)
+        return buildAppMaps(context, entries, includeIconBytes)
+    }
+
+    /**
+     * Single-pass "changed?" check + app list for the launcher's startup
+     * refresh. Enumerates launcher activities exactly once — the previous split
+     * of getLauncherSnapshotKey / hasValidLauncherIconCache / getLauncherActivities
+     * walked the full PackageManager up to three times per refresh — derives the
+     * snapshot key from that one pass, and only rasterizes icons when something
+     * actually changed.
+     */
+    fun getAppsIfChanged(
+        context: Context,
+        knownSnapshotKey: String?,
+    ): Map<String, Any?> {
+        val entries = queryLauncherActivities(context, includeIconSource = true)
+        val snapshotKey = computeSnapshotKey(entries)
+        if (
+            knownSnapshotKey != null &&
+            knownSnapshotKey == snapshotKey &&
+            hasValidIconCache(context.cacheDir, entries)
+        ) {
+            return mapOf(
+                "changed" to false,
+                "snapshotKey" to snapshotKey,
+            )
+        }
+        return mapOf(
+            "changed" to true,
+            "snapshotKey" to snapshotKey,
+            "apps" to buildAppMaps(context, entries, includeIconBytes = false),
+        )
+    }
+
+    private data class IconResult(
+        val entry: LauncherActivityEntry,
+        val iconBytes: ByteArray?,
+        val iconPath: String?,
+    )
+
+    /**
+     * Rasterizes every entry's icon and packs the channel maps. Rasterization
+     * is the dominant cold-start cost (load + 192px draw + PNG encode + disk
+     * write per app), so it is fanned out across [rasterPool] rather than run
+     * one icon at a time on the caller's single IO thread. The memory + disk
+     * caches (keyed by lastUpdateTime) make a warm app a cheap lookup, so this
+     * only does real work on a fresh install or after a package changes.
+     */
+    private fun buildAppMaps(
+        context: Context,
+        entries: List<LauncherActivityEntry>,
+        includeIconBytes: Boolean,
+    ): List<Map<String, Any?>> {
         val pm = context.packageManager
-        val launcherApps = queryLauncherActivities(context, includeIconSource = true)
-        val result = ArrayList<Map<String, Any?>>(launcherApps.size)
+        val cacheRoot = context.cacheDir
+        val tasks = entries.map { entry ->
+            Callable {
+                val iconBytes = getCachedOrRasterizeIcon(
+                    pm,
+                    entry.packageName,
+                    entry.lastUpdateTime,
+                    cacheRoot = cacheRoot,
+                    iconCacheKey = entry.iconCacheKey,
+                    iconSource = entry.iconSource,
+                )
+                val iconPath = iconCacheFile(cacheRoot, entry.iconCacheKey, entry.lastUpdateTime)
+                    ?.takeIf { it.isFile }
+                    ?.absolutePath
+                IconResult(entry, iconBytes, iconPath)
+            }
+        }
+        val results = if (tasks.isEmpty()) {
+            emptyList()
+        } else {
+            rasterPool.invokeAll(tasks).map { it.get() }
+        }
+
         val indexEdit = try {
             context.getSharedPreferences(ASSISTANT_INDEX_PREFS, Context.MODE_PRIVATE).edit()
         } catch (_: Exception) {
             null
         }
-
-        for (entry in launcherApps) {
-            val pkg = entry.packageName
-            val iconBytes = getCachedOrRasterizeIcon(
-                pm,
-                pkg,
-                entry.lastUpdateTime,
-                cacheRoot = context.cacheDir,
-                iconCacheKey = entry.iconCacheKey,
-                iconSource = entry.iconSource,
-            )
-            val iconFile = iconCacheFile(
-                context.cacheDir,
-                entry.iconCacheKey,
-                entry.lastUpdateTime,
-            )
-            val iconPath = iconFile?.takeIf { it.isFile }?.absolutePath
-            if (entry.launcherFeatureId == null) {
-                indexEdit?.putString(pkg, encodeAssistantIndexValue(entry.label, iconPath))
+        val result = ArrayList<Map<String, Any?>>(results.size)
+        for (r in results) {
+            if (r.entry.launcherFeatureId == null) {
+                indexEdit?.putString(
+                    r.entry.packageName,
+                    encodeAssistantIndexValue(r.entry.label, r.iconPath),
+                )
             }
-
             result.add(
                 mapOf(
-                    "name" to entry.label,
-                    "packageName" to pkg,
-                    "componentName" to entry.componentName,
-                    "lastUpdateTime" to entry.lastUpdateTime,
-                    "icon" to if (includeIconBytes) iconBytes else null,
-                    "iconPath" to iconPath,
-                    "launcherFeatureId" to entry.launcherFeatureId,
+                    "name" to r.entry.label,
+                    "packageName" to r.entry.packageName,
+                    "componentName" to r.entry.componentName,
+                    "lastUpdateTime" to r.entry.lastUpdateTime,
+                    "icon" to if (includeIconBytes) r.iconBytes else null,
+                    "iconPath" to r.iconPath,
+                    "launcherFeatureId" to r.entry.launcherFeatureId,
                 )
             )
         }
@@ -143,25 +216,24 @@ object AppQueryHelper {
         return result
     }
 
-    fun getLauncherSnapshotKey(context: Context): String {
+    private fun computeSnapshotKey(entries: List<LauncherActivityEntry>): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        queryLauncherActivities(context)
+        entries
             .sortedWith(compareBy({ it.packageName }, { it.componentName }))
             .forEach { entry ->
-                val value = "${entry.packageName}|${entry.componentName}|${entry.lastUpdateTime}|${entry.label}\n"
+                val value =
+                    "${entry.packageName}|${entry.componentName}|${entry.lastUpdateTime}|${entry.label}\n"
                 digest.update(value.toByteArray(Charsets.UTF_8))
             }
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
-    fun hasValidLauncherIconCache(context: Context): Boolean =
-        queryLauncherActivities(context).all { entry ->
-            iconCacheFile(
-                context.cacheDir,
-                entry.iconCacheKey,
-                entry.lastUpdateTime,
-            )?.isFile == true
-        }
+    private fun hasValidIconCache(
+        cacheRoot: File?,
+        entries: List<LauncherActivityEntry>,
+    ): Boolean = entries.all { entry ->
+        iconCacheFile(cacheRoot, entry.iconCacheKey, entry.lastUpdateTime)?.isFile == true
+    }
 
     private data class LauncherActivityEntry(
         val packageName: String,
