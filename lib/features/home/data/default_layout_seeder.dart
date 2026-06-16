@@ -13,10 +13,11 @@ import 'package:smart_launcher_app/features/apps/data/app_categories.dart';
 ///
 /// Layout produced (4 columns × 5 rows):
 ///  - Page 1: clock widget (added by [WorkspaceCubit.ensureDefaultClockWidget]),
-///            a "Google" folder (YouTube, Chrome, Mail + the rest of the Google
-///            suite), a pinned row of YouTube, Chrome, Mail, one calculator and
-///            two productivity apps, and the mini-apps (File Locker, App Hider,
-///            App Locker) on the bottom row, just above the dock.
+///            the mini-apps (File Locker, App Hider, App Locker) on the first
+///            row just below the clock, then a "Google" folder (YouTube, Chrome,
+///            Mail + the rest of the Google suite) and a pinned set of YouTube,
+///            Chrome, Mail, one calculator and two productivity apps filling the
+///            rows below the mini-apps.
 ///  - Page 2: social-media apps, filling the grid.
 ///  - Page 3: utility apps, filling the grid.
 ///  - Page 4: one folder per non-empty category (Social, Google, Utility, …).
@@ -85,11 +86,25 @@ class DefaultLayoutSeeder {
         const ['com.google.android.calculator', 'com.android.calculator2'],
         const ['calculator']);
 
-    // Rows 0-1 are reserved for the clock widget; the bottom row is filled with
-    // the mini-apps (just above the dock), so the Google folder and the pinned
-    // loose icons live in the rows in between.
-    final bottomRowStart = columns * (rows - 1);
+    // Rows 0-1 are reserved for the clock widget. The mini-apps take the first
+    // content row (row 2, just below the clock); the Google folder and the
+    // pinned loose icons then fill the rows below them.
     var nextPage1Slot = columns * 2;
+
+    // ---- Mini-apps on the first content row, just below the clock ----
+    // The Clock mini-app lives in the dock (seeded below), so it's excluded
+    // here; the rest are laid out left-to-right.
+    for (final feature in LauncherFeatureCatalog.homeFeatures) {
+      if (feature.id == LauncherFeatureCatalog.alarmClock.id) continue;
+      if (nextPage1Slot >= capacity) break;
+      page1Slots[nextPage1Slot] = AppSlot(feature.toWorkspaceItem(screenId: 0));
+      nextPage1Slot++;
+    }
+    // Push the Google content onto the next full row so the folder and pinned
+    // icons never share a row with the mini-apps.
+    if (nextPage1Slot % columns != 0) {
+      nextPage1Slot += columns - (nextPage1Slot % columns);
+    }
 
     var folderSlotIndex = -1;
     if (googleApps.isNotEmpty) {
@@ -108,11 +123,11 @@ class DefaultLayoutSeeder {
         id: id.hashCode,
         folderTitle: googleFolderTitle,
         contents: ordered.map(_toItem).toList(),
-        cellX: 0,
-        cellY: 2,
+        cellX: nextPage1Slot % columns,
+        cellY: nextPage1Slot ~/ columns,
         screenId: 0,
       );
-      // Drop the folder just below the top 4×2 area reserved for the clock.
+      // Drop the folder on the first row below the mini-apps.
       folderSlotIndex = nextPage1Slot;
       page1Slots[folderSlotIndex] = FolderSlot(id);
       nextPage1Slot++;
@@ -134,20 +149,9 @@ class DefaultLayoutSeeder {
     ];
     var pinSlot = nextPage1Slot;
     for (final app in pinned) {
-      if (pinSlot >= bottomRowStart) break;
+      if (pinSlot >= capacity) break;
       page1Slots[pinSlot] = AppSlot(_toItem(app));
       pinSlot++;
-    }
-
-    // ---- Mini-apps on the bottom row, just above the dock ----
-    // The Clock mini-app lives in the dock (seeded below), so it's excluded
-    // here; the rest are laid out left-to-right on the last row.
-    var miniSlot = bottomRowStart;
-    for (final feature in LauncherFeatureCatalog.homeFeatures) {
-      if (feature.id == LauncherFeatureCatalog.alarmClock.id) continue;
-      if (miniSlot >= capacity) break;
-      page1Slots[miniSlot] = AppSlot(feature.toWorkspaceItem(screenId: 0));
-      miniSlot++;
     }
 
     // ---- Pages 2 & 3: loose apps ----
