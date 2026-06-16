@@ -90,7 +90,7 @@
     </queries>
 
     <application
-        android:label="Smart Launcher"
+        android:label="#Simple Phone Launcher"
         android:name=".SmartLauncherApplication"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round">
@@ -103,6 +103,7 @@
 
         <activity
             android:name=".MainActivity"
+            android:label="Simple Phone Launcher"
             android:exported="true"
             android:launchMode="singleTask"
             android:taskAffinity=""
