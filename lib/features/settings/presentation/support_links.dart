@@ -17,6 +17,6 @@ class SupportLinks {
   static const String feedbackSubject = 'Smart Launcher feedback';
 
   /// Hosted privacy policy opened by the "Privacy Policy" item.
-  // TODO(genrevibes-starter-kit): set the real privacy policy URL.
-  static const String privacyPolicyUrl = 'https://genrevibes.com/privacy';
+  static const String privacyPolicyUrl =
+      'https://sites.google.com/view/smart-launcher-privacy-policy/home';
 }
