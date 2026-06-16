@@ -188,6 +188,17 @@ class AppsChannel(private val activity: Activity) {
                             result.success(null)
                         }
                     }
+                    "clearIconCaches" -> {
+                        ioExecutor.execute {
+                            val ok = try {
+                                AppQueryHelper.clearAllCaches(activity)
+                                true
+                            } catch (e: Exception) {
+                                false
+                            }
+                            activity.runOnUiThread { result.success(ok) }
+                        }
+                    }
                     "getPackageIcon" -> {
                         val pkg = call.argument<String>("packageName")
                         if (pkg != null) {

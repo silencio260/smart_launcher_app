@@ -17,9 +17,16 @@ import 'package:smart_launcher_app/core/platform/launcher_service.dart';
 import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.dart';
 import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
 import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
+import 'package:smart_launcher_app/features/home/data/default_layout_seeder.dart';
 import 'package:smart_launcher_app/core/utils/debug_flags.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/analytics_debug_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/ads_debug_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:smart_launcher_app/core/icons/decoded_icon_cache.dart';
+import 'package:smart_launcher_app/features/apps/data/app_snapshot_cache.dart';
+import 'package:smart_launcher_app/features/home/data/seed_flags.dart';
+import 'package:smart_launcher_app/features/onboarding/data/onboarding_store.dart';
+import 'package:smart_launcher_app/features/onboarding/presentation/screens/onboarding_screen.dart';
 import 'package:smart_launcher_app/features/onboarding/presentation/screens/onboarding_debug_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/general_settings_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/home_screen_settings_screen.dart';
@@ -68,15 +75,78 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
   /// Clears all settings and home-screen layout back to defaults. Moved here
   /// from the (now removed) Backup & Restore screen so the destructive reset
   /// lives behind Developer Options.
+  ///
+  /// Resetting settings alone wipes [LauncherSettings.dockPackages] to an empty
+  /// list (its model default) and leaves the persisted page layout untouched,
+  /// which left the dock blank. So after clearing settings we re-run the
+  /// [DefaultLayoutSeeder], which rebuilds both the pages and the dock from the
+  /// installed apps — the same coherent default the first-run seed produces.
   void _confirmReset(BuildContext context) {
     final settingsCubit = context.read<SettingsCubit>();
+    final appsCubit = context.read<AppsCubit>();
     final workspaceCubit = context.read<WorkspaceCubit>();
+    final messenger = ScaffoldMessenger.of(context);
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Reset to Defaults'),
         content: const Text(
-          'This will clear all your settings and home screen layout. '
+          'This will clear all your settings and rebuild the home screen and '
+          'dock from your installed apps. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              final apps = appsCubit.state.apps;
+              if (apps.isEmpty) {
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Apps are still loading — try again.'),
+                  ),
+                );
+                return;
+              }
+              await settingsCubit.reset();
+              DefaultLayoutSeeder.seed(
+                apps: apps,
+                workspace: workspaceCubit,
+                settings: settingsCubit,
+              );
+              messenger.showSnackBar(
+                const SnackBar(content: Text('Reset to defaults.')),
+              );
+            },
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Dev View: wipe everything a genuine fresh install lacks — cached icons,
+  /// the app snapshot, the seeded-layout flags, the persisted layout, all
+  /// settings, and onboarding flags — then restart the app at the onboarding
+  /// flow. Lets us re-experience (and test) the first-run "Setting up your
+  /// launcher" path without uninstalling.
+  void _confirmSimulateFreshInstall(BuildContext context) {
+    final settingsCubit = context.read<SettingsCubit>();
+    final workspaceCubit = context.read<WorkspaceCubit>();
+    final appsCubit = context.read<AppsCubit>();
+    final navigator = Navigator.of(context, rootNavigator: true);
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Simulate Fresh Install'),
+        content: const Text(
+          'This clears all cached app icons, the app snapshot, your home '
+          'screen layout, all settings, and onboarding flags — then restarts '
+          'at the onboarding flow as if the launcher were just installed. '
           'This cannot be undone.',
         ),
         actions: [
@@ -86,16 +156,53 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
           ),
           TextButton(
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            onPressed: () {
-              settingsCubit.reset();
-              workspaceCubit.loadLayout();
+            onPressed: () async {
               Navigator.pop(dialogContext);
+              await _runSimulateFreshInstall(
+                settingsCubit: settingsCubit,
+                workspaceCubit: workspaceCubit,
+                appsCubit: appsCubit,
+              );
+              navigator.pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const OnboardingScreen()),
+                (route) => false,
+              );
             },
-            child: const Text('Reset'),
+            child: const Text('Simulate'),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _runSimulateFreshInstall({
+    required SettingsCubit settingsCubit,
+    required WorkspaceCubit workspaceCubit,
+    required AppsCubit appsCubit,
+  }) async {
+    // On-disk + in-memory caches that make a warm start instant.
+    await AppSnapshotCache.instance.clear();
+    await LauncherService.clearIconCaches();
+    DecodedIconCache.instance.clear();
+
+    // First-run flags + persisted layout, so the default layout re-seeds and
+    // the onboarding flow replays on the next launch.
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(kDefaultLayoutSeededFlag);
+    await prefs.remove(kFeatureIconsSeededFlag);
+    await prefs.remove(kWorkspaceLayoutKey);
+    await OnboardingStore.resetCompleted();
+    await OnboardingStore.resetNudge();
+    for (final id in kMiniAppOnboardingIds) {
+      await OnboardingStore.resetMiniAppOnboarded(id);
+    }
+
+    // Reset the live cubits so the running process reflects the wipe without a
+    // cold restart: settings → defaults, workspace → empty (fresh-install), and
+    // apps → reload from scratch (drives the home initializing cover).
+    settingsCubit.reset();
+    await workspaceCubit.loadLayout();
+    await appsCubit.resetForFreshInstall();
   }
 
   @override
@@ -274,6 +381,17 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                         style: TextStyle(color: Colors.red)),
                     subtitle: const Text('Clear all settings and layout'),
                     onTap: () => _confirmReset(c),
+                  ),
+              (c) => ListTile(
+                    leading: const Icon(Icons.cleaning_services_outlined,
+                        color: Colors.red),
+                    title: const Text('Simulate Fresh Install',
+                        style: TextStyle(color: Colors.red)),
+                    subtitle: const Text(
+                      'Wipe icon caches, snapshot, layout, settings & '
+                      'onboarding, then restart at onboarding',
+                    ),
+                    onTap: () => _confirmSimulateFreshInstall(c),
                   ),
               (_) => const _SubSectionHeader(
                     icon: Icons.visibility_outlined,

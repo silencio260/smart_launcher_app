@@ -18,6 +18,9 @@ import 'package:smart_launcher_app/core/storage/mini_app_repositories.dart';
 import 'package:smart_launcher_app/features/after_call/data/after_call_service.dart';
 import 'package:smart_launcher_app/features/install_assistant/data/install_assistant_service.dart';
 import 'package:smart_launcher_app/features/home/data/default_layout_seeder.dart';
+import 'package:smart_launcher_app/features/home/data/seed_flags.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/launcher_initializing_view.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/restore_layout_banner.dart';
 import 'package:smart_launcher_app/core/platform/feature_launch_dispatcher.dart';
 import 'package:smart_launcher_app/core/platform/launcher_service.dart';
 import 'package:smart_launcher_app/core/icons/decoded_icon_cache.dart';
@@ -60,7 +63,15 @@ import 'package:smart_launcher_app/features/onboarding/data/onboarding_store.dar
 import 'package:smart_launcher_app/features/onboarding/presentation/widgets/default_launcher_nudge.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.firstRun = false});
+
+  /// True only for the HomeScreen pushed straight after the onboarding flow
+  /// (genuine fresh install or the Dev View "Simulate fresh install"). Drives
+  /// the one-shot "Setting up your launcher" cover, which stays up until the
+  /// default layout has been seeded — then reveals the populated home. A warm
+  /// start (onboarding already completed) uses `firstRun: false` and never
+  /// shows the cover.
+  final bool firstRun;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -84,6 +95,15 @@ class _HomeScreenState extends State<HomeScreen>
   bool _didSeedFeatureApps = false;
   bool _defaultSeedResolved = false;
   bool _normalizingDock = false;
+  // First-run "Setting up your launcher" cover. Shown from mount until the
+  // default layout has been seeded and apps have loaded, then dismissed to
+  // reveal home. A 10s failsafe (see [_initFailsafeTimer]) reveals home anyway
+  // if seeding somehow stalls, and flips [_seedTimedOut] so the home surfaces a
+  // "Restore home screen layout" action under the set-as-default nudge.
+  bool _initializing = false;
+  bool _seedTimedOut = false;
+  Timer? _initFailsafeTimer;
+  static const _initFailsafe = Duration(seconds: 10);
   PageController? _pageController;
   // Dock + Smart-search pill "chrome": faded out as the pager scrolls into a
   // flanking special page (Discover / App Library). Driven by WorkspaceView at
@@ -111,6 +131,12 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Fresh install / simulate: cover the home with the setup screen until the
+    // layout is seeded, with a hard failsafe so we never get stuck on it.
+    _initializing = widget.firstRun;
+    if (_initializing) {
+      _initFailsafeTimer = Timer(_initFailsafe, _onInitTimeout);
+    }
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -190,6 +216,7 @@ class _HomeScreenState extends State<HomeScreen>
   void dispose() {
     homeRouteObserver.unsubscribe(this);
     _routeCovered.dispose();
+    _initFailsafeTimer?.cancel();
     _drawerPrewarmTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _dragController.removeListener(_onDragChange);
@@ -370,8 +397,8 @@ class _HomeScreenState extends State<HomeScreen>
     });
   }
 
-  static const _seededFlagKey = 'default_layout_seeded_v1';
-  static const _featureSeededFlagKey = 'launcher_feature_icons_seeded_v1';
+  static const _seededFlagKey = kDefaultLayoutSeededFlag;
+  static const _featureSeededFlagKey = kFeatureIconsSeededFlag;
 
   // Resolves whether the "set as default" nudge should ever appear: only when
   // the user hasn't dismissed it and we don't already hold the home role. The
@@ -389,34 +416,61 @@ class _HomeScreenState extends State<HomeScreen>
   // current home surface state — hidden whenever the drawer, edit mode, or a
   // pushed route covers the launcher so it never floats over them.
   void _refreshDefaultNudge() {
-    final shouldShow = _defaultNudgeEligible &&
-        mounted &&
-        !_drawerOpen &&
-        !_editMode &&
-        !_routeCovered.value;
-    if (shouldShow && _defaultNudge == null) {
-      final overlay = Overlay.of(context);
-      final topInset = MediaQuery.of(context).padding.top;
-      _defaultNudge = OverlayEntry(
-        builder: (_) => Positioned(
-          top: topInset + 8,
-          left: 16,
-          right: 16,
-          child: DefaultLauncherNudge(
-            onTap: () => LauncherService.requestHomeRole(),
-            onDismiss: () {
-              OnboardingStore.dismissNudge();
-              _defaultNudgeEligible = false;
-              _refreshDefaultNudge();
-            },
-          ),
-        ),
-      );
-      overlay.insert(_defaultNudge!);
-    } else if (!shouldShow && _defaultNudge != null) {
+    if (!mounted) return;
+    final covered = _drawerOpen || _editMode || _routeCovered.value;
+    final shouldShow = (_defaultNudgeEligible || _seedTimedOut) && !covered;
+    if (shouldShow) {
+      if (_defaultNudge == null) {
+        final overlay = Overlay.of(context);
+        _defaultNudge = OverlayEntry(builder: (_) => _buildTopBanners());
+        overlay.insert(_defaultNudge!);
+      } else {
+        // Composition may have changed (nudge dismissed, restore appeared, …).
+        _defaultNudge!.markNeedsBuild();
+      }
+    } else if (_defaultNudge != null) {
       _defaultNudge!.remove();
       _defaultNudge = null;
     }
+  }
+
+  // The stacked top banners: the set-as-default nudge and, when the first-run
+  // seed timed out, the "Restore home screen layout" action directly beneath
+  // it. Both live in the root overlay as thin top bands that never cover the
+  // workspace (so first-swipe-to-open-drawer keeps working).
+  Widget _buildTopBanners() {
+    final topInset = MediaQuery.of(context).padding.top;
+    final covered = _drawerOpen || _editMode || _routeCovered.value;
+    final showNudge = _defaultNudgeEligible && !covered;
+    final showRestore = _seedTimedOut && !covered;
+    return Positioned(
+      top: topInset + 8,
+      left: 16,
+      right: 16,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showNudge)
+            DefaultLauncherNudge(
+              onTap: () => LauncherService.requestHomeRole(),
+              onDismiss: () {
+                OnboardingStore.dismissNudge();
+                _defaultNudgeEligible = false;
+                _refreshDefaultNudge();
+              },
+            ),
+          if (showNudge && showRestore) const SizedBox(height: 8),
+          if (showRestore)
+            RestoreLayoutBanner(
+              onRestore: _restoreDefaultLayout,
+              onDismiss: () {
+                setState(() => _seedTimedOut = false);
+                _refreshDefaultNudge();
+              },
+            ),
+        ],
+      ),
+    );
   }
 
   // One-shot first-run seeding. Both the installed-apps list and the saved
@@ -435,11 +489,13 @@ class _HomeScreenState extends State<HomeScreen>
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool(_seededFlagKey) == true) {
       _defaultSeedResolved = true;
+      _maybeRevealHome();
       return;
     }
     if (!workspace.wasFreshInstall) {
       _defaultSeedResolved = true;
       await prefs.setBool(_seededFlagKey, true);
+      _maybeRevealHome();
       return;
     }
     if (!mounted) return;
@@ -450,6 +506,61 @@ class _HomeScreenState extends State<HomeScreen>
     );
     _defaultSeedResolved = true;
     await prefs.setBool(_seededFlagKey, true);
+    _maybeRevealHome();
+  }
+
+  // ─── First-run "Setting up your launcher" cover ──────────────────────────
+
+  // Reveals the home the instant the layout is ready: apps loaded AND the
+  // default-layout seed resolved. Called after every seed attempt and from the
+  // apps/workspace listeners, so the cover lifts as soon as setup completes.
+  void _maybeRevealHome() {
+    if (!_initializing) return;
+    final apps = context.read<AppsCubit>().state;
+    final appsReady = apps.apps.isNotEmpty && !apps.loading;
+    if (appsReady && _defaultSeedResolved) {
+      _finishInitializing(timedOut: false);
+    }
+  }
+
+  // Hard failsafe: if seeding hasn't resolved after [_initFailsafe], drop the
+  // cover and show home anyway. If the layout never got seeded, surface the
+  // "Restore home screen layout" action so the user can rebuild it by hand.
+  void _onInitTimeout() {
+    if (!_initializing) return;
+    _finishInitializing(timedOut: true);
+  }
+
+  void _finishInitializing({required bool timedOut}) {
+    _initFailsafeTimer?.cancel();
+    _initFailsafeTimer = null;
+    if (!mounted) return;
+    setState(() {
+      _initializing = false;
+      // Only offer "restore" if the timeout fired before the seed resolved.
+      _seedTimedOut = timedOut && !_defaultSeedResolved;
+    });
+    if (_seedTimedOut) _refreshDefaultNudge();
+  }
+
+  // Manual re-seed from the "Restore home screen layout" banner (only ever
+  // shown after the failsafe timed out without a seeded layout).
+  void _restoreDefaultLayout() {
+    final apps = context.read<AppsCubit>().state.apps;
+    if (apps.isEmpty) return;
+    DefaultLayoutSeeder.seed(
+      apps: apps,
+      workspace: context.read<WorkspaceCubit>(),
+      settings: context.read<SettingsCubit>(),
+    );
+    _defaultSeedResolved = true;
+    SharedPreferences.getInstance()
+        .then((prefs) => prefs.setBool(_seededFlagKey, true));
+    setState(() => _seedTimedOut = false);
+    _refreshDefaultNudge();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Home screen layout restored')),
+    );
   }
 
   Future<void> _maybeSeedFeatureApps() async {
@@ -1154,6 +1265,11 @@ class _HomeScreenState extends State<HomeScreen>
                         _pageController?.jumpToPage(_toControllerPage(page));
                       },
                     ),
+                  // First-run setup cover: top-most so it hides the home while
+                  // the default layout seeds. Driven by local state (lifted the
+                  // instant the seed resolves, or by the 10s failsafe), so it
+                  // only ever appears on the post-onboarding first run.
+                  if (_initializing) const LauncherInitializingView(),
                 ],
               ),
             );

@@ -94,6 +94,17 @@ class AppSnapshotCache {
     }
   }
 
+  /// Deletes the persisted snapshot so the next launch falls back to a full
+  /// native enumeration. Used by the Dev View "Simulate fresh install" action.
+  Future<void> clear() async {
+    try {
+      final file = await _file();
+      if (await file.exists()) await file.delete();
+    } catch (_) {
+      // Best effort; a stale snapshot is harmless and re-validated on load.
+    }
+  }
+
   Future<File> _file() async {
     final dir = await getApplicationSupportDirectory();
     return File('${dir.path}/$_fileName');

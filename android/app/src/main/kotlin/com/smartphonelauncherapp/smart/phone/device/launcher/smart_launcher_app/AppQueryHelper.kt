@@ -59,6 +59,20 @@ object AppQueryHelper {
     private data class CachedIcon(val lastUpdateTime: Long, val bytes: ByteArray)
     private val iconCache = HashMap<String, CachedIcon>(256)
 
+    /** Wipes every rasterized icon — the in-memory cache and the on-disk
+     *  cache directory — so the next enumeration re-rasterizes from scratch.
+     *  Backs the Dev View "Simulate fresh install" maintenance action. */
+    fun clearAllCaches(context: Context) {
+        synchronized(iconCache) { iconCache.clear() }
+        val dir = iconCacheDir(context.cacheDir) ?: return
+        try {
+            dir.listFiles()?.forEach { it.delete() }
+        } catch (_: Exception) {
+            // Best effort; stale files are keyed by lastUpdateTime so a missed
+            // delete is re-validated rather than served wrongly.
+        }
+    }
+
     fun invalidatePackage(pkg: String, context: Context? = null) {
         synchronized(iconCache) {
             iconCache.keys

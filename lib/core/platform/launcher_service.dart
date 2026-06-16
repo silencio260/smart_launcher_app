@@ -87,6 +87,17 @@ class LauncherService {
     await _apps.invokeMethod('openAppSettings', {'packageName': packageName});
   }
 
+  /// Clears the native rasterized-icon caches (in-memory + the on-disk
+  /// `launcher_icon_cache` directory) so the next app enumeration re-rasterizes
+  /// every icon from scratch. Used by the Dev View "Simulate fresh install".
+  static Future<void> clearIconCaches() async {
+    try {
+      await _apps.invokeMethod('clearIconCaches');
+    } catch (_) {
+      // Cache is an optimization only; a failed clear just leaves it warm.
+    }
+  }
+
   static Future<Uint8List?> getPackageIcon(String packageName) async {
     final raw = await _apps.invokeMethod<Uint8List?>(
       'getPackageIcon',

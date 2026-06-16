@@ -13,6 +13,7 @@ import 'package:smart_launcher_app/core/models/launcher_widget_info.dart';
 import 'package:smart_launcher_app/core/models/widget_provider_info.dart';
 import 'package:smart_launcher_app/core/models/item_info.dart';
 import 'package:smart_launcher_app/features/home/presentation/widgets/workspace/widget_grid_math.dart';
+import 'package:smart_launcher_app/features/home/data/seed_flags.dart';
 import 'package:smart_launcher_app/core/utils/debug_flags.dart';
 
 sealed class SlotContent {}
@@ -97,7 +98,7 @@ enum DefaultClockWidgetPlacement {
 }
 
 class WorkspaceCubit extends Cubit<WorkspaceState> {
-  static const _key = 'workspace_layout_v1';
+  static const _key = kWorkspaceLayoutKey;
   static const defaultClockProviderPackage = 'com.genrevibes.smartlauncher';
   static const defaultClockProviderClass = 'builtin.clock';
   static const defaultClockWidgetId = -1001;

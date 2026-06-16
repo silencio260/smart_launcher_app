@@ -90,7 +90,7 @@ class _OnboardingViewState extends State<_OnboardingView>
     await context.read<OnboardingCubit>().finish(setDefault: setDefault);
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const HomeScreen()),
+      MaterialPageRoute(builder: (_) => const HomeScreen(firstRun: true)),
     );
   }
 
