@@ -10,6 +10,7 @@ import 'package:genrevibes_starter_kit/starter_kit.dart';
 import 'package:smart_launcher_app/bloc_observer.dart';
 import 'package:smart_launcher_app/core/ads/test_ads_config.dart';
 import 'package:smart_launcher_app/core/analytics/analytics_config.dart';
+import 'package:smart_launcher_app/core/config/app_env.dart';
 import 'package:smart_launcher_app/core/analytics/install_id.dart';
 import 'package:smart_launcher_app/firebase_options.dart';
 import 'package:smart_launcher_app/container_injector.dart';
@@ -84,11 +85,14 @@ Future<void> main() async {
 
     // Mixpanel session replay binds to the widget tree. With no token
     // configured the wrapper is a transparent passthrough (replay disabled).
+    // Session replay is also kept OFF in dev/debug builds (events still flow):
+    // it would record local test sessions and burn quota during development.
     runApp(
       AnalyticsConfig.hasMixpanelToken
           ? StarterKit.mixpanelWrapper(
               token: AnalyticsConfig.mixpanelToken,
               distinctId: installId,
+              enableSessionReplay: !(kDebugMode || AppEnv.developmentMode),
               child: const MyApp(),
             )
           : const MyApp(),
