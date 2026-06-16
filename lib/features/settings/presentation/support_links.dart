@@ -18,5 +18,5 @@ class SupportLinks {
 
   /// Hosted privacy policy opened by the "Privacy Policy" item.
   static const String privacyPolicyUrl =
-      'https://sites.google.com/view/smart-launcher-privacy-policy/home';
+      'https://sites.google.com/view/simple-launcher-privacy-policy/home';
 }

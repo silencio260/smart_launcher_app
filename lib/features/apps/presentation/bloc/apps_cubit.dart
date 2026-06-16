@@ -351,19 +351,22 @@ class AppsCubit extends Cubit<AppsState> {
     await loadApps();
   }
 
-  /// Dev-only: drop all in-memory app state and snapshot tracking, then reload
-  /// from scratch as if the launcher were just installed. Pairs with the Dev
-  /// View "Simulate fresh install" action, which first clears the on-disk
-  /// snapshot and native icon caches — so the reload hits the same cold path a
-  /// genuine fresh install does (and the home screen shows its initializing
-  /// cover while it runs).
-  Future<void> resetForFreshInstall() async {
+  /// Dev-only: drop all in-memory app state and snapshot tracking so the next
+  /// load hits the same cold path a genuine fresh install does. Pairs with the
+  /// Dev View "Simulate fresh install" action, which first clears the on-disk
+  /// snapshot and native icon caches.
+  ///
+  /// When [reload] is false the list is left empty and idle (not loading); the
+  /// post-onboarding first-run home is what then kicks the cold load, so the
+  /// "Setting up your launcher" cover stays visible while it runs — instead of
+  /// the reset preloading apps during onboarding and the cover flashing past.
+  Future<void> resetForFreshInstall({bool reload = true}) async {
     _snapshotKey = null;
     _pendingApps = null;
     _pendingSnapshotKey = null;
     _loadedSnapshot = false;
-    emit(AppsState(loading: true));
-    await loadCachedThenRefresh();
+    emit(AppsState(loading: reload));
+    if (reload) await loadCachedThenRefresh();
   }
 
   void setDrawerActive(bool active) {

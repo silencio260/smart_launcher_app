@@ -166,13 +166,24 @@ class _HomeScreenState extends State<HomeScreen>
       _consumeInstallAssistantAction();
       ClockRepository().rescheduleEnabledAlarms();
       _evaluateDefaultNudgeEligibility();
+      if (!mounted) return;
+      // First run: ensure the app list is actually loading. On a genuine cold
+      // start MyApp already kicked this off; after the Dev "Simulate fresh
+      // install" reset the list was cleared empty+idle on purpose, so this is
+      // what starts the cold load — keeping the "Setting up" cover visible
+      // while it runs. The guard makes it a no-op once apps are loaded/loading.
+      if (widget.firstRun) {
+        final apps = context.read<AppsCubit>();
+        if (apps.state.apps.isEmpty && !apps.state.loading) {
+          apps.loadCachedThenRefresh();
+        }
+      }
       // Seed from the CURRENT cubit state, not just future emits. The
       // BlocListeners below only fire on changes after they subscribe, so if
-      // apps + workspace already settled before this mounted (e.g. after the
-      // Dev "Simulate fresh install" reload, or a fast cold start), the seed
-      // would otherwise never run and the first-run cover would hang until the
-      // failsafe. These calls are idempotent (guarded by _did* flags).
-      if (!mounted) return;
+      // apps + workspace already settled before this mounted (e.g. a fast cold
+      // start), the seed would otherwise never run and the first-run cover
+      // would hang until the failsafe. These calls are idempotent (guarded by
+      // _did* flags).
       _ensureDefaultClockWidget(
         context.read<WorkspaceCubit>().state,
         context.read<SettingsCubit>().state,

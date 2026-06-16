@@ -1,12 +1,14 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:cached_network_image/cached_network_image.dart';
+// ProxyCloud wallpaper store is disabled — these are only used by the
+// commented-out remote listing below.
+// import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:smart_launcher_app/core/models/launcher_settings.dart';
-import 'package:smart_launcher_app/core/models/wallpaper_item.dart';
+// import 'package:smart_launcher_app/core/models/wallpaper_item.dart';
 import 'package:smart_launcher_app/core/services/wallpaper_service.dart';
 import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
 
@@ -19,13 +21,14 @@ class WallpaperScreen extends StatefulWidget {
 
 class _WallpaperScreenState extends State<WallpaperScreen> {
   Future<Uint8List?>? _currentWallpaper;
-  late Future<List<WallpaperItem>> _store;
+  // ProxyCloud wallpaper store fetching is disabled.
+  // late Future<List<WallpaperItem>> _store;
 
   @override
   void initState() {
     super.initState();
     _currentWallpaper = WallpaperService.currentSystemWallpaper();
-    _store = WallpaperService.fetchStore();
+    // _store = WallpaperService.fetchStore();
   }
 
   @override
@@ -34,82 +37,79 @@ class _WallpaperScreenState extends State<WallpaperScreen> {
       appBar: AppBar(title: const Text('Wallpaper')),
       body: BlocBuilder<SettingsCubit, LauncherSettings>(
         builder: (context, settings) {
-          return FutureBuilder<List<WallpaperItem>>(
-              future: _store,
-              builder: (context, snapshot) {
-                final wallpapers = snapshot.data;
-                return CustomScrollView(
-                  slivers: [
-                    SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                      sliver: SliverToBoxAdapter(
-                        child: _CurrentWallpaperCard(
-                          settings: settings,
-                          currentWallpaper: _currentWallpaper,
-                          onSystemPicker: () =>
-                              WallpaperService.openSystemPicker(),
-                          onReset: settings.customWallpaperPath.isEmpty
-                              ? null
-                              : () => context.read<SettingsCubit>().update(
-                                    settings.copyWith(customWallpaperPath: ''),
-                                  ),
-                        ),
-                      ),
-                    ),
-                    const SliverPadding(
-                      padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
-                      sliver: SliverToBoxAdapter(
-                        child: Text(
-                          'ProxyCloud wallpapers',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                    ),
-                    if (wallpapers == null)
-                      const SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    else if (wallpapers.isEmpty)
-                      const SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(child: Text('No wallpapers available')),
-                      )
-                    else
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                        sliver: SliverGrid(
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            mainAxisSpacing: 12,
-                            crossAxisSpacing: 12,
-                            childAspectRatio: 0.72,
-                          ),
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              final item = wallpapers[index];
-                              return _WallpaperTile(
-                                item: item,
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => BlocProvider.value(
-                                      value: context.read<SettingsCubit>(),
-                                      child:
-                                          _WallpaperPreviewScreen(item: item),
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                            childCount: wallpapers.length,
-                          ),
-                        ),
-                      ),
-                  ],
-                );
-              });
+          // ProxyCloud wallpaper fetching is disabled. Only the current
+          // wallpaper card + the system picker remain; the remote ProxyCloud
+          // store listing below is commented out.
+          return CustomScrollView(
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                sliver: SliverToBoxAdapter(
+                  child: _CurrentWallpaperCard(
+                    settings: settings,
+                    currentWallpaper: _currentWallpaper,
+                    onSystemPicker: () => WallpaperService.openSystemPicker(),
+                    onReset: settings.customWallpaperPath.isEmpty
+                        ? null
+                        : () => context.read<SettingsCubit>().update(
+                              settings.copyWith(customWallpaperPath: ''),
+                            ),
+                  ),
+                ),
+              ),
+              // --- ProxyCloud wallpapers (disabled) ---
+              // const SliverPadding(
+              //   padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+              //   sliver: SliverToBoxAdapter(
+              //     child: Text(
+              //       'ProxyCloud wallpapers',
+              //       style: TextStyle(fontWeight: FontWeight.w700),
+              //     ),
+              //   ),
+              // ),
+              // if (wallpapers == null)
+              //   const SliverFillRemaining(
+              //     hasScrollBody: false,
+              //     child: Center(child: CircularProgressIndicator()),
+              //   )
+              // else if (wallpapers.isEmpty)
+              //   const SliverFillRemaining(
+              //     hasScrollBody: false,
+              //     child: Center(child: Text('No wallpapers available')),
+              //   )
+              // else
+              //   SliverPadding(
+              //     padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              //     sliver: SliverGrid(
+              //       gridDelegate:
+              //           const SliverGridDelegateWithFixedCrossAxisCount(
+              //         crossAxisCount: 2,
+              //         mainAxisSpacing: 12,
+              //         crossAxisSpacing: 12,
+              //         childAspectRatio: 0.72,
+              //       ),
+              //       delegate: SliverChildBuilderDelegate(
+              //         (context, index) {
+              //           final item = wallpapers[index];
+              //           return _WallpaperTile(
+              //             item: item,
+              //             onTap: () => Navigator.push(
+              //               context,
+              //               MaterialPageRoute(
+              //                 builder: (_) => BlocProvider.value(
+              //                   value: context.read<SettingsCubit>(),
+              //                   child: _WallpaperPreviewScreen(item: item),
+              //                 ),
+              //               ),
+              //             ),
+              //           );
+              //         },
+              //         childCount: wallpapers.length,
+              //       ),
+              //     ),
+              //   ),
+            ],
+          );
         },
       ),
     );
@@ -197,6 +197,8 @@ class _CurrentWallpaperCard extends StatelessWidget {
   }
 }
 
+// --- ProxyCloud wallpaper tiles / preview / image (disabled) ---
+/*
 class _WallpaperTile extends StatelessWidget {
   final WallpaperItem item;
   final VoidCallback onTap;
@@ -432,3 +434,4 @@ class _WallpaperImage extends StatelessWidget {
     );
   }
 }
+*/
