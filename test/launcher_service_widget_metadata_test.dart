@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:smart_launcher_app/models/launcher_widget_info.dart';
-import 'package:smart_launcher_app/services/launcher_service.dart';
+import 'package:smart_launcher_app/core/models/launcher_widget_info.dart';
+import 'package:smart_launcher_app/core/platform/launcher_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

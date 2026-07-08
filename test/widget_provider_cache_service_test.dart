@@ -2,8 +2,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:smart_launcher_app/models/widget_provider_info.dart';
-import 'package:smart_launcher_app/services/widget_provider_cache_service.dart';
+import 'package:smart_launcher_app/core/models/widget_provider_info.dart';
+import 'package:smart_launcher_app/core/services/widget_provider_cache_service.dart';
 
 void main() {
   late Directory tempDir;

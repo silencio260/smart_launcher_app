@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.R
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.AlarmRingActivity
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.services.AlarmRingService
 
@@ -57,7 +58,7 @@ object AlarmNotifications {
         }
 
         builder
-            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setSmallIcon(R.drawable.ic_stat_smart_launcher)
             .setContentTitle(if (isTimer) "Timer" else spec.label)
             .setContentText(if (isTimer) spec.label else "Alarm")
             .setCategory(Notification.CATEGORY_ALARM)

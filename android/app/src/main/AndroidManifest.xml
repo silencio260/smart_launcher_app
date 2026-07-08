@@ -1,31 +1,44 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
-    <!-- App discovery -->
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Discover RSS feed fetching -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
-    <!-- Good Morning weather card: device location for Open-Meteo lookup. -->
+    <!-- Good Morning weather card: device location for Open-Meteo lookup.
+         Only city-level accuracy is consumed (LocationChannel geocodes to a
+         locality name), so COARSE is sufficient. FINE is commented out: it adds
+         nothing the feature uses and triggers Play's Location Permissions
+         Declaration form. Re-enable only if precise location is ever needed. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <!-- <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/> -->
 
-    <!-- Contacts search in search overlay -->
-    <uses-permission android:name="android.permission.READ_CONTACTS"/>
+    <!-- CAMERA is not used: the launcher only *opens* the system camera app via
+         intent (no capture/preview API is called), which needs no permission.
+         Commented out to drop the unnecessary Data safety declaration. -->
+    <!-- <uses-permission android:name="android.permission.CAMERA"/> -->
 
-    <!-- Calendar events in Smartspace -->
-    <uses-permission android:name="android.permission.READ_CALENDAR"/>
+    <!-- Contacts search + Calendar events were never fully wired (contact
+         search has no Dart caller; calendar permission was never requested at
+         runtime), so both features produced nothing. Commented out along with
+         their dead code to drop the unused Data safety declarations. Re-enable
+         only if the features are actually implemented. -->
+    <!-- <uses-permission android:name="android.permission.READ_CONTACTS"/> -->
+    <!-- <uses-permission android:name="android.permission.READ_CALENDAR"/> -->
 
     <!-- Notification badges (runtime permission on API 33+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
-    <!-- Alarm scheduling + reliable ringing. SCHEDULE_EXACT_ALARM is user-
-         grantable; USE_EXACT_ALARM (Android 13+) is install-time and exempts
-         the alarm-clock use case. WAKE_LOCK keeps the CPU up while ringing and
-         USE_FULL_SCREEN_INTENT lets the alarm surface over the lockscreen. -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <!-- Alarm scheduling + reliable ringing. USE_EXACT_ALARM (Android 13+) is
+         the install-time grant Google blesses for alarm-clock apps and covers
+         13+ on its own (no form, not revocable). SCHEDULE_EXACT_ALARM is the
+         user-revocable/flagged one, so it's bounded to Android 12 (maxSdkVersion
+         32) — the only versions that still need it, where it's auto-granted.
+         WAKE_LOCK keeps the CPU up while ringing and USE_FULL_SCREEN_INTENT lets
+         the alarm surface over the lockscreen. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
@@ -37,7 +50,6 @@
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"/>
-    <uses-permission android:name="android.permission.CAMERA"/>
 
     <!-- After-call action center: draw the post-call card over the dialer.
          Call-END detection reads only EXTRA_STATE from the PHONE_STATE
@@ -52,12 +64,6 @@
     <!-- Widget hosting -->
     <uses-permission android:name="android.permission.BIND_APPWIDGET"/>
 
-    <!-- External storage for backup export (legacy API <29) -->
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28"/>
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32"/>
-
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
@@ -67,19 +73,37 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
-        <!-- Icon pack query -->
+        <!-- Icon pack queries -->
+        <intent>
+            <action android:name="org.adw.ActivityStarter.THEMES"/>
+        </intent>
         <intent>
             <action android:name="org.adw.launcher.icons.ACTION_PICK_ICON"/>
         </intent>
+        <!-- Widget provider visibility -->
+        <intent>
+            <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+        </intent>
+        <!-- Alarm clock fallbacks used when standard AlarmClock intents fail. -->
+        <package android:name="com.google.android.deskclock"/>
+        <package android:name="com.android.deskclock"/>
     </queries>
 
     <application
-        android:label="Smart Launcher"
+        android:label="#Simple Phone Launcher"
         android:name=".SmartLauncherApplication"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round">
+
+        <!-- Test-only AdMob App ID. Replace with this app's real App ID before release ads. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713"
+            tools:replace="android:value"/>
 
         <activity
             android:name=".MainActivity"
+            android:label="Simple Phone Launcher"
             android:exported="true"
             android:launchMode="singleTask"
             android:taskAffinity=""
@@ -258,7 +282,13 @@
             </intent-filter>
         </service>
 
-        <!-- Accessibility service for sleep screen / recents actions -->
+        <!-- Accessibility service for sleep screen / recents actions.
+             Commented out: BIND_ACCESSIBILITY_SERVICE is a top Play-rejection
+             risk when used for non-accessibility purposes, and this service only
+             powered two optional gestures (Sleep Screen / Open Recents). Those
+             options have been removed from the Gestures picker. Re-enable this
+             block only if those gestures are reinstated. -->
+        <!--
         <service
             android:name=".services.LauncherAccessibilityService"
             android:exported="true"
@@ -271,6 +301,7 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config"/>
         </service>
+        -->
 
         <!-- After-call detector. Listens only to call-state changes (no caller
              identity) to fire the post-call overlay. Declared disabled and
@@ -302,6 +333,7 @@
         <receiver
             android:name=".widgets.ClockWidgetProvider"
             android:exported="true"
+            android:icon="@mipmap/ic_feature_clock"
             android:label="Clock">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
@@ -309,42 +341,6 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_clock"/>
-        </receiver>
-
-        <receiver
-            android:name=".widgets.FileLockerWidgetProvider"
-            android:exported="true"
-            android:label="File Locker">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_file_locker"/>
-        </receiver>
-
-        <receiver
-            android:name=".widgets.AppLockerWidgetProvider"
-            android:exported="true"
-            android:label="App Locker">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_app_locker"/>
-        </receiver>
-
-        <receiver
-            android:name=".widgets.AppHiderWidgetProvider"
-            android:exported="true"
-            android:label="App Hider">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_app_hider"/>
         </receiver>
 
         <meta-data

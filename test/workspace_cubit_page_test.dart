@@ -2,8 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:smart_launcher_app/models/launcher_widget_info.dart';
-import 'package:smart_launcher_app/state/workspace_cubit.dart';
+import 'package:smart_launcher_app/core/models/launcher_widget_info.dart';
+import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
 
 class TestWorkspaceCubit extends WorkspaceCubit {
   TestWorkspaceCubit(WorkspaceState initialState) {

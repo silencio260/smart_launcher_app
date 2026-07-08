@@ -2,7 +2,7 @@ name: smart_launcher_app
 description: "Smart Launcher - Flutter home screen replacement"
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: ^3.5.0
@@ -10,17 +10,23 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  genrevibes_starter_kit:
+    path: packages/genrevibes_starter_kit
+  firebase_core: ^3.6.0
+  firebase_crashlytics: ^4.1.3
+  firebase_analytics: ^11.0.0 # aligned with genrevibes_starter_kit (must match its firebase_analytics constraint)
   cupertino_icons: ^1.0.8
   shared_preferences: ^2.3.2
   flutter_bloc: ^9.0.0
   bloc: ^9.0.0
   equatable: ^2.0.7
+  dartz: ^0.10.1
   characters: ^1.3.0
-  get_it: ^8.0.0
+  get_it: ^9.0.0 # aligned with genrevibes_starter_kit
   smooth_page_indicator: ^1.2.0+3
   palette_generator: ^0.3.3
   google_fonts: ^6.2.1
-  permission_handler: ^12.0.0+1
+  permission_handler: ^11.0.0 # aligned with genrevibes_starter_kit
   uuid: ^4.5.1
   crypto: ^3.0.6
   intl: ^0.20.1
@@ -41,5 +47,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/feature_icons/
+    - assets/onboarding/
     - assets/ios_theme/
     - assets/ios_theme/wallpaper/
+    - shorebird.yaml

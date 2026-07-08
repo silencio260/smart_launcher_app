@@ -3,14 +3,14 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:smart_launcher_app/models/app_info.dart';
-import 'package:smart_launcher_app/models/item_info.dart';
-import 'package:smart_launcher_app/models/launcher_settings.dart';
-import 'package:smart_launcher_app/models/workspace_item_info.dart';
-import 'package:smart_launcher_app/state/apps_cubit.dart';
-import 'package:smart_launcher_app/state/workspace_cubit.dart';
-import 'package:smart_launcher_app/widgets/edit_mode/edit_mode_overlay.dart';
-import 'package:smart_launcher_app/widgets/icons/shaped_icon.dart';
+import 'package:smart_launcher_app/core/models/app_info.dart';
+import 'package:smart_launcher_app/core/models/item_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_settings.dart';
+import 'package:smart_launcher_app/core/models/workspace_item_info.dart';
+import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.dart';
+import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/edit_mode/edit_mode_overlay.dart';
+import 'package:smart_launcher_app/core/widgets/icons/shaped_icon.dart';
 
 class TestWorkspaceCubit extends WorkspaceCubit {
   TestWorkspaceCubit(WorkspaceState initialState) {

@@ -1,80 +1,103 @@
+import 'dart:async';
+
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'data/feature_hive_store.dart';
-import 'models/launcher_settings.dart';
-import 'services/clock_service.dart';
-import 'state/apps_cubit.dart';
-import 'state/launcher_cubit.dart';
-import 'state/launcher_feature_cubit.dart';
-import 'state/search_cubit.dart';
-import 'state/settings_cubit.dart';
-import 'state/workspace_cubit.dart';
-import 'screens/home_screen.dart';
-import 'widgets/workspace/route_coverage_scope.dart';
+import 'package:genrevibes_starter_kit/starter_kit.dart';
+import 'package:smart_launcher_app/bloc_observer.dart';
+import 'package:smart_launcher_app/core/ads/test_ads_config.dart';
+import 'package:smart_launcher_app/core/analytics/analytics_config.dart';
+import 'package:smart_launcher_app/core/config/app_env.dart';
+import 'package:smart_launcher_app/core/analytics/install_id.dart';
+import 'package:smart_launcher_app/firebase_options.dart';
+import 'package:smart_launcher_app/container_injector.dart';
+import 'package:smart_launcher_app/core/storage/feature_hive_store.dart';
+import 'package:smart_launcher_app/features/clock/data/clock_service.dart';
+import 'package:smart_launcher_app/features/onboarding/data/onboarding_store.dart';
+import 'package:smart_launcher_app/my_app.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await FeatureHiveStore.init();
-  await ClockService.init();
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    systemNavigationBarColor: Colors.transparent,
-  ));
-  runApp(const SmartLauncherApp());
-}
+  // runZonedGuarded catches uncaught async/Dart errors that the framework's
+  // own hooks miss, funnelling them into Crashlytics alongside everything else.
+  runZonedGuarded<Future<void>>(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    try {
+      final app = await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+      debugPrint('🔥 Firebase initialized: ${app.name} '
+          '(project: ${app.options.projectId})');
+    } catch (e, st) {
+      debugPrint('🔥 Firebase initialization FAILED: $e');
+      debugPrint('$st');
+    }
 
-class SmartLauncherApp extends StatelessWidget {
-  const SmartLauncherApp({super.key});
+    // Disable Crashlytics collection in debug so local dev crashes don't
+    // pollute the dashboard; real (release) crashes are still reported.
+    await FirebaseCrashlytics.instance
+        .setCrashlyticsCollectionEnabled(!kDebugMode);
 
-  @override
-  Widget build(BuildContext context) {
-    return MultiBlocProvider(
-      providers: [
-        BlocProvider(create: (_) => SettingsCubit()..load()),
-        BlocProvider(create: (_) => LauncherFeatureSettingsCubit()..load()),
-        BlocProvider(create: (_) => AppsCubit()..loadCachedThenRefresh()),
-        BlocProvider(create: (_) => WorkspaceCubit()..loadLayout()),
-        BlocProvider(create: (_) => LauncherCubit()),
-        BlocProvider(create: (_) => SearchCubit()),
-      ],
-      child: BlocBuilder<SettingsCubit, LauncherSettings>(
-        buildWhen: (prev, next) => prev.themeMode != next.themeMode,
-        builder: (context, settings) {
-          final themeMode = switch (settings.themeMode) {
-            ThemeMode2.light => ThemeMode.light,
-            ThemeMode2.dark => ThemeMode.dark,
-            ThemeMode2.system => ThemeMode.system,
-          };
-          return MaterialApp(
-            title: 'Smart Launcher',
-            debugShowCheckedModeBanner: false,
-            themeMode: themeMode,
-            color: Colors.transparent,
-            navigatorObservers: [homeRouteObserver],
-            theme: ThemeData(
-              colorScheme: ColorScheme.fromSeed(
-                seedColor: Colors.indigo,
-                brightness: Brightness.light,
-              ),
-              useMaterial3: true,
-              scaffoldBackgroundColor: Colors.transparent,
-              canvasColor: Colors.transparent,
-            ),
-            darkTheme: ThemeData(
-              colorScheme: ColorScheme.fromSeed(
-                seedColor: Colors.indigo,
-                brightness: Brightness.dark,
-              ),
-              useMaterial3: true,
-              scaffoldBackgroundColor: Colors.transparent,
-              canvasColor: Colors.transparent,
-            ),
-            home: const HomeScreen(),
-          );
-        },
-      ),
+    // Flutter framework errors (build/layout/paint) -> Crashlytics.
+    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+    // Low-level platform/engine errors -> Crashlytics.
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
+
+    Bloc.observer = const AppBlocObserver();
+    initApp();
+    await FeatureHiveStore.init();
+    await ClockService.init();
+
+    // Warm the onboarding-completion flag so the home gate can route to the
+    // first-run flow or the launcher synchronously (no first-frame flash).
+    await OnboardingStore.preload();
+
+    // Anonymous, stable install id — groups crashes/sessions per install and
+    // seeds Mixpanel session replay. Set on Crashlytics immediately so even an
+    // early crash is attributable.
+    final installId = InstallId.getOrCreate();
+    await FirebaseCrashlytics.instance.setUserIdentifier(installId);
+
+    // Bring up the shared analytics stack: Firebase + Mixpanel fan-out.
+    // (Crashlytics stays wired directly here in main — not routed through the
+    // kit — to avoid double-reporting crashes.)
+    await StarterKit.initialize(
+      mixpanelDataSource: MixpanelRemoteDataSourceImpl(),
+      analyticsUserId: installId,
+      mixpanelToken: AnalyticsConfig.mixpanelToken,
+      mixpanelDistinctId: installId,
     );
-  }
+    final testAdsConfig = TestAdsConfig.fromAppEnv();
+    if (testAdsConfig != null) {
+      StarterKit.adsBloc.add(AdsInitialize(config: testAdsConfig));
+    }
+
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
+    ));
+
+    // Mixpanel session replay binds to the widget tree. With no token
+    // configured the wrapper is a transparent passthrough (replay disabled).
+    // Session replay is also kept OFF in dev/debug builds (events still flow):
+    // it would record local test sessions and burn quota during development.
+    runApp(
+      AnalyticsConfig.hasMixpanelToken
+          ? StarterKit.mixpanelWrapper(
+              token: AnalyticsConfig.mixpanelToken,
+              distinctId: installId,
+              enableSessionReplay: !(kDebugMode || AppEnv.developmentMode),
+              child: const MyApp(),
+            )
+          : const MyApp(),
+    );
+  }, (error, stack) {
+    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+  });
 }

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:smart_launcher_app/models/launcher_feature.dart';
-import 'package:smart_launcher_app/widgets/icons/feature_icon.dart';
+import 'package:smart_launcher_app/core/models/launcher_feature.dart';
+import 'package:smart_launcher_app/core/widgets/icons/feature_icon.dart';
 
 void main() {
   test('clock uses the public Clock label', () {

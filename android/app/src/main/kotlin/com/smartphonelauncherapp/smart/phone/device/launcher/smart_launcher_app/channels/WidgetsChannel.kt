@@ -173,12 +173,11 @@ class WidgetsChannel(
                         }
 
                         val providerPkg = info.provider.packageName
-                        val appIconBytes: ByteArray? = appIconCache.getOrPut(providerPkg) {
-                            try {
-                                AppQueryHelper.getCachedAppIconBytes(pm, providerPkg)
-                            } catch (_: Exception) {
-                                null
-                            }
+                        val providerKey = info.provider.flattenToShortString()
+                        val appIconBytes: ByteArray? = appIconCache.getOrPut(providerKey) {
+                            loadWidgetProviderIcon(info, pm)
+                        } ?: appIconCache.getOrPut(providerPkg) {
+                            loadPackageIcon(providerPkg, pm)
                         }
                         val sizing = WidgetSizing.fromProviderInfo(context, info, profile)
                         logD(buildString {
@@ -304,6 +303,40 @@ class WidgetsChannel(
             map["maxResizeHeight"] = info.maxResizeHeight
         }
         return map
+    }
+
+    private fun loadWidgetProviderIcon(
+        info: android.appwidget.AppWidgetProviderInfo,
+        pm: PackageManager,
+    ): ByteArray? {
+        val providerIcon = try {
+            info.loadIcon(context, context.resources.displayMetrics.densityDpi)
+        } catch (_: Exception) {
+            null
+        }
+        if (providerIcon != null) {
+            return drawableToBytes(providerIcon, maxWidth = 512, maxHeight = 512)
+        }
+
+        val receiverIcon = try {
+            @Suppress("DEPRECATION")
+            pm.getReceiverInfo(info.provider, 0).loadIcon(pm)
+        } catch (_: Exception) {
+            null
+        }
+        if (receiverIcon != null) {
+            return drawableToBytes(receiverIcon, maxWidth = 512, maxHeight = 512)
+        }
+
+        return loadPackageIcon(info.provider.packageName, pm)
+    }
+
+    private fun loadPackageIcon(pkg: String, pm: PackageManager): ByteArray? {
+        return try {
+            AppQueryHelper.getCachedAppIconBytes(pm, pkg)
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun loadWidgetPreview(

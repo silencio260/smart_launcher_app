@@ -52,33 +52,9 @@ class AppsChannel(private val activity: Activity) {
                         val knownSnapshotKey = call.argument<String>("snapshotKey")
                         ioExecutor.execute {
                             try {
-                                val snapshotKey = AppQueryHelper.getLauncherSnapshotKey(activity)
-                                if (
-                                    knownSnapshotKey != null &&
-                                    knownSnapshotKey == snapshotKey &&
-                                    AppQueryHelper.hasValidLauncherIconCache(activity)
-                                ) {
-                                    activity.runOnUiThread {
-                                        result.success(
-                                            mapOf(
-                                                "changed" to false,
-                                                "snapshotKey" to snapshotKey,
-                                            )
-                                        )
-                                    }
-                                    return@execute
-                                }
-
-                                val apps = AppQueryHelper.getLauncherActivities(activity)
-                                activity.runOnUiThread {
-                                    result.success(
-                                        mapOf(
-                                            "changed" to true,
-                                            "snapshotKey" to snapshotKey,
-                                            "apps" to apps,
-                                        )
-                                    )
-                                }
+                                val payload =
+                                    AppQueryHelper.getAppsIfChanged(activity, knownSnapshotKey)
+                                activity.runOnUiThread { result.success(payload) }
                             } catch (e: Exception) {
                                 activity.runOnUiThread {
                                     result.error("GET_APPS_ERROR", e.message, null)
@@ -183,6 +159,35 @@ class AppsChannel(private val activity: Activity) {
                                 result.success(bytes)
                             } catch (e: Exception) {
                                 result.success(null)
+                            }
+                        } else {
+                            result.success(null)
+                        }
+                    }
+                    "clearIconCaches" -> {
+                        ioExecutor.execute {
+                            val ok = try {
+                                AppQueryHelper.clearAllCaches(activity)
+                                true
+                            } catch (e: Exception) {
+                                false
+                            }
+                            activity.runOnUiThread { result.success(ok) }
+                        }
+                    }
+                    "getPackageIcon" -> {
+                        val pkg = call.argument<String>("packageName")
+                        if (pkg != null) {
+                            ioExecutor.execute {
+                                val bytes = try {
+                                    AppQueryHelper.getCachedAppIconBytes(
+                                        activity.packageManager,
+                                        pkg
+                                    )
+                                } catch (_: Exception) {
+                                    null
+                                }
+                                activity.runOnUiThread { result.success(bytes) }
                             }
                         } else {
                             result.success(null)

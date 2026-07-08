@@ -23,23 +23,28 @@ import io.flutter.plugin.common.MethodChannel
 class InstallAssistantChannel(private val context: Context) {
 
     fun register(messenger: BinaryMessenger) {
+        if (!FEATURE_ENABLED) {
+            SmartLauncherApplication.setAssistantEnabled(context, false)
+        }
         MethodChannel(messenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "setEnabled" -> {
-                    val enabled = call.argument<Boolean>("enabled") ?: false
-                    SmartLauncherApplication.setAssistantEnabled(context, enabled)
+                    val requested = call.argument<Boolean>("enabled") ?: false
+                    SmartLauncherApplication.setAssistantEnabled(context, FEATURE_ENABLED && requested)
                     result.success(true)
                 }
-                "isEnabled" -> result.success(SmartLauncherApplication.isAssistantEnabled(context))
+                "isEnabled" -> result.success(
+                    FEATURE_ENABLED && SmartLauncherApplication.isAssistantEnabled(context)
+                )
                 "consumePendingAction" -> {
-                    val action = pendingAction
+                    val action = if (FEATURE_ENABLED) pendingAction else null
                     pendingAction = null
                     result.success(action)
                 }
                 "showOverlayNow" -> {
                     val pkg = call.argument<String>("packageName")
                     val removed = call.argument<Boolean>("removed") ?: false
-                    if (pkg != null) {
+                    if (FEATURE_ENABLED && pkg != null) {
                         if (removed) {
                             InstallAssistantOverlay.showRemoved(context, pkg)
                         } else {
@@ -56,11 +61,16 @@ class InstallAssistantChannel(private val context: Context) {
     companion object {
         private const val CHANNEL = "com.genrevibes.smartlauncher/install_assistant"
 
+        // TEMP: Install/Uninstall Assistant is disabled while the feature is
+        // paused. Flip back to true to re-enable previews and pending actions.
+        private const val FEATURE_ENABLED = false
+
         @Volatile
         private var pendingAction: String? = null
 
         /** Stash an overlay action; Dart pulls it via consumePendingAction(). */
         fun deliver(action: String?) {
+            if (!FEATURE_ENABLED) return
             if (action.isNullOrEmpty()) return
             pendingAction = action
         }

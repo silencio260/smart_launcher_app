@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:smart_launcher_app/models/item_info.dart';
-import 'package:smart_launcher_app/models/launcher_settings.dart';
-import 'package:smart_launcher_app/models/launcher_widget_info.dart';
-import 'package:smart_launcher_app/models/workspace_item_info.dart';
-import 'package:smart_launcher_app/services/drag/drag_controller.dart';
-import 'package:smart_launcher_app/services/gestures/widget_resize_gesture_guard.dart';
-import 'package:smart_launcher_app/state/apps_cubit.dart';
-import 'package:smart_launcher_app/state/settings_cubit.dart';
-import 'package:smart_launcher_app/state/workspace_cubit.dart';
-import 'package:smart_launcher_app/widgets/workspace/cell_layout.dart';
-import 'package:smart_launcher_app/widgets/workspace/home_widget_slot.dart';
-import 'package:smart_launcher_app/widgets/workspace/home_widget_stack_view.dart';
+import 'package:smart_launcher_app/core/models/item_info.dart';
+import 'package:smart_launcher_app/core/models/launcher_settings.dart';
+import 'package:smart_launcher_app/core/models/launcher_widget_info.dart';
+import 'package:smart_launcher_app/core/models/workspace_item_info.dart';
+import 'package:smart_launcher_app/features/home/presentation/drag/drag_controller.dart';
+import 'package:smart_launcher_app/features/home/presentation/gestures/widget_resize_gesture_guard.dart';
+import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
+import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/workspace/cell_layout.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/workspace/home_widget_slot.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/workspace/home_widget_stack_view.dart';
 
 class TestWorkspaceCubit extends WorkspaceCubit {
   TestWorkspaceCubit(WorkspaceState initialState) {
