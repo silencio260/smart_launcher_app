@@ -11,7 +11,7 @@ class WallpaperService {
   static const _channel =
       MethodChannel('com.genrevibes.smartlauncher/wallpaper');
   static const iosTemplateWallpaperAsset =
-      'assets/ios_theme/wallpaper/ios_default.jpg';
+      'assets/ios_theme/wallpaper/ios_default.webp';
   static const storeUrl =
       'https://raw.githubusercontent.com/code3-dev/code3-dev/refs/heads/main/pc.json';
 

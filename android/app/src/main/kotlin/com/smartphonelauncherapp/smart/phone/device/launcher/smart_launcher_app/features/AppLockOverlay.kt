@@ -10,6 +10,7 @@ import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
@@ -31,6 +32,7 @@ import kotlin.math.hypot
 /// [VaultPinPad]/[VaultPatternLock], verifies natively via [AppLockStore], and
 /// offers fingerprint only when the user taps it (never auto-prompted).
 object AppLockOverlay {
+    private const val TAG = "AppLockWatch"
     private var view: View? = null
     private var windowManager: WindowManager? = null
     private var currentPackage: String? = null
@@ -40,7 +42,10 @@ object AppLockOverlay {
 
     fun show(context: Context, pkg: String) {
         // No credential → nothing to verify against; never trap the user.
-        if (!AppLockStore.isConfigured(context)) return
+        if (!AppLockStore.isConfigured(context)) {
+            Log.w(TAG, "overlay.show($pkg) aborted: no credential configured")
+            return
+        }
         if (view != null) {
             if (currentPackage == pkg) return
             dismiss()
@@ -85,7 +90,9 @@ object AppLockOverlay {
             view = content
             currentPackage = pkg
             content.requestFocus()
-        } catch (_: Exception) {
+            Log.i(TAG, "overlay shown over $pkg")
+        } catch (e: Exception) {
+            Log.w(TAG, "overlay addView failed for $pkg", e)
             view = null
             windowManager = null
             currentPackage = null

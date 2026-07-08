@@ -60,6 +60,15 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
+
+            // Shrink/obfuscate Java/Kotlin bytecode (R8) and strip unused
+            // Android resources to cut the dex and res payload.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }

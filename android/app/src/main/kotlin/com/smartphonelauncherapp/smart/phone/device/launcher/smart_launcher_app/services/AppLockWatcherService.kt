@@ -18,6 +18,7 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.util.Log
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.R
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.AppLockOverlay
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.AppLockStore
@@ -39,9 +40,18 @@ import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.
 class AppLockWatcherService : Service() {
 
     companion object {
+        private const val TAG = "AppLockWatch"
         private const val CHANNEL_ID = "app_lock_guard"
         private const val NOTIF_ID = 7012
         private const val POLL_INTERVAL_MS = 250L
+
+        // How far back each poll scans the usage-event stream. UsageStatsManager
+        // flushes foreground events with an OEM-dependent delay (often >1s), so we
+        // re-scan a trailing window every tick and act on the most recent event
+        // rather than a tiny non-overlapping slice — otherwise late-flushed events
+        // fall between slices and are missed. handleForeground() is idempotent, so
+        // re-seeing the same event is harmless.
+        private const val EVENT_LOOKBACK_MS = 8000L
 
         // Transient system windows that aren't a real "app switch" — leaving to
         // these (e.g. the notification shade) must not re-lock the app.
@@ -53,8 +63,13 @@ class AppLockWatcherService : Service() {
          * from anywhere with a foreground context (app launch, boot, settings).
          */
         fun syncFromPolicy(context: Context) {
-            val shouldRun = AppLockStore.isConfigured(context) &&
-                AppLockStore.lockedPackages(context).isNotEmpty()
+            val configured = AppLockStore.isConfigured(context)
+            val lockedCount = AppLockStore.lockedPackages(context).size
+            val shouldRun = configured && lockedCount > 0
+            Log.i(
+                TAG,
+                "syncFromPolicy: configured=$configured lockedCount=$lockedCount shouldRun=$shouldRun",
+            )
             val intent = Intent(context, AppLockWatcherService::class.java)
             if (shouldRun) {
                 try {
@@ -63,12 +78,14 @@ class AppLockWatcherService : Service() {
                     } else {
                         context.startService(intent)
                     }
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    Log.w(TAG, "syncFromPolicy: failed to start service", e)
                 }
             } else {
                 try {
                     context.stopService(intent)
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    Log.w(TAG, "syncFromPolicy: failed to stop service", e)
                 }
             }
         }
@@ -78,9 +95,6 @@ class AppLockWatcherService : Service() {
     private var pollHandler: Handler? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var usageStats: UsageStatsManager? = null
-
-    /// Cursor into the usage-event stream; each tick queries [lastQuery, now].
-    private var lastQuery = System.currentTimeMillis()
 
     /// The last real foreground app, used to re-lock on leave.
     private var lastForeground: String? = null
@@ -133,7 +147,9 @@ class AppLockWatcherService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForegroundCompat()
         val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
-        if (pm == null || pm.isInteractive) startPolling()
+        val interactive = pm == null || pm.isInteractive
+        Log.i(TAG, "onStartCommand: interactive=$interactive usageStats=${usageStats != null}")
+        if (interactive) startPolling()
         return START_STICKY
     }
 
@@ -143,17 +159,16 @@ class AppLockWatcherService : Service() {
         // FOREGROUND_SERVICE_TYPE_SPECIAL_USE constant.
         try {
             startForeground(NOTIF_ID, buildNotification())
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.w(TAG, "startForeground failed", e)
         }
     }
 
     private fun startPolling() {
         if (polling) return
         polling = true
-        // Look back slightly so the app that was already foreground (e.g. right
-        // after unlocking the device over a locked app) is caught immediately.
-        lastQuery = System.currentTimeMillis() - 1500
         lastForeground = null
+        Log.i(TAG, "startPolling")
         pollHandler?.removeCallbacks(pollRunnable)
         pollHandler?.post(pollRunnable)
     }
@@ -173,14 +188,19 @@ class AppLockWatcherService : Service() {
     private fun pollOnce() {
         val u = usageStats ?: return
         val now = System.currentTimeMillis()
-        val events = u.queryEvents(lastQuery, now)
-        lastQuery = now
+        // Scan a trailing window and act on the latest foreground event, so events
+        // the system flushes late are still seen (see EVENT_LOOKBACK_MS).
+        val events = u.queryEvents(now - EVENT_LOOKBACK_MS, now)
         var latest: String? = null
+        var latestTs = 0L
         val event = UsageEvents.Event()
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
             // MOVE_TO_FOREGROUND (== ACTIVITY_RESUMED on API 29+, same value).
-            if (event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
+            if (event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND &&
+                event.timeStamp >= latestTs
+            ) {
+                latestTs = event.timeStamp
                 latest = event.packageName
             }
         }
@@ -189,6 +209,21 @@ class AppLockWatcherService : Service() {
 
     private fun handleForeground(pkg: String) {
         if (pkg.isEmpty() || IGNORED.contains(pkg)) return
+
+        val changed = pkg != lastForeground
+        if (changed) Log.i(TAG, "foreground=$pkg")
+
+        // The lock screen is a system overlay window, not an Activity, so the
+        // Home and Recents buttons can't take it down — pressing Home just leaves
+        // it painted over whatever the user navigated to, trapping them on the
+        // lock screen. So whenever the foreground is no longer the app we're
+        // gating (Home, an app switch, etc.), drop the overlay ourselves.
+        // (systemui is filtered out above, so peeking Recents keeps it up.)
+        val gating = AppLockOverlay.showingPackage
+        if (gating != null && gating != pkg) {
+            if (changed) Log.i(TAG, "  left $gating (now $pkg) -> dismissing overlay")
+            mainHandler.post { AppLockOverlay.dismiss() }
+        }
 
         // Re-lock whatever we just left, then remember the new foreground.
         val prev = lastForeground
@@ -201,8 +236,14 @@ class AppLockWatcherService : Service() {
             AppLockStore.clearSession()
             return
         }
-        if (!AppLockStore.isLocked(this, pkg)) return
-        if (AppLockStore.isUnlocked(pkg)) return
+        if (!AppLockStore.isLocked(this, pkg)) {
+            if (changed) Log.i(TAG, "  not locked, skipping")
+            return
+        }
+        if (AppLockStore.isUnlocked(pkg)) {
+            if (changed) Log.i(TAG, "  locked but already unlocked this session")
+            return
+        }
 
         val now = System.currentTimeMillis()
         if (pkg == lastGatedPackage && now - lastGateAt < 1500 && AppLockOverlay.isShowing) {
@@ -210,6 +251,7 @@ class AppLockWatcherService : Service() {
         }
         lastGatedPackage = pkg
         lastGateAt = now
+        Log.i(TAG, "  gating $pkg -> showing overlay")
         mainHandler.post { AppLockOverlay.show(applicationContext, pkg) }
     }
 

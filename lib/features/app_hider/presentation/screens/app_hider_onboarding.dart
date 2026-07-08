@@ -25,20 +25,20 @@ class AppHiderOnboarding extends StatelessWidget {
           icon: Icons.grid_off_outlined,
           title: 'Hide apps from view',
           body: 'Move private apps out of the drawer and launcher search.',
-          assetPath: 'assets/onboarding/app_hider_hide_apps.png',
+          assetPath: 'assets/onboarding/app_hider_hide_apps.webp',
         ),
         MiniAppIntroSlide(
           icon: Icons.theater_comedy_outlined,
           title: 'Disguise the entry',
           body:
               'Use a harmless-looking icon when you want the hider tucked away.',
-          assetPath: 'assets/onboarding/app_hider_disguise_icon.png',
+          assetPath: 'assets/onboarding/app_hider_disguise_icon.webp',
         ),
         MiniAppIntroSlide(
           icon: Icons.lock_open_outlined,
           title: 'Reveal only after unlock',
           body: 'Open hidden apps after your PIN, pattern, or fingerprint.',
-          assetPath: 'assets/onboarding/app_hider_secure_reveal.png',
+          assetPath: 'assets/onboarding/app_hider_secure_reveal.webp',
         ),
       ],
       ctaLabel: 'Set up App Hider',

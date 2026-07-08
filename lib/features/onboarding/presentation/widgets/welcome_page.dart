@@ -15,7 +15,7 @@ class WelcomePage extends StatelessWidget {
     final text = Theme.of(context).textTheme;
 
     return _LauncherImagePage(
-      assetPath: 'assets/onboarding/launcher_home_preview.png',
+      assetPath: 'assets/onboarding/launcher_home_preview.webp',
       title: AppStrings.onboardingWelcomeTitle,
       body: AppStrings.onboardingWelcomeBody,
       ctaLabel: AppStrings.onboardingGetStarted,
@@ -41,7 +41,7 @@ class SearchPreviewPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _LauncherImagePage(
-      assetPath: 'assets/onboarding/launcher_search_preview.png',
+      assetPath: 'assets/onboarding/launcher_search_preview.webp',
       title: AppStrings.onboardingSearchTitle,
       body: AppStrings.onboardingSearchBody,
       ctaLabel: AppStrings.onboardingContinue,
