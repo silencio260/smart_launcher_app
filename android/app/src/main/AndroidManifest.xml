@@ -131,104 +131,96 @@
         <activity-alias
             android:name=".features.ClockActivity"
             android:enabled="true"
-            android:exported="true"
+            android:exported="false"
             android:icon="@mipmap/ic_feature_clock"
             android:label="Clock"
             android:targetActivity=".MainActivity">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+                <action android:name="com.genrevibes.smartlauncher.action.INTERNAL_FEATURE"/>
             </intent-filter>
         </activity-alias>
 
         <activity-alias
             android:name=".features.FileLockerActivity"
             android:enabled="true"
-            android:exported="true"
+            android:exported="false"
             android:icon="@mipmap/ic_feature_file_locker"
             android:label="File Locker"
             android:targetActivity=".MainActivity">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+                <action android:name="com.genrevibes.smartlauncher.action.INTERNAL_FEATURE"/>
             </intent-filter>
         </activity-alias>
 
         <activity-alias
             android:name=".features.AppLockerActivity"
             android:enabled="true"
-            android:exported="true"
+            android:exported="false"
             android:icon="@mipmap/ic_feature_app_locker"
             android:label="App Locker"
             android:targetActivity=".MainActivity">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+                <action android:name="com.genrevibes.smartlauncher.action.INTERNAL_FEATURE"/>
             </intent-filter>
         </activity-alias>
 
         <activity-alias
             android:name=".features.AppHiderActivity"
             android:enabled="true"
-            android:exported="true"
+            android:exported="false"
             android:icon="@mipmap/ic_feature_app_hider"
             android:label="App Hider"
             android:targetActivity=".MainActivity">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+                <action android:name="com.genrevibes.smartlauncher.action.INTERNAL_FEATURE"/>
             </intent-filter>
         </activity-alias>
 
         <activity-alias
             android:name=".features.CalculatorVaultActivity"
             android:enabled="false"
-            android:exported="true"
+            android:exported="false"
             android:icon="@mipmap/ic_feature_calculator"
             android:label="Calculator"
             android:targetActivity=".MainActivity">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+                <action android:name="com.genrevibes.smartlauncher.action.INTERNAL_FEATURE"/>
             </intent-filter>
         </activity-alias>
 
         <activity-alias
             android:name=".features.NotesVaultActivity"
             android:enabled="false"
-            android:exported="true"
+            android:exported="false"
             android:icon="@mipmap/ic_feature_notes"
             android:label="Notes"
             android:targetActivity=".MainActivity">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+                <action android:name="com.genrevibes.smartlauncher.action.INTERNAL_FEATURE"/>
             </intent-filter>
         </activity-alias>
 
         <activity-alias
             android:name=".features.WeatherVaultActivity"
             android:enabled="false"
-            android:exported="true"
+            android:exported="false"
             android:icon="@mipmap/ic_feature_weather"
             android:label="Weather"
             android:targetActivity=".MainActivity">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+                <action android:name="com.genrevibes.smartlauncher.action.INTERNAL_FEATURE"/>
             </intent-filter>
         </activity-alias>
 
         <activity-alias
             android:name=".features.BrowserVaultActivity"
             android:enabled="false"
-            android:exported="true"
+            android:exported="false"
             android:icon="@mipmap/ic_feature_browser"
             android:label="Browser"
             android:targetActivity=".MainActivity">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+                <action android:name="com.genrevibes.smartlauncher.action.INTERNAL_FEATURE"/>
             </intent-filter>
         </activity-alias>
 

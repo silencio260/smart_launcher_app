@@ -18,6 +18,8 @@ object AppQueryHelper {
     private const val TARGET_ICON_PX = 192
     private const val ICON_CACHE_VERSION = 3
     private const val ICON_CACHE_DIR = "launcher_icon_cache"
+    private const val INTERNAL_FEATURE_ACTION =
+        "com.genrevibes.smartlauncher.action.INTERNAL_FEATURE"
     private const val FEATURE_CLOCK =
         "com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.ClockActivity"
     private const val FEATURE_FILE_LOCKER =
@@ -264,8 +266,16 @@ object AppQueryHelper {
         val myPackage = context.packageName
         val seen = HashSet<String>()
         val result = ArrayList<LauncherActivityEntry>()
+        // Mini-app aliases deliberately do not publish MAIN/LAUNCHER. Query
+        // their app-private action separately so they remain visible here (and
+        // App Hider disguises still work) without appearing in other launchers.
+        val internalFeatureIntent = Intent(INTERNAL_FEATURE_ACTION).apply {
+            setPackage(myPackage)
+        }
+        val resolveInfos = pm.queryIntentActivities(intent, flags) +
+            pm.queryIntentActivities(internalFeatureIntent, flags)
 
-        for (resolveInfo in pm.queryIntentActivities(intent, flags)) {
+        for (resolveInfo in resolveInfos) {
             val pkg = resolveInfo.activityInfo.packageName
             val activityName = resolveInfo.activityInfo.name
             val featureId = featureAliases[activityName]
