@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:genrevibes_starter_kit/starter_kit.dart';
 import 'package:smart_launcher_app/config/theme_manager.dart';
 import 'package:smart_launcher_app/container_injector.dart';
 import 'package:smart_launcher_app/core/analytics/analytics_route_observer.dart';
@@ -35,8 +34,6 @@ class MyApp extends StatelessWidget {
         BlocProvider(create: (_) => sl<WorkspaceCubit>()..loadLayout()),
         BlocProvider(create: (_) => sl<LauncherCubit>()),
         BlocProvider(create: (_) => sl<SearchCubit>()),
-        if (StarterKit.sl.isRegistered<AdsBloc>())
-          BlocProvider.value(value: StarterKit.adsBloc),
       ],
       child: BlocBuilder<SettingsCubit, LauncherSettings>(
         buildWhen: (prev, next) => prev.themeMode != next.themeMode,
@@ -54,9 +51,10 @@ class MyApp extends StatelessWidget {
             navigatorObservers: [homeRouteObserver, _analyticsObserver],
             theme: AppTheme.light,
             darkTheme: AppTheme.dark,
-            home: OnboardingStore.isCompletedSync
-                ? const HomeScreen()
-                : const OnboardingScreen(),
+            home:
+                OnboardingStore.isCompletedSync
+                    ? const HomeScreen()
+                    : const OnboardingScreen(),
           );
         },
       ),

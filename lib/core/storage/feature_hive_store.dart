@@ -33,16 +33,27 @@ class FeatureHiveBoxes {
 class FeatureHiveStore {
   FeatureHiveStore._();
 
-  static const _security =
-      MethodChannel('com.genrevibes.smartlauncher/security');
+  static const _security = MethodChannel(
+    'com.genrevibes.smartlauncher/security',
+  );
   static const _fallbackKey = 'feature_hive_fallback_key_v1';
 
-  static late final HiveAesCipher _sensitiveCipher;
+  static HiveAesCipher? _sensitiveCipher;
+  static Future<void>? _initialization;
 
-  static Future<void> init() async {
+  static Future<void> init() =>
+      _initialization ??= _initialize().catchError((
+        Object error,
+        StackTrace stack,
+      ) {
+        _initialization = null;
+        Error.throwWithStackTrace(error, stack);
+      });
+
+  static Future<void> _initialize() async {
     await Hive.initFlutter();
     final key = await _loadSensitiveKey();
-    _sensitiveCipher = HiveAesCipher(key);
+    _sensitiveCipher ??= HiveAesCipher(key);
     await Future.wait([
       _open(FeatureHiveBoxes.featureSettings),
       _open(FeatureHiveBoxes.clockAlarms),
