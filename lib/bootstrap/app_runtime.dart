@@ -11,6 +11,9 @@ import 'package:genrevibes_analytics_mixpanel_replay/genrevibes_analytics_mixpan
 import 'package:genrevibes_core/genrevibes_core.dart';
 import 'package:genrevibes_crash/genrevibes_crash.dart';
 import 'package:genrevibes_crash_crashlytics/genrevibes_crash_crashlytics.dart';
+import 'package:genrevibes_developer_access/genrevibes_developer_access.dart';
+import 'package:genrevibes_device_identity/genrevibes_device_identity.dart';
+import 'package:genrevibes_device_identity_platform/genrevibes_device_identity_platform.dart';
 import 'package:genrevibes_devtools/genrevibes_devtools.dart';
 import 'package:genrevibes_engagement/genrevibes_engagement.dart';
 import 'package:genrevibes_remote_config/genrevibes_remote_config.dart';
@@ -93,6 +96,33 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
     if (config != null) {
       ads = AdMobAdProvider(configuration: config, testMode: true);
     }
+    identity = DeviceIdentityResolver(
+      store: store,
+      // Vendor id only: the launcher runs no ads, so there is no advertising
+      // identifier to resolve and nothing to prompt for.
+      vendor: const DeviceInfoVendorIdSource(),
+      logger: logger,
+    );
+    developerAccess = DeveloperAccessController(
+      store: store,
+      config: DeveloperAccessConfig(
+        // `developer_access_store_build` lets a dev build behave like an
+        // unlisted store install so the unlock gesture can be exercised.
+        isDevelopmentBuild:
+            (kDebugMode || AppEnv.developmentMode) &&
+            !AppEnv.developerAccessStoreBuild,
+        environmentDeviceHashes: AppEnv.developerDeviceHashes,
+        passcode: AppEnv.developerPasscode,
+      ),
+      installMarker: installId,
+      logger: logger,
+    );
+    developerAccessBinder =
+        DeveloperAccessRemotePolicyBinder.forCoordinator(
+          remoteConfig,
+          controller: developerAccess,
+          logger: logger,
+        );
     replayPolicy = SessionReplayController(
       store: store,
       // Until remote configuration is read this matches the schema default.
@@ -151,6 +181,21 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
             create: () => provider,
           ),
         StarterModuleRegistration.enabled(
+          moduleId: identity.moduleId,
+          create: () => identity,
+          isRequired: false,
+        ),
+        StarterModuleRegistration.enabled(
+          moduleId: developerAccess.moduleId,
+          create: () => developerAccess,
+          isRequired: false,
+        ),
+        StarterModuleRegistration.enabled(
+          moduleId: developerAccessBinder.moduleId,
+          create: () => developerAccessBinder,
+          isRequired: false,
+        ),
+        StarterModuleRegistration.enabled(
           moduleId: replayPolicy.moduleId,
           create: () => replayPolicy,
           isRequired: false,
@@ -169,6 +214,9 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
       analytics,
       if (analyticsSwitches case final binder?) binder,
       retention,
+      identity,
+      developerAccess,
+      developerAccessBinder,
       replayPolicy,
       replayPolicyBinder,
       if (ads != null) ads!,
@@ -200,6 +248,13 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
   /// Mixpanel behind its remote kill switch; null without a token.
   SwitchableAnalyticsSink? mixpanel;
   AnalyticsSinkRemotePolicyBinder? analyticsSwitches;
+
+  /// Resolves the stable device identity developer recognition uses.
+  late final DeviceIdentityResolver identity;
+
+  /// Hidden developer unlock, passcode and recognized-device list.
+  late final DeveloperAccessController developerAccess;
+  late final DeveloperAccessRemotePolicyBinder developerAccessBinder;
 
   /// Decides which installs record replay, from the remote rollout.
   late final SessionReplayController replayPolicy;
@@ -257,6 +312,19 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
       } catch (error) {
         debugPrint('Analytics identity: $error');
       }
+    }
+    scope.ensureActive();
+    if (identity.health.isOperational) {
+      final resolved = await identity.resolve();
+      scope.ensureActive();
+      resolved.fold(
+        // The controller hashes this immediately; the raw value is not kept.
+        onSuccess: (value) => developerAccess.setDeviceId(
+          value.vendorId ?? value.installId,
+        ),
+        onFailure: (error) =>
+            debugPrint('Device identity: ${error.message}'),
+      );
     }
     scope.ensureActive();
     await _startReplay();

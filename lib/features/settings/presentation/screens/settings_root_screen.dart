@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:smart_launcher_app/container_injector.dart';
 import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/ads/test_ads_config.dart';
 import 'package:smart_launcher_app/core/config/app_env.dart';
@@ -19,8 +20,11 @@ import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_
 import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
 import 'package:smart_launcher_app/features/home/data/default_layout_seeder.dart';
 import 'package:smart_launcher_app/core/utils/debug_flags.dart';
+import 'package:genrevibes_developer_access/genrevibes_developer_access.dart';
+import 'package:genrevibes_devtools/genrevibes_devtools.dart';
+import 'package:smart_launcher_app/bootstrap/app_runtime.dart';
+import 'package:smart_launcher_app/bootstrap/lab_host.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/privacy_settings_screen.dart';
-import 'package:smart_launcher_app/features/settings/presentation/screens/analytics_debug_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/ads_debug_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_launcher_app/core/icons/decoded_icon_cache.dart';
@@ -56,9 +60,21 @@ class SettingsRootScreen extends StatefulWidget {
 }
 
 class _SettingsRootScreenState extends State<SettingsRootScreen> {
+  StreamSubscription<DeveloperAccess>? _accessChanges;
+
+  AppRuntime? get _runtime =>
+      sl.isRegistered<AppRuntime>() ? sl<AppRuntime>() : null;
+
+  DeveloperAccessController? get _developerAccess => _runtime?.developerAccess;
+
   @override
   void initState() {
     super.initState();
+    // Access can be granted by the title gesture or revoked from Kit Lab
+    // while this screen is open; both have to change what it shows.
+    _accessChanges = _developerAccess?.changes.listen((_) {
+      if (mounted) setState(() {});
+    });
     AppAnalytics.settingsOpened();
     if (DebugFlags.settingsLogs) {
       debugPrint('SettingsLog SettingsRootScreen opened');
@@ -67,6 +83,7 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
 
   @override
   void dispose() {
+    unawaited(_accessChanges?.cancel());
     if (DebugFlags.settingsLogs) {
       debugPrint('SettingsLog SettingsRootScreen closed');
     }
@@ -216,7 +233,18 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
     return SettingsAppearance(
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Launcher Settings'),
+          // Seven taps on the title open the developer passcode. On a
+          // recognised phone the developer section is already visible and the
+          // gesture is a no-op.
+          title: _developerAccess == null
+              ? const Text('Launcher Settings')
+              : DeveloperUnlockGesture(
+                  controller: _developerAccess!,
+                  onGranted: () {
+                    if (mounted) setState(() {});
+                  },
+                  child: const Text('Launcher Settings'),
+                ),
         ),
         body: Builder(
           builder: (context) {
@@ -374,13 +402,14 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                       settingsRoute(const HelpFeedbackScreen()),
                     ),
                   ),
-              // The entire Developer Options section is hidden outside a
-              // development build. We gate on AppEnv.developmentMode (set by
-              // dev.json / special_dev.json) rather than kDebugMode, because a
-              // debug binary can be run against release env files — in that
-              // case developmentMode is false and the section must not show.
-              // Individual tiles below add their own finer-grained guards.
-              if (AppEnv.developmentMode) ...[
+              // Developer Options follows the kit's DeveloperAccessController:
+              // a development build, a recognised phone, or the passcode
+              // entered through the title gesture above. Revoking access
+              // (Kit Lab -> Developer access -> lock session) removes the
+              // section on the next build. Without a runtime — a failed
+              // startup — it falls back to the env development flag.
+              if (_developerAccess?.allows(DeveloperAction.diagnostics) ??
+                  AppEnv.developmentMode) ...[
               (_) => const Divider(),
               (_) => const _SectionHeader(
                     icon: Icons.science_outlined,
@@ -444,14 +473,18 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                       );
                     },
                   ),
-              if (kDebugMode)
+              if (_runtime case final runtime?)
                 (c) => _Tile(
-                      icon: Icons.analytics_outlined,
-                      title: 'Analytics',
-                      subtitle: 'Retention metrics & tracked events catalog',
+                      icon: Icons.science_outlined,
+                      title: 'Kit Lab',
+                      subtitle:
+                          'Module health, analytics, events, remote config, '
+                          'replay, logs & storage',
                       onTap: () => Navigator.push(
                         c,
-                        settingsRoute(const AnalyticsDebugScreen()),
+                        settingsRoute(
+                          StarterKitLabScreen(host: buildLabHost(runtime)),
+                        ),
                       ),
                     ),
               if (kDebugMode)
