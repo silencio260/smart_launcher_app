@@ -135,14 +135,16 @@ class _LauncherBootstrapState extends State<_LauncherBootstrap> {
   @override
   Widget build(BuildContext context) {
     if (_ready) {
-      final replay = _runtime!.replay;
-      return replay == null
-          ? const MyApp()
-          : ListenableBuilder(
-            listenable: _runtime!,
-            builder: (context, child) => replay.wrap(child!),
-            child: const MyApp(),
-          );
+      // Replay can also start later, when consent is granted from Settings,
+      // so the wrapper follows the runtime rather than this one build.
+      return ListenableBuilder(
+        listenable: _runtime!,
+        builder: (context, child) {
+          final replay = _runtime!.replay;
+          return replay == null ? child! : replay.wrap(child!);
+        },
+        child: const MyApp(),
+      );
     }
     return MaterialApp(
       debugShowCheckedModeBanner: false,

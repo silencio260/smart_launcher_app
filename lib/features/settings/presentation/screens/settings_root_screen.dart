@@ -19,6 +19,7 @@ import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_
 import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
 import 'package:smart_launcher_app/features/home/data/default_layout_seeder.dart';
 import 'package:smart_launcher_app/core/utils/debug_flags.dart';
+import 'package:smart_launcher_app/features/settings/presentation/screens/privacy_settings_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/analytics_debug_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/ads_debug_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -354,6 +355,15 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                                   Text("Couldn't open the privacy policy")));
                       }
                     },
+                  ),
+              (c) => _Tile(
+                    icon: Icons.shield_outlined,
+                    title: 'Privacy',
+                    subtitle: 'Usage data, crash reports, privacy policy',
+                    onTap: () => Navigator.push(
+                      c,
+                      settingsRoute(const PrivacySettingsScreen()),
+                    ),
                   ),
               (c) => _Tile(
                     icon: Icons.help_outline,

@@ -24,6 +24,7 @@ import 'package:smart_launcher_app/bootstrap/debug_kit_logger.dart';
 import 'package:smart_launcher_app/core/ads/test_ads_config.dart';
 import 'package:smart_launcher_app/core/analytics/analytics_config.dart';
 import 'package:smart_launcher_app/core/config/app_env.dart';
+import 'package:smart_launcher_app/core/privacy/analytics_consent_store.dart';
 
 /// Instances owned by one launcher startup attempt, shared by all consumers.
 class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
@@ -70,6 +71,9 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
           )
         : null;
     analytics = AnalyticsPipeline(
+      // Nothing is collected until the stored consent answer is applied in
+      // initialize(); an unanswered install stays silent and is prompted.
+      initialConsent: AnalyticsConsent.unknown,
       sinks: [
         FirebaseAnalyticsSink(logger: logger),
         if (mixpanel case final sink?) sink,
@@ -89,18 +93,22 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
     if (config != null) {
       ads = AdMobAdProvider(configuration: config, testMode: true);
     }
-    if (AnalyticsConfig.hasMixpanelToken &&
-        !kDebugMode &&
-        !AppEnv.developmentMode) {
-      replay = MixpanelReplayController(
-        configuration: GenRevibesMixpanelReplayConfiguration(
-          token: AnalyticsConfig.mixpanelToken,
-          distinctId: installId,
-          // Preserve the existing release rollout and masking policy.
-          sessionsPercent: 100,
-        ),
-      );
-    }
+    replayPolicy = SessionReplayController(
+      store: store,
+      // Until remote configuration is read this matches the schema default.
+      policy: const SessionReplayPolicy(percentOfUsers: 100),
+      // A development build seeds "off" so local testing is never recorded;
+      // a decision made on the device still wins over this.
+      buildOverride: kDebugMode || AppEnv.developmentMode
+          ? SessionReplayOverride.forceOff
+          : null,
+      logger: logger,
+    );
+    replayPolicyBinder = SessionReplayRemotePolicyBinder.forCoordinator(
+      remoteConfig,
+      controller: replayPolicy,
+      logger: logger,
+    );
     if (mixpanel case final sink?) {
       analyticsSwitches = AnalyticsSinkRemotePolicyBinder.forCoordinator(
         remoteConfig,
@@ -142,12 +150,16 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
             moduleId: provider.moduleId,
             create: () => provider,
           ),
-        if (replay case final recorder?)
-          StarterModuleRegistration.enabled(
-            moduleId: recorder.moduleId,
-            create: () => recorder,
-            isRequired: false,
-          ),
+        StarterModuleRegistration.enabled(
+          moduleId: replayPolicy.moduleId,
+          create: () => replayPolicy,
+          isRequired: false,
+        ),
+        StarterModuleRegistration.enabled(
+          moduleId: replayPolicyBinder.moduleId,
+          create: () => replayPolicyBinder,
+          isRequired: false,
+        ),
       ],
     );
     // Own even the deferred instances if the app closes before their startup.
@@ -157,21 +169,17 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
       analytics,
       if (analyticsSwitches case final binder?) binder,
       retention,
+      replayPolicy,
+      replayPolicyBinder,
       if (ads != null) ads!,
-      if (replay != null) replay!,
     ]) {
       scope.addModule(module);
     }
     scope.addModule(coordinator);
-    final recorder = replay;
-    if (recorder != null) {
-      final subscription = recorder.healthChanges.listen((health) {
-        if (scope.isClosed) return;
-        if (health.isOperational && _privateScreens > 0) _syncReplay();
-        notifyListeners();
-      });
-      scope.add(subscription.cancel);
-    }
+    final planChanges = replayPolicy.planChanges.listen((_) {
+      if (!scope.isClosed) notifyListeners();
+    });
+    scope.add(planChanges.cancel);
   }
 
   final String installId;
@@ -192,10 +200,22 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
   /// Mixpanel behind its remote kill switch; null without a token.
   SwitchableAnalyticsSink? mixpanel;
   AnalyticsSinkRemotePolicyBinder? analyticsSwitches;
+
+  /// Decides which installs record replay, from the remote rollout.
+  late final SessionReplayController replayPolicy;
+  late final SessionReplayRemotePolicyBinder replayPolicyBinder;
+
+  /// The user's stored analytics answer; drives the pipeline and replay.
+  AnalyticsConsent consent = AnalyticsConsent.unknown;
+
+  /// Whether nobody has answered the analytics question yet.
+  bool get needsConsentPrompt => consent == AnalyticsConsent.unknown;
   late final RetentionTracker retention;
   late final GenRevibesStarterKit coordinator;
   AdProvider? ads;
   MixpanelReplayController? replay;
+  MixpanelSessionReplayRecorder? replayRecorder;
+  late final AnalyticsConsentStore _consentStore = AnalyticsConsentStore(store);
   int totalSessions = 0;
   int _privateScreens = 0;
   bool _backgrounded = false;
@@ -205,6 +225,8 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> initialize() async {
     await _prepareHistory().timeout(const Duration(seconds: 10));
+    scope.ensureActive();
+    consent = await _consentStore.read();
     scope.ensureActive();
     check(await coordinator.initialize());
     scope.ensureActive();
@@ -221,6 +243,10 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
     if (crash.health.isOperational) {
       check(await crash.identify(installId));
     }
+    if (consent == AnalyticsConsent.granted) {
+      check(await analytics.setConsent(AnalyticsConsent.granted));
+    }
+    scope.ensureActive();
     if (analytics.health.isOperational) {
       try {
         check(
@@ -232,6 +258,8 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
         debugPrint('Analytics identity: $error');
       }
     }
+    scope.ensureActive();
+    await _startReplay();
     scope.ensureActive();
     if (retention.health.isOperational && retention.health.error == null) {
       _retentionReady = true;
@@ -246,6 +274,65 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
     scope.ensureActive();
     WidgetsBinding.instance.addObserver(this);
     scope.add(() => WidgetsBinding.instance.removeObserver(this));
+  }
+
+  /// Brings up the Mixpanel replay SDK for an install the rollout selected.
+  ///
+  /// Masking and the SDK's own sampling are fixed when it is configured, so
+  /// the plan is read once, here, and the recorder is attached with that same
+  /// plan. Later rollout changes reach the SDK through the controller.
+  Future<void> _startReplay() async {
+    if (!AnalyticsConfig.hasMixpanelToken) return;
+    if (consent != AnalyticsConsent.granted) return;
+    final plan = replayPolicy.plan;
+    if (!plan.recording) return;
+    final controller = MixpanelReplayController(
+      configuration: GenRevibesMixpanelReplayConfiguration(
+        token: AnalyticsConfig.mixpanelToken,
+        distinctId: installId,
+      ).withSessionReplay(plan),
+      logger: logger,
+    );
+    replay = controller;
+    scope.addModule(controller);
+    final started = await controller.initialize();
+    check(started);
+    if (started.isFailure || scope.isClosed) return;
+    final recorder = MixpanelSessionReplayRecorder(
+      controller: controller,
+      logger: logger,
+    );
+    replayRecorder = recorder;
+    scope.add(recorder.dispose);
+    check(await replayPolicy.attach(recorder, configuredPlan: plan));
+    notifyListeners();
+  }
+
+  /// Records the user's analytics answer and applies it everywhere.
+  ///
+  /// Denying stops event delivery, turns provider-side collection off and
+  /// keeps replay off on this device until the answer changes. Crash
+  /// reporting is unaffected: it carries no product analytics.
+  Future<void> setAnalyticsConsent(AnalyticsConsent choice) async {
+    if (scope.isClosed || choice == consent) return;
+    consent = choice;
+    check(await _consentStore.write(choice));
+    if (scope.isClosed) return;
+    check(await analytics.setConsent(choice));
+    if (scope.isClosed) return;
+    check(
+      await replayPolicy.setOverride(
+        choice == AnalyticsConsent.granted
+            ? SessionReplayOverride.followRemote
+            : SessionReplayOverride.forceOff,
+      ),
+    );
+    if (choice == AnalyticsConsent.granted &&
+        replay == null &&
+        !scope.isClosed) {
+      await _startReplay();
+    }
+    if (!scope.isClosed) notifyListeners();
   }
 
   /// Work that must wait for the first frame: deferred modules, then a fetch
@@ -340,13 +427,20 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
     _syncReplay();
   }
 
+  /// Pauses recording inside Vault, App Lock, App Hider and File Locker.
+  ///
+  /// Leaving re-applies the rollout rather than starting recording outright,
+  /// so a device that should not record does not begin doing so on the way
+  /// out of a secure screen.
   void _syncReplay() {
     _replayWork = _replayWork
         .then<void>((_) async {
-          final recorder = replay;
+          final recorder = replayRecorder;
           if (recorder == null || scope.isClosed) return;
           check(
-            await (_privateScreens > 0 ? recorder.stop() : recorder.start()),
+            await (_privateScreens > 0
+                ? recorder.stopRecording()
+                : replayPolicy.applyPolicy(replayPolicy.policy)),
           );
         })
         .catchError((Object error) => debugPrint('Replay: $error'));
