@@ -1,11 +1,14 @@
-import 'package:genrevibes_starter_kit/starter_kit.dart';
+import 'dart:async';
+import 'package:genrevibes_analytics/genrevibes_analytics.dart';
+import 'package:smart_launcher_app/bootstrap/app_runtime.dart';
+import 'package:smart_launcher_app/container_injector.dart';
 
 import 'crash_context.dart';
 
 /// App-side analytics facade.
 ///
 /// Centralizes event names + typed helpers so feature code never hand-types
-/// event strings. Every call delegates to [StarterKit.analytics], which fans out
+/// event strings. Every call delegates to [AnalyticsPipeline], which fans out
 /// to BOTH Firebase and Mixpanel (see the metric catalog / plan Parts C0–C7).
 ///
 /// Privacy rules baked in here (plan Part D):
@@ -15,9 +18,10 @@ import 'crash_context.dart';
 class AppAnalytics {
   AppAnalytics._();
 
-  static AnalyticsService get _a => StarterKit.analytics;
+  static AppRuntime get _runtime => sl<AppRuntime>();
+  static AnalyticsPipeline get _a => _runtime.analytics;
   static bool get _analyticsReady =>
-      StarterKit.sl.isRegistered<AnalyticsBloc>();
+      sl.isRegistered<AppRuntime>() && _a.health.isOperational;
 
   /// Identifiers for our own mini-apps.
   static const miniAppClock = 'clock';
@@ -41,21 +45,34 @@ class AppAnalytics {
 
   static void event(String name, {Map<String, dynamic>? params}) {
     if (_analyticsReady) {
-      _a.logEvent(name, parameters: params);
+      unawaited(
+        _a
+            .track(AnalyticsEvent(name: name, properties: params ?? const {}))
+            .then(AppRuntime.check),
+      );
     }
     CrashContext.log(name);
   }
 
   static void screenView(String screen) {
     if (_analyticsReady) {
-      _a.logScreenView(screen);
+      unawaited(
+        _a
+            .track(
+              AnalyticsEvent(
+                name: 'screen_view',
+                properties: {'screen_name': screen, 'screen_class': screen},
+              ),
+            )
+            .then(AppRuntime.check),
+      );
     }
     CrashContext.setActiveScreen(screen);
   }
 
   static void setUserProperty(String name, String value) {
     if (_analyticsReady) {
-      _a.setUserProperty(name, value);
+      unawaited(_a.setUserProperties({name: value}).then(AppRuntime.check));
     }
   }
 
@@ -63,7 +80,7 @@ class AppAnalytics {
 
   static void appOpen() {
     if (_analyticsReady) {
-      _a.logAppOpen();
+      event('app_open');
     }
   }
 
@@ -90,51 +107,46 @@ class AppAnalytics {
   static void onboardingCompleted({required bool setDefault}) =>
       event('onboarding_completed', params: {'set_default': setDefault});
 
-  static void miniAppOnboardingStarted({required String featureId}) => event(
-        'mini_app_onboarding_started',
-        params: {'feature_id': featureId},
-      );
+  static void miniAppOnboardingStarted({required String featureId}) =>
+      event('mini_app_onboarding_started', params: {'feature_id': featureId});
 
-  static void miniAppOnboardingSkipped({required String featureId}) => event(
-        'mini_app_onboarding_skipped',
-        params: {'feature_id': featureId},
-      );
+  static void miniAppOnboardingSkipped({required String featureId}) =>
+      event('mini_app_onboarding_skipped', params: {'feature_id': featureId});
 
-  static void miniAppOnboardingCompleted({required String featureId}) => event(
-        'mini_app_onboarding_completed',
-        params: {'feature_id': featureId},
-      );
+  static void miniAppOnboardingCompleted({required String featureId}) =>
+      event('mini_app_onboarding_completed', params: {'feature_id': featureId});
 
   // --- C1: home / workspace (aggregate only — NO package names) ---
 
   /// External (third-party) app launched. Logs source + position only.
   static void appLaunched({required String source, int? position}) => event(
-        'app_launched',
-        params: {'source': source, if (position != null) 'position': position},
-      );
+    'app_launched',
+    params: {'source': source, if (position != null) 'position': position},
+  );
 
   static void workspacePageChanged({
     required int fromIndex,
     required int toIndex,
     required String type,
-  }) =>
-      event('workspace_page_changed', params: {
-        'from_index': fromIndex,
-        'to_index': toIndex,
-        'type': type,
-      });
+  }) => event(
+    'workspace_page_changed',
+    params: {'from_index': fromIndex, 'to_index': toIndex, 'type': type},
+  );
 
-  static void folderOpened({int? itemCount}) => event('folder_opened',
-      params: {if (itemCount != null) 'item_count': itemCount});
+  static void folderOpened({int? itemCount}) => event(
+    'folder_opened',
+    params: {if (itemCount != null) 'item_count': itemCount},
+  );
 
   static void homeEditMode() => event('home_edit_mode');
 
   static void drawerOpened({required String openMethod}) =>
       event('drawer_opened', params: {'open_method': openMethod});
 
-  static void appContextMenuOpened({required int actionsAvailable}) =>
-      event('app_context_menu_opened',
-          params: {'actions_available': actionsAvailable});
+  static void appContextMenuOpened({required int actionsAvailable}) => event(
+    'app_context_menu_opened',
+    params: {'actions_available': actionsAvailable},
+  );
 
   // --- Ads test instrumentation ---
 
@@ -145,15 +157,17 @@ class AppAnalytics {
     String source = 'dev_panel',
     bool testAds = true,
     String? error,
-  }) =>
-      event('ad_lifecycle', params: {
-        'ad_type': adType,
-        'action': action,
-        'result': result,
-        'source': source,
-        'test_ads': testAds,
-        if (error != null) 'error': error,
-      });
+  }) => event(
+    'ad_lifecycle',
+    params: {
+      'ad_type': adType,
+      'action': action,
+      'result': result,
+      'source': source,
+      'test_ads': testAds,
+      if (error != null) 'error': error,
+    },
+  );
 
   // --- C2: smart search (NO raw query text) ---
 
@@ -163,19 +177,22 @@ class AppAnalytics {
   static void searchPerformed({
     required int queryLength,
     required int resultCount,
-  }) =>
-      event('search_performed', params: {
-        'query_length': queryLength,
-        'result_count': resultCount,
-        'has_results': resultCount > 0,
-      });
+  }) => event(
+    'search_performed',
+    params: {
+      'query_length': queryLength,
+      'result_count': resultCount,
+      'has_results': resultCount > 0,
+    },
+  );
 
   static void searchResultTapped({
     required String resultType,
     required int resultIndex,
-  }) =>
-      event('search_result_tapped',
-          params: {'result_type': resultType, 'result_index': resultIndex});
+  }) => event(
+    'search_result_tapped',
+    params: {'result_type': resultType, 'result_index': resultIndex},
+  );
 
   static void searchRecentRerun() => event('search_recent_rerun');
 
@@ -187,7 +204,7 @@ class AppAnalytics {
     event('mini_app_open', params: {'mini_app': miniApp});
     CrashContext.setActiveMiniApp(miniApp);
     if (_secureMiniApps.contains(miniApp)) {
-      StarterKit.mixpanel?.stopReplay();
+      if (sl.isRegistered<AppRuntime>()) _runtime.enterPrivateScreen();
     }
   }
 
@@ -195,32 +212,34 @@ class AppAnalytics {
   static void miniAppClosed(String miniApp) {
     CrashContext.setActiveMiniApp(null);
     if (_secureMiniApps.contains(miniApp)) {
-      StarterKit.mixpanel?.startReplay();
+      if (sl.isRegistered<AppRuntime>()) _runtime.leavePrivateScreen();
     }
   }
 
   static void secureAuthAttempt({
     required String miniApp,
     required String method,
-  }) =>
-      event('secure_auth_attempt',
-          params: {'mini_app': miniApp, 'method': method});
+  }) => event(
+    'secure_auth_attempt',
+    params: {'mini_app': miniApp, 'method': method},
+  );
 
   static void secureAuthResult({
     required String miniApp,
     required String method,
     required bool success,
-  }) =>
-      event('secure_auth_result', params: {
-        'mini_app': miniApp,
-        'method': method,
-        'success': success,
-      });
+  }) => event(
+    'secure_auth_result',
+    params: {'mini_app': miniApp, 'method': method, 'success': success},
+  );
 
-  static void vaultItemImported(
-          {required String mediaType, required int count}) =>
-      event('vault_item_imported',
-          params: {'media_type': mediaType, 'count': count});
+  static void vaultItemImported({
+    required String mediaType,
+    required int count,
+  }) => event(
+    'vault_item_imported',
+    params: {'media_type': mediaType, 'count': count},
+  );
 
   static void vaultItemExported({required int count}) =>
       event('vault_item_exported', params: {'count': count});
@@ -238,18 +257,20 @@ class AppAnalytics {
       event('app_hider_disguise_set', params: {'disguise_id': disguiseId});
 
   static void fileLockerAction({required String action, String? fileType}) =>
-      event('file_locker_action', params: {
-        'action': action,
-        if (fileType != null) 'file_type': fileType,
-      });
+      event(
+        'file_locker_action',
+        params: {'action': action, if (fileType != null) 'file_type': fileType},
+      );
 
   // --- C4: clock / alarm ---
 
   static void alarmCreated({required bool repeat, required bool hasSound}) =>
       event('alarm_created', params: {'repeat': repeat, 'has_sound': hasSound});
 
-  static void alarmEdited({String? fieldChanged}) => event('alarm_edited',
-      params: {if (fieldChanged != null) 'field_changed': fieldChanged});
+  static void alarmEdited({String? fieldChanged}) => event(
+    'alarm_edited',
+    params: {if (fieldChanged != null) 'field_changed': fieldChanged},
+  );
 
   static void alarmDeleted() => event('alarm_deleted');
 
@@ -266,16 +287,20 @@ class AppAnalytics {
   static void discoverOpened() => event('discover_opened');
 
   static void discoverArticleOpened({String? sourceName, int? position}) =>
-      event('discover_article_opened', params: {
-        if (sourceName != null) 'source_name': sourceName,
-        if (position != null) 'position': position,
-      });
+      event(
+        'discover_article_opened',
+        params: {
+          if (sourceName != null) 'source_name': sourceName,
+          if (position != null) 'position': position,
+        },
+      );
 
   static void discoverSourcesOpened() => event('discover_sources_opened');
 
-  static void discoverSuggestionLaunched({int? position}) =>
-      event('discover_suggestion_launched',
-          params: {if (position != null) 'position': position});
+  static void discoverSuggestionLaunched({int? position}) => event(
+    'discover_suggestion_launched',
+    params: {if (position != null) 'position': position},
+  );
 
   static void appLibraryOpened() => event('app_library_opened');
 
@@ -289,13 +314,18 @@ class AppAnalytics {
   static void settingsSubpageOpened({required String page}) =>
       event('settings_subpage_opened', params: {'page': page});
 
-  static void featureToggled(
-          {required String featureId, required bool enabled}) =>
-      event('feature_toggled',
-          params: {'feature_id': featureId, 'enabled': enabled});
+  static void featureToggled({
+    required String featureId,
+    required bool enabled,
+  }) => event(
+    'feature_toggled',
+    params: {'feature_id': featureId, 'enabled': enabled},
+  );
 
-  static void appearanceChanged(
-          {required String setting, required String value}) =>
+  static void appearanceChanged({
+    required String setting,
+    required String value,
+  }) =>
       event('appearance_changed', params: {'setting': setting, 'value': value});
 
   static void gestureSet({required String gesture, required String action}) =>

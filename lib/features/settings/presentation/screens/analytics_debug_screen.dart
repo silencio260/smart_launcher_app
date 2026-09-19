@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:genrevibes_starter_kit/starter_kit.dart';
+import 'package:smart_launcher_app/bootstrap/app_runtime.dart';
+import 'package:smart_launcher_app/container_injector.dart';
 
 import 'package:smart_launcher_app/core/analytics/analytics_config.dart';
 
@@ -9,7 +10,7 @@ import 'package:smart_launcher_app/core/analytics/analytics_config.dart';
 ///
 /// Two pages:
 ///   * [_RetentionMetricsScreen] — the live retention/engagement numbers held by
-///     [RetentionTracker], so you can confirm the values being attached to
+///     the shared retention tracker, so you can confirm the values attached to
 ///     `retention_*` events without waiting on a dashboard.
 ///   * [_TrackedEventsScreen] — the catalog of every event name + params this
 ///     app emits (mirrors [AppAnalytics] in app_events.dart).
@@ -55,7 +56,7 @@ class AnalyticsDebugScreen extends StatelessWidget {
             title: const Text('Mixpanel'),
             subtitle: Text(
               hasMixpanel
-                  ? 'Token configured — events + session replay active.'
+                  ? 'Token configured — events enabled. Replay runs only in release outside development mode.'
                   : 'No mixpanel_token in the active env file — SDK is a '
                       'no-op, nothing is sent. Set it in env/<flavor>.json.',
             ),
@@ -67,24 +68,26 @@ class AnalyticsDebugScreen extends StatelessWidget {
             title: const Text('Retention metrics'),
             subtitle: const Text('Live engagement values & D1/D7/D30 returns'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute<void>(
-                builder: (_) => const _RetentionMetricsScreen(),
-              ),
-            ),
+            onTap:
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const _RetentionMetricsScreen(),
+                  ),
+                ),
           ),
           ListTile(
             leading: const Icon(Icons.list_alt_outlined),
             title: const Text('Tracked events'),
             subtitle: const Text('Catalog of every event name & its params'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute<void>(
-                builder: (_) => const _TrackedEventsScreen(),
-              ),
-            ),
+            onTap:
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const _TrackedEventsScreen(),
+                  ),
+                ),
           ),
         ],
       ),
@@ -101,46 +104,45 @@ class _RetentionMetricsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tracker = StarterKit.retentionTracker;
+    final runtime = sl<AppRuntime>();
     return Scaffold(
       appBar: AppBar(title: const Text('Retention metrics')),
-      // RetentionTracker is a ChangeNotifier — rebuild when a new app open /
-      // session is recorded while this page is visible.
       body: ListenableBuilder(
-        listenable: tracker,
+        listenable: runtime,
         builder: (context, _) {
-          final engagement = tracker.getEngagementMetrics();
-          final d7 = tracker.getD7RetentionRate();
-          final activeDays = tracker.getActiveDays();
+          final snapshot = runtime.retention.snapshot;
+          final d7 = snapshot.d7RetentionRate;
+          final activeDays = snapshot.activeDates;
+          bool returnedOnDay(int day) {
+            final installed = snapshot.installedAt;
+            if (installed == null) return false;
+            final target = DateTime(
+              installed.year,
+              installed.month,
+              installed.day + day,
+            );
+            return activeDays.contains(target);
+          }
+
           return ListView(
             children: [
               const _GroupHeader('Engagement'),
-              _MetricTile('Total app opens', '${tracker.getTotalAppOpens()}'),
-              _MetricTile('Total sessions', '${engagement['total_sessions']}'),
-              _MetricTile(
-                  'Sessions today', '${tracker.getSessionCountToday()}'),
-              _MetricTile(
-                'Active days (last 35)',
-                '${engagement['active_days_count']}',
-              ),
-              _MetricTile(
-                'Days since install',
-                '${tracker.getDaysSinceInstall()}',
-              ),
+              _MetricTile('Total app opens', '${snapshot.totalOpens}'),
+              _MetricTile('Total sessions', '${runtime.totalSessions}'),
+              _MetricTile('Sessions today', '${snapshot.sessionsToday}'),
+              _MetricTile('Recorded active days', '${snapshot.activeDays}'),
+              _MetricTile('Days since install', '${snapshot.daysSinceInstall}'),
               _MetricTile(
                 'Days since last open',
-                '${tracker.getDaysSinceLastOpen()}',
+                '${snapshot.daysSinceLastOpen}',
               ),
               const Divider(),
               const _GroupHeader('Retention milestones'),
-              _MetricTile(
-                'D7 retention rate',
-                '${d7.toStringAsFixed(1)}%',
-              ),
-              _BoolTile('Returned on D1', tracker.hasReturnedOnDay(1)),
-              _BoolTile('Returned on D3', tracker.hasReturnedOnDay(3)),
-              _BoolTile('Returned on D7', tracker.hasReturnedOnDay(7)),
-              _BoolTile('Returned on D30', tracker.hasReturnedOnDay(30)),
+              _MetricTile('D7 retention rate', '${d7.toStringAsFixed(1)}%'),
+              _BoolTile('Returned on D1', returnedOnDay(1)),
+              _BoolTile('Returned on D3', returnedOnDay(3)),
+              _BoolTile('Returned on D7', returnedOnDay(7)),
+              _BoolTile('Returned on D30', returnedOnDay(30)),
               const Divider(),
               _GroupHeader('Active days (${activeDays.length})'),
               if (activeDays.isEmpty)
@@ -158,8 +160,8 @@ class _RetentionMetricsScreen extends StatelessWidget {
                 child: Text(
                   'These are the same values attached to retention_* events '
                   '(app_opened / session_started / dayN_returned). History '
-                  'older than 35 days is pruned, so D30 reflects the windowed '
-                  'data on disk.',
+                  'pruned by older app versions cannot be recovered; new '
+                  'active dates are retained by the modular kit.',
                   style: TextStyle(fontSize: 12),
                 ),
               ),
@@ -286,8 +288,11 @@ const List<_EventGroup> _eventCatalog = [
   ]),
   _EventGroup('C2 · Smart search', [
     _EventDef('search_opened', ['source']),
-    _EventDef(
-        'search_performed', ['query_length', 'result_count', 'has_results']),
+    _EventDef('search_performed', [
+      'query_length',
+      'result_count',
+      'has_results',
+    ]),
     _EventDef('search_result_tapped', ['result_type', 'result_index']),
     _EventDef('search_recent_rerun'),
   ]),
@@ -400,16 +405,14 @@ class _EventTile extends StatelessWidget {
     final theme = Theme.of(context);
     return ListTile(
       dense: true,
-      title: Text(
-        event.name,
-        style: const TextStyle(fontFamily: 'monospace'),
-      ),
-      subtitle: event.params.isEmpty
-          ? null
-          : Text(
-              event.params.join(', '),
-              style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
-            ),
+      title: Text(event.name, style: const TextStyle(fontFamily: 'monospace')),
+      subtitle:
+          event.params.isEmpty
+              ? null
+              : Text(
+                event.params.join(', '),
+                style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+              ),
       trailing: IconButton(
         icon: const Icon(Icons.copy, size: 18),
         tooltip: 'Copy event name',
@@ -417,9 +420,7 @@ class _EventTile extends StatelessWidget {
           Clipboard.setData(ClipboardData(text: event.name));
           ScaffoldMessenger.of(context)
             ..removeCurrentSnackBar()
-            ..showSnackBar(
-              SnackBar(content: Text('Copied "${event.name}"')),
-            );
+            ..showSnackBar(SnackBar(content: Text('Copied "${event.name}"')));
         },
       ),
     );
