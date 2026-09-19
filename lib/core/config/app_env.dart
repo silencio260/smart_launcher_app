@@ -64,4 +64,43 @@ class AppEnv {
 
   /// True only when a non-empty Mixpanel token was supplied via the env file.
   static bool get mixpanelEnabled => mixpanelToken.isNotEmpty;
+  // --- Support / legal links (Settings "Support" section) ---
+
+  static const String privacyPolicyUrl = String.fromEnvironment(
+    'privacy_policy_url',
+    defaultValue:
+        'https://sites.google.com/view/simple-launcher-privacy-policy/home',
+  );
+  static const String termsUrl = String.fromEnvironment('terms_url');
+  static const String appStoreUrl = String.fromEnvironment('app_store_url');
+  static const String supportEmail = String.fromEnvironment(
+    'support_email',
+    defaultValue: 'support@genrevibes.com',
+  );
+
+  // --- Developer access (kit DeveloperAccessController) ---
+
+  /// Blank keeps the kit's shared fallback passcode.
+  static const String developerPasscode = String.fromEnvironment(
+    'developer_passcode',
+  );
+
+  /// Comma-separated device *hashes* — never raw identifiers.
+  static const String developerDeviceHashes = String.fromEnvironment(
+    'developer_device_hashes',
+  );
+
+  /// Development-only simulation of an unlisted store build, so the hidden
+  /// unlock gesture can be exercised on a dev device.
+  static const bool developerAccessStoreBuild = bool.fromEnvironment(
+    'developer_access_store_build',
+    defaultValue: false,
+  );
+
+  /// Device hashes as the kit expects them: trimmed, blanks removed.
+  static List<String> get developerDeviceHashList => developerDeviceHashes
+      .split(',')
+      .map((value) => value.trim())
+      .where((value) => value.isNotEmpty)
+      .toList(growable: false);
 }

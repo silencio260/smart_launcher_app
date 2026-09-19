@@ -9,10 +9,18 @@ import 'package:genrevibes_analytics_firebase/genrevibes_analytics_firebase.dart
 import 'package:genrevibes_analytics_mixpanel/genrevibes_analytics_mixpanel.dart';
 import 'package:genrevibes_analytics_mixpanel_replay/genrevibes_analytics_mixpanel_replay.dart';
 import 'package:genrevibes_core/genrevibes_core.dart';
+import 'package:genrevibes_crash/genrevibes_crash.dart';
+import 'package:genrevibes_crash_crashlytics/genrevibes_crash_crashlytics.dart';
+import 'package:genrevibes_devtools/genrevibes_devtools.dart';
 import 'package:genrevibes_engagement/genrevibes_engagement.dart';
+import 'package:genrevibes_remote_config/genrevibes_remote_config.dart';
+import 'package:genrevibes_remote_config_firebase/genrevibes_remote_config_firebase.dart';
+import 'package:genrevibes_remote_config_shared_preferences/genrevibes_remote_config_shared_preferences.dart';
+import 'package:genrevibes_remote_policy/genrevibes_remote_policy.dart';
 import 'package:genrevibes_starter_kit/genrevibes_starter_kit.dart';
 import 'package:genrevibes_storage/genrevibes_storage.dart';
 import 'package:genrevibes_storage_shared_preferences/genrevibes_storage_shared_preferences.dart';
+import 'package:smart_launcher_app/bootstrap/debug_kit_logger.dart';
 import 'package:smart_launcher_app/core/ads/test_ads_config.dart';
 import 'package:smart_launcher_app/core/analytics/analytics_config.dart';
 import 'package:smart_launcher_app/core/config/app_env.dart';
@@ -20,16 +28,54 @@ import 'package:smart_launcher_app/core/config/app_env.dart';
 /// Instances owned by one launcher startup attempt, shared by all consumers.
 class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
   AppRuntime({required this.installId}) {
+    crash = CrashCoordinator(
+      reporter: CrashlyticsReporter(logger: logger),
+      // Local debug crashes would bury real release regressions.
+      config: const CrashReportingConfig(collectionEnabled: !kDebugMode),
+      logger: logger,
+    );
+    remoteConfigSchema = PortfolioRemoteConfigSchema.build(
+      // The launcher already records every release session; remote config
+      // lowers this, it does not have to raise it first.
+      replayDefaults: const SessionReplayPolicy(percentOfUsers: 100),
+    );
+    remoteConfig = RemoteConfigCoordinator(
+      schema: remoteConfigSchema,
+      provider: GenRevibesFirebaseRemoteConfigProvider(
+        schema: remoteConfigSchema,
+        configuration:
+            const GenRevibesFirebaseRemoteConfigConfiguration(
+              fetchTimeout: PortfolioRemoteConfigSettings.fetchTimeout,
+              minimumFetchInterval:
+                  PortfolioRemoteConfigSettings.minimumFetchInterval,
+            ),
+        logger: logger,
+      ),
+      // Last-known-good values, so a launch with no network still applies the
+      // policy this device saw last time instead of the bundled defaults.
+      cache: SharedPreferencesRemoteConfigCache(),
+      logger: logger,
+    );
+    mixpanel = AnalyticsConfig.hasMixpanelToken
+        ? SwitchableAnalyticsSink(
+            MixpanelAnalyticsSink(
+              configuration: GenRevibesMixpanelConfiguration(
+                token: AnalyticsConfig.mixpanelToken,
+              ),
+              logger: logger,
+            ),
+            // Real value applied by the binder once remote config is loaded.
+            enabled: true,
+            logger: logger,
+          )
+        : null;
     analytics = AnalyticsPipeline(
       sinks: [
-        FirebaseAnalyticsSink(),
-        if (AnalyticsConfig.hasMixpanelToken)
-          MixpanelAnalyticsSink(
-            configuration: GenRevibesMixpanelConfiguration(
-              token: AnalyticsConfig.mixpanelToken,
-            ),
-          ),
+        FirebaseAnalyticsSink(logger: logger),
+        if (mixpanel case final sink?) sink,
       ],
+      observer: eventLog,
+      logger: logger,
     );
     store = MigratingKeyValueStore(
       delegate: _preferences,
@@ -55,14 +101,37 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
         ),
       );
     }
+    if (mixpanel case final sink?) {
+      analyticsSwitches = AnalyticsSinkRemotePolicyBinder.forCoordinator(
+        remoteConfig,
+        sinks: [sink],
+        logger: logger,
+      );
+    }
     coordinator = GenRevibesStarterKit(
       autoStartDeferred: false,
       modules: [
+        StarterModuleRegistration.enabled(
+          moduleId: crash.moduleId,
+          create: () => crash,
+          isRequired: false,
+        ),
+        StarterModuleRegistration.enabled(
+          moduleId: remoteConfig.moduleId,
+          create: () => remoteConfig,
+          isRequired: false,
+        ),
         StarterModuleRegistration.enabled(
           moduleId: analytics.moduleId,
           create: () => analytics,
           isRequired: false,
         ),
+        if (analyticsSwitches case final binder?)
+          StarterModuleRegistration.enabled(
+            moduleId: binder.moduleId,
+            create: () => binder,
+            isRequired: false,
+          ),
         StarterModuleRegistration.enabled(
           moduleId: retention.moduleId,
           create: () => retention,
@@ -83,7 +152,10 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
     );
     // Own even the deferred instances if the app closes before their startup.
     for (final module in <StarterModule>[
+      crash,
+      remoteConfig,
       analytics,
+      if (analyticsSwitches case final binder?) binder,
       retention,
       if (ads != null) ads!,
       if (replay != null) replay!,
@@ -104,9 +176,22 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
 
   final String installId;
   final scope = KitResourceScope();
+
+  /// Kit log history for Kit Lab, mirrored to the console.
+  final logger = RecordingKitLogger(forwardTo: const DebugKitLogger());
+
+  /// Delivered-event history for Kit Lab.
+  final eventLog = RecordingDeliveryObserver();
   final _preferences = SharedPreferencesKeyValueStore();
   late final KeyValueStore store;
+  late final CrashCoordinator crash;
+  late final RemoteConfigSchema remoteConfigSchema;
+  late final RemoteConfigCoordinator remoteConfig;
   late final AnalyticsPipeline analytics;
+
+  /// Mixpanel behind its remote kill switch; null without a token.
+  SwitchableAnalyticsSink? mixpanel;
+  AnalyticsSinkRemotePolicyBinder? analyticsSwitches;
   late final RetentionTracker retention;
   late final GenRevibesStarterKit coordinator;
   AdProvider? ads;
@@ -126,6 +211,15 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
     for (final id in coordinator.registeredModuleIds) {
       final error = coordinator.moduleHealth(id)?.error;
       if (error != null) debugPrint('Starter kit $id: ${error.message}');
+    }
+    // Framework, platform and zone errors reach Crashlytics through the
+    // coordinator from here on. Restoring is registered first so a later
+    // failure in this attempt cannot leave the hooks pointing at a dead
+    // runtime.
+    final hooks = CrashHooks.install(crash);
+    scope.add(hooks.restore);
+    if (crash.health.isOperational) {
+      check(await crash.identify(installId));
     }
     if (analytics.health.isOperational) {
       try {
@@ -152,6 +246,21 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
     scope.ensureActive();
     WidgetsBinding.instance.addObserver(this);
     scope.add(() => WidgetsBinding.instance.removeObserver(this));
+  }
+
+  /// Work that must wait for the first frame: deferred modules, then a fetch
+  /// of fresh remote configuration.
+  ///
+  /// Initialization only loaded bundled defaults and the last-known-good
+  /// cache. This is the call that actually reaches the server, and its result
+  /// flows to the policy binders, so nothing here blocks the first screen.
+  Future<void> startDeferredWork() async {
+    if (scope.isClosed) return;
+    await coordinator.startDeferred();
+    if (scope.isClosed) return;
+    if (remoteConfig.health.isOperational) {
+      check(await remoteConfig.refresh());
+    }
   }
 
   /// Preflight migration so the kit cannot replace unreadable saved history.

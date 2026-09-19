@@ -32,6 +32,8 @@ void main() {
   }, _reportError);
 }
 
+/// Reports startup errors raised before the runtime's crash coordinator (and
+/// its framework hooks) exist. Afterwards `CrashHooks` owns this path.
 void _reportError(Object error, StackTrace stack) {
   debugPrint('Launcher: $error\n$stack');
   if (Firebase.apps.isNotEmpty) {
@@ -73,17 +75,8 @@ class _LauncherBootstrapState extends State<_LauncherBootstrap> {
             options: DefaultFirebaseOptions.currentPlatform,
           ).timeout(const Duration(seconds: 20));
         }
-        await FirebaseCrashlytics.instance
-            .setCrashlyticsCollectionEnabled(!kDebugMode)
-            .timeout(const Duration(seconds: 5));
-        FlutterError.onError = (details) {
-          FlutterError.presentError(details);
-          _reportError(details.exception, details.stack ?? StackTrace.current);
-        };
-        PlatformDispatcher.instance.onError = (error, stack) {
-          _reportError(error, stack);
-          return true;
-        };
+        // Collection state, framework hooks and identity now belong to the
+        // runtime's CrashCoordinator; this only has to bring Firebase up.
       } catch (error, stack) {
         debugPrint('Firebase preparation: $error\n$stack');
       }
@@ -93,15 +86,6 @@ class _LauncherBootstrapState extends State<_LauncherBootstrap> {
       await OnboardingStore.preload();
       if (!mounted) return;
       final installId = InstallId.getOrCreate();
-      if (Firebase.apps.isNotEmpty) {
-        try {
-          await FirebaseCrashlytics.instance
-              .setUserIdentifier(installId)
-              .timeout(const Duration(seconds: 5));
-        } catch (error) {
-          debugPrint('Crashlytics identity: $error');
-        }
-      }
       if (!mounted) return;
       final runtime = AppRuntime(installId: installId);
       _runtime = runtime;
@@ -111,7 +95,7 @@ class _LauncherBootstrapState extends State<_LauncherBootstrap> {
       setState(() => _ready = true);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && !runtime.scope.isClosed) {
-          unawaited(runtime.coordinator.startDeferred());
+          unawaited(runtime.startDeferredWork());
         }
       });
     } catch (error, stack) {
