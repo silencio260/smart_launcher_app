@@ -8,6 +8,10 @@ import 'package:genrevibes_analytics/genrevibes_analytics.dart';
 import 'package:genrevibes_analytics_firebase/genrevibes_analytics_firebase.dart';
 import 'package:genrevibes_analytics_mixpanel/genrevibes_analytics_mixpanel.dart';
 import 'package:genrevibes_analytics_mixpanel_replay/genrevibes_analytics_mixpanel_replay.dart';
+import 'package:genrevibes_app_links/genrevibes_app_links.dart';
+import 'package:genrevibes_app_links_launcher/genrevibes_app_links_launcher.dart';
+import 'package:genrevibes_app_rating/genrevibes_app_rating.dart';
+import 'package:genrevibes_app_rating_in_app_review/genrevibes_app_rating_in_app_review.dart';
 import 'package:genrevibes_core/genrevibes_core.dart';
 import 'package:genrevibes_crash/genrevibes_crash.dart';
 import 'package:genrevibes_crash_crashlytics/genrevibes_crash_crashlytics.dart';
@@ -15,6 +19,7 @@ import 'package:genrevibes_developer_access/genrevibes_developer_access.dart';
 import 'package:genrevibes_device_identity/genrevibes_device_identity.dart';
 import 'package:genrevibes_device_identity_platform/genrevibes_device_identity_platform.dart';
 import 'package:genrevibes_devtools/genrevibes_devtools.dart';
+import 'package:genrevibes_feedbacknest/genrevibes_feedbacknest.dart';
 import 'package:genrevibes_engagement/genrevibes_engagement.dart';
 import 'package:genrevibes_remote_config/genrevibes_remote_config.dart';
 import 'package:genrevibes_remote_config_firebase/genrevibes_remote_config_firebase.dart';
@@ -123,6 +128,39 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
           controller: developerAccess,
           logger: logger,
         );
+    links = AppLinkActions(
+      config: AppLinksConfig(
+        appName: 'Smart Launcher',
+        playStoreUrl: AppEnv.appStoreUrl,
+        supportEmail: AppEnv.supportEmail,
+        privacyPolicyUrl: AppEnv.privacyPolicyUrl,
+        termsUrl: AppEnv.termsUrl.isEmpty ? null : AppEnv.termsUrl,
+      ),
+      opener: UrlLauncherLinkOpener(),
+      isIos: false,
+    );
+    if (AppEnv.feedBackNestApiKey.isNotEmpty) {
+      feedback = FeedbackNestFeedbackProvider(
+        configuration: FeedbackNestConfiguration(
+          apiKey: AppEnv.feedBackNestApiKey,
+          userIdentifier: installId,
+        ),
+        logger: logger,
+      );
+    }
+    rating = RatingCoordinator(
+      store: MigratingKeyValueStore(
+        delegate: _preferences,
+        legacyKeys: RatingKeys.legacyKeys,
+      ),
+      logger: logger,
+    );
+    ratingStore = InAppReviewStoreProvider(
+      configuration: InAppReviewConfiguration(
+        androidStoreUrl: AppEnv.appStoreUrl,
+      ),
+      logger: logger,
+    );
     replayPolicy = SessionReplayController(
       store: store,
       // Until remote configuration is read this matches the schema default.
@@ -180,6 +218,22 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
             moduleId: provider.moduleId,
             create: () => provider,
           ),
+        if (feedback case final provider?)
+          StarterModuleRegistration.enabled(
+            moduleId: provider.moduleId,
+            create: () => provider,
+            isRequired: false,
+          ),
+        StarterModuleRegistration.enabled(
+          moduleId: rating.moduleId,
+          create: () => rating,
+          isRequired: false,
+        ),
+        StarterModuleRegistration.enabled(
+          moduleId: ratingStore.moduleId,
+          create: () => ratingStore,
+          isRequired: false,
+        ),
         StarterModuleRegistration.enabled(
           moduleId: identity.moduleId,
           create: () => identity,
@@ -214,6 +268,9 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
       analytics,
       if (analyticsSwitches case final binder?) binder,
       retention,
+      if (feedback != null) feedback!,
+      rating,
+      ratingStore,
       identity,
       developerAccess,
       developerAccessBinder,
@@ -248,6 +305,16 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
   /// Mixpanel behind its remote kill switch; null without a token.
   SwitchableAnalyticsSink? mixpanel;
   AnalyticsSinkRemotePolicyBinder? analyticsSwitches;
+
+  /// Store, support and share links for Settings.
+  late final AppLinkActions links;
+
+  /// Contact/feedback delivery; null when no FeedbackNest key is configured.
+  FeedbackNestFeedbackProvider? feedback;
+
+  /// Decides when the rating prompt may be shown, and remembers the answer.
+  late final RatingCoordinator rating;
+  late final InAppReviewStoreProvider ratingStore;
 
   /// Resolves the stable device identity developer recognition uses.
   late final DeviceIdentityResolver identity;

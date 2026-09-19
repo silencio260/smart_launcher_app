@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
-import 'package:smart_launcher_app/features/settings/presentation/support_links.dart';
+import 'package:genrevibes_feedback/genrevibes_feedback.dart';
+import 'package:smart_launcher_app/bootstrap/app_runtime.dart';
+import 'package:smart_launcher_app/container_injector.dart';
+import 'package:smart_launcher_app/core/feedback/feedback_entry.dart';
 import 'package:smart_launcher_app/core/models/launcher_feature.dart';
 import 'package:smart_launcher_app/core/platform/launcher_service.dart';
 
@@ -11,15 +14,19 @@ import 'package:smart_launcher_app/core/platform/launcher_service.dart';
 class HelpFeedbackScreen extends StatelessWidget {
   const HelpFeedbackScreen({super.key});
 
+  /// Opens the shared feedback form, falling back to the support mailbox
+  /// when this build has no delivery key configured.
   Future<void> _giveFeedback(BuildContext context) async {
-    final uri = Uri(
-      scheme: 'mailto',
-      path: SupportLinks.feedbackEmail,
-      query: 'subject=${Uri.encodeComponent(SupportLinks.feedbackSubject)}',
+    final sent = await openLauncherFeedback(
+      context,
+      kind: FeedbackKind.feedback,
     );
-    final ok = await LauncherService.launchUrl(uri.toString());
+    if (sent || !context.mounted) return;
+    final runtime = sl.isRegistered<AppRuntime>() ? sl<AppRuntime>() : null;
+    if (runtime?.feedback != null) return; // The form was open and cancelled.
+    final result = await runtime?.links.contactSupport();
     if (!context.mounted) return;
-    if (!ok) {
+    if (result == null || result.isFailure) {
       _toast(context, 'No email app found to send feedback');
     }
   }

@@ -1,3 +1,4 @@
+import 'package:genrevibes_app_rating/genrevibes_app_rating.dart';
 import 'package:genrevibes_devtools/genrevibes_devtools.dart';
 import 'package:genrevibes_engagement/genrevibes_engagement.dart';
 import 'package:smart_launcher_app/bootstrap/app_runtime.dart';
@@ -23,6 +24,8 @@ DevToolsHost buildLabHost(AppRuntime runtime) {
     developerAccess: runtime.developerAccess,
     retention: runtime.retention,
     crash: runtime.crash,
+    feedback: runtime.feedback,
+    rating: runtime.rating,
     store: runtime.store,
     storageKeys: _storageGroups,
   );
@@ -60,6 +63,13 @@ const _storageGroups = <DevStorageGroup>[
         label: 'Active dates',
       ),
       DevStorageEntry(key: 'total_sessions', label: 'Lifetime sessions'),
+    ],
+  ),
+  DevStorageGroup(
+    title: 'Rating',
+    entries: <DevStorageEntry>[
+      DevStorageEntry(key: RatingKeys.optedOut, label: 'Opted out'),
+      DevStorageEntry(key: RatingKeys.lastPromptedAt, label: 'Last prompted'),
     ],
   ),
   DevStorageGroup(

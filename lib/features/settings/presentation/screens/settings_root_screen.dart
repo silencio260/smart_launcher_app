@@ -20,6 +20,8 @@ import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_
 import 'package:smart_launcher_app/features/home/presentation/bloc/workspace_cubit.dart';
 import 'package:smart_launcher_app/features/home/data/default_layout_seeder.dart';
 import 'package:smart_launcher_app/core/utils/debug_flags.dart';
+import 'package:genrevibes_app_links/genrevibes_app_links.dart';
+import 'package:genrevibes_core/genrevibes_core.dart';
 import 'package:genrevibes_developer_access/genrevibes_developer_access.dart';
 import 'package:genrevibes_devtools/genrevibes_devtools.dart';
 import 'package:smart_launcher_app/bootstrap/app_runtime.dart';
@@ -47,7 +49,6 @@ import 'package:smart_launcher_app/features/settings/presentation/screens/recent
 import 'package:smart_launcher_app/features/settings/presentation/screens/help_feedback_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/widget_picker_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/wallpaper_screen.dart';
-import 'package:smart_launcher_app/features/settings/presentation/support_links.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/launcher_features_settings_screen.dart';
 
 class SettingsRootScreen extends StatefulWidget {
@@ -228,6 +229,22 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
     await appsCubit.resetForFreshInstall(reload: false);
   }
 
+  /// Runs one of the kit's shared link actions and reports a failure once.
+  Future<void> _openLink(
+    BuildContext context,
+    Future<KitResult<void>> Function(AppLinkActions links) action,
+    String failureMessage,
+  ) async {
+    final links = _runtime?.links;
+    final result = links == null ? null : await action(links);
+    if (!context.mounted) return;
+    if (result == null || result.isFailure) {
+      ScaffoldMessenger.of(context)
+        ..removeCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(failureMessage)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return SettingsAppearance(
@@ -371,18 +388,31 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                     icon: Icons.privacy_tip_outlined,
                     title: 'Privacy Policy',
                     subtitle: 'How your data is handled',
-                    onTap: () async {
-                      final ok = await LauncherService.launchUrl(
-                          SupportLinks.privacyPolicyUrl);
-                      if (!c.mounted) return;
-                      if (!ok) {
-                        ScaffoldMessenger.of(c)
-                          ..removeCurrentSnackBar()
-                          ..showSnackBar(const SnackBar(
-                              content:
-                                  Text("Couldn't open the privacy policy")));
-                      }
-                    },
+                    onTap: () => _openLink(
+                      c,
+                      (links) => links.openPrivacyPolicy(),
+                      "Couldn't open the privacy policy",
+                    ),
+                  ),
+              (c) => _Tile(
+                    icon: Icons.share_outlined,
+                    title: 'Share Smart Launcher',
+                    subtitle: 'Send a friend the Play Store link',
+                    onTap: () => _openLink(
+                      c,
+                      (links) => links.shareApp(),
+                      "Couldn't open the share sheet",
+                    ),
+                  ),
+              (c) => _Tile(
+                    icon: Icons.star_outline,
+                    title: 'Rate on Google Play',
+                    subtitle: 'Open the store listing',
+                    onTap: () => _openLink(
+                      c,
+                      (links) => links.openStoreListing(),
+                      "Couldn't open the Play Store",
+                    ),
                   ),
               (c) => _Tile(
                     icon: Icons.shield_outlined,

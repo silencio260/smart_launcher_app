@@ -6,6 +6,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:smart_launcher_app/core/rating/rating_prompt.dart';
 import 'package:smart_launcher_app/core/models/app_info.dart';
 import 'package:smart_launcher_app/core/models/folder_info.dart';
 import 'package:smart_launcher_app/core/models/item_info.dart';
@@ -143,6 +144,10 @@ class _HomeScreenState extends State<HomeScreen>
       systemNavigationBarColor: Colors.transparent,
     ));
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Considers the store-rating prompt. It declines itself unless the user
+      // has settled in: onboarding done, launcher set as default, active on
+      // three days, and the kit's own install-age/snooze/opt-out rules pass.
+      if (!widget.firstRun) unawaited(RatingPrompt.maybeShow(context));
       context
           .read<AppsCubit>()
           .setBadgesEnabled(
