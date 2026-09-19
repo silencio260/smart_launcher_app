@@ -4,7 +4,7 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:smart_launcher_app/core/permissions/app_permissions.dart';
 import 'package:smart_launcher_app/container_injector.dart';
 import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/ads/test_ads_config.dart';
@@ -1073,10 +1073,7 @@ class _AlarmDebugPanelState extends State<_AlarmDebugPanel> {
       if (!await LauncherService.canScheduleExactAlarms()) {
         await LauncherService.requestExactAlarmAccess();
       }
-      final notif = await Permission.notification.status;
-      if (!notif.isGranted && !notif.isPermanentlyDenied) {
-        await Permission.notification.request();
-      }
+      await AppPermissions.requestNotifications();
       final trigger = DateTime.now().add(const Duration(seconds: 5));
       final ok = await LauncherService.scheduleSmartAlarm(
         id: goodMorning

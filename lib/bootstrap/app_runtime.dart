@@ -20,6 +20,8 @@ import 'package:genrevibes_device_identity/genrevibes_device_identity.dart';
 import 'package:genrevibes_device_identity_platform/genrevibes_device_identity_platform.dart';
 import 'package:genrevibes_devtools/genrevibes_devtools.dart';
 import 'package:genrevibes_feedbacknest/genrevibes_feedbacknest.dart';
+import 'package:genrevibes_permissions/genrevibes_permissions.dart';
+import 'package:genrevibes_permissions_handler/genrevibes_permissions_handler.dart';
 import 'package:genrevibes_engagement/genrevibes_engagement.dart';
 import 'package:genrevibes_remote_config/genrevibes_remote_config.dart';
 import 'package:genrevibes_remote_config_firebase/genrevibes_remote_config_firebase.dart';
@@ -128,6 +130,12 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
           controller: developerAccess,
           logger: logger,
         );
+    permissionProvider = PermissionHandlerProvider(logger: logger);
+    permissions = PermissionCoordinator(
+      provider: permissionProvider,
+      store: store,
+      logger: logger,
+    );
     links = AppLinkActions(
       config: AppLinksConfig(
         appName: 'Smart Launcher',
@@ -225,6 +233,11 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
             isRequired: false,
           ),
         StarterModuleRegistration.enabled(
+          moduleId: permissions.moduleId,
+          create: () => permissions,
+          isRequired: false,
+        ),
+        StarterModuleRegistration.enabled(
           moduleId: rating.moduleId,
           create: () => rating,
           isRequired: false,
@@ -269,6 +282,7 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
       if (analyticsSwitches case final binder?) binder,
       retention,
       if (feedback != null) feedback!,
+      permissions,
       rating,
       ratingStore,
       identity,
@@ -305,6 +319,16 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
   /// Mixpanel behind its remote kill switch; null without a token.
   SwitchableAnalyticsSink? mixpanel;
   AnalyticsSinkRemotePolicyBinder? analyticsSwitches;
+
+  /// Runtime permissions the launcher actually asks for.
+  ///
+  /// Android special access — usage access, notification listener, overlay,
+  /// set-as-default — is not a runtime permission and stays app-owned in
+  /// [LauncherService] and the mini-app guides.
+  late final PermissionCoordinator permissions;
+
+  /// The platform adapter behind [permissions]; Kit Lab reads it directly.
+  late final PermissionHandlerProvider permissionProvider;
 
   /// Store, support and share links for Settings.
   late final AppLinkActions links;

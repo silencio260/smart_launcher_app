@@ -24,6 +24,7 @@ DevToolsHost buildLabHost(AppRuntime runtime) {
     developerAccess: runtime.developerAccess,
     retention: runtime.retention,
     crash: runtime.crash,
+    permissions: runtime.permissionProvider,
     feedback: runtime.feedback,
     rating: runtime.rating,
     store: runtime.store,

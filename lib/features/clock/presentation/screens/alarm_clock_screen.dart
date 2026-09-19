@@ -4,9 +4,9 @@ import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:smart_launcher_app/core/permissions/app_permissions.dart';
 import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/storage/mini_app_repositories.dart';
 import 'package:smart_launcher_app/features/clock/data/clock_service.dart';
@@ -84,7 +84,7 @@ class _AlarmClockScreenState extends State<AlarmClockScreen>
     final exact = await LauncherService.canScheduleExactAlarms();
     final fullScreen = await LauncherService.canUseFullScreenIntent();
     final battery = await LauncherService.isIgnoringBatteryOptimizations();
-    final notifications = await Permission.notification.isGranted;
+    final notifications = await AppPermissions.hasNotifications();
     if (!mounted) return;
     setState(() {
       _exactAlarm = exact;
@@ -211,7 +211,7 @@ class _AlarmClockScreenState extends State<AlarmClockScreen>
               await LauncherService.requestExactAlarmAccess();
             },
             onFixNotifications: () async {
-              await Permission.notification.request();
+              await AppPermissions.requestNotifications();
               await _loadPermissions();
             },
             onFixFullScreen: () async {

@@ -5,8 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:genrevibes_permissions/genrevibes_permissions.dart';
 
+import 'package:smart_launcher_app/core/permissions/app_permissions.dart';
 import 'package:smart_launcher_app/core/models/app_info.dart';
 import 'package:smart_launcher_app/features/apps/data/app_categories.dart';
 import 'package:smart_launcher_app/core/platform/feature_launch_dispatcher.dart';
@@ -61,9 +62,10 @@ class _GoodMorningScreenState extends State<GoodMorningScreen> {
     try {
       var location = await LauncherService.getDeviceLocation();
       if (location == null) {
-        final status = await Permission.locationWhenInUse.status;
-        if (!status.isGranted && !status.isPermanentlyDenied) {
-          await Permission.locationWhenInUse.request();
+        final granted = await AppPermissions.request(const [
+          PermissionKind.location,
+        ]);
+        if (granted?.status == PermissionFlowStatus.granted) {
           location = await LauncherService.getDeviceLocation();
         }
       }

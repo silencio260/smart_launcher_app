@@ -1,8 +1,8 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:uuid/uuid.dart';
 
+import 'package:smart_launcher_app/core/permissions/app_permissions.dart';
 import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/storage/mini_app_repositories.dart';
 import 'package:smart_launcher_app/features/clock/data/clock_service.dart';
@@ -116,10 +116,7 @@ class _AlarmEditScreenState extends State<AlarmEditScreen> {
   /// permanently denied it, the request is a no-op and the Alarms-tab setup
   /// banner steers them to settings instead.
   Future<void> _ensureNotificationPermission() async {
-    final status = await Permission.notification.status;
-    if (!status.isGranted && !status.isPermanentlyDenied) {
-      await Permission.notification.request();
-    }
+    await AppPermissions.requestNotifications();
   }
 
   Future<bool> _promptExactAlarm() async {
