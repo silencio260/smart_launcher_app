@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:smart_launcher_app/config/theme_manager.dart';
-import 'package:smart_launcher_app/core/privacy/analytics_consent_gate.dart';
 import 'package:smart_launcher_app/container_injector.dart';
 import 'package:smart_launcher_app/core/analytics/analytics_route_observer.dart';
 import 'package:smart_launcher_app/core/models/launcher_settings.dart';
@@ -52,11 +51,9 @@ class MyApp extends StatelessWidget {
             navigatorObservers: [homeRouteObserver, _analyticsObserver],
             theme: AppTheme.light,
             darkTheme: AppTheme.dark,
-            home: AnalyticsConsentGate(
-              child: OnboardingStore.isCompletedSync
-                  ? const HomeScreen()
-                  : const OnboardingScreen(),
-            ),
+            home: OnboardingStore.isCompletedSync
+                ? const HomeScreen()
+                : const OnboardingScreen(),
           );
         },
       ),

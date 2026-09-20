@@ -26,7 +26,6 @@ import 'package:genrevibes_developer_access/genrevibes_developer_access.dart';
 import 'package:genrevibes_devtools/genrevibes_devtools.dart';
 import 'package:smart_launcher_app/bootstrap/app_runtime.dart';
 import 'package:smart_launcher_app/bootstrap/lab_host.dart';
-import 'package:smart_launcher_app/features/settings/presentation/screens/privacy_settings_screen.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/ads_debug_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_launcher_app/core/icons/decoded_icon_cache.dart';
@@ -412,15 +411,6 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
                       c,
                       (links) => links.openStoreListing(),
                       "Couldn't open the Play Store",
-                    ),
-                  ),
-              (c) => _Tile(
-                    icon: Icons.shield_outlined,
-                    title: 'Privacy',
-                    subtitle: 'Usage data, crash reports, privacy policy',
-                    onTap: () => Navigator.push(
-                      c,
-                      settingsRoute(const PrivacySettingsScreen()),
                     ),
                   ),
               (c) => _Tile(

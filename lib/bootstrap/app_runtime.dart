@@ -34,7 +34,6 @@ import 'package:smart_launcher_app/bootstrap/debug_kit_logger.dart';
 import 'package:smart_launcher_app/core/ads/test_ads_config.dart';
 import 'package:smart_launcher_app/core/analytics/analytics_config.dart';
 import 'package:smart_launcher_app/core/config/app_env.dart';
-import 'package:smart_launcher_app/core/privacy/analytics_consent_store.dart';
 
 /// Instances owned by one launcher startup attempt, shared by all consumers.
 class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
@@ -81,9 +80,9 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
           )
         : null;
     analytics = AnalyticsPipeline(
-      // Nothing is collected until the stored consent answer is applied in
-      // initialize(); an unanswered install stays silent and is prompted.
-      initialConsent: AnalyticsConsent.unknown,
+      // Analytics collection is a condition of using the launcher and is
+      // disclosed in the privacy policy. The only switch is the developer's
+      // own remote kill switch on Mixpanel, below.
       sinks: [
         FirebaseAnalyticsSink(logger: logger),
         if (mixpanel case final sink?) sink,
@@ -351,17 +350,11 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
   late final SessionReplayController replayPolicy;
   late final SessionReplayRemotePolicyBinder replayPolicyBinder;
 
-  /// The user's stored analytics answer; drives the pipeline and replay.
-  AnalyticsConsent consent = AnalyticsConsent.unknown;
-
-  /// Whether nobody has answered the analytics question yet.
-  bool get needsConsentPrompt => consent == AnalyticsConsent.unknown;
   late final RetentionTracker retention;
   late final GenRevibesStarterKit coordinator;
   AdProvider? ads;
   MixpanelReplayController? replay;
   MixpanelSessionReplayRecorder? replayRecorder;
-  late final AnalyticsConsentStore _consentStore = AnalyticsConsentStore(store);
   int totalSessions = 0;
   int _privateScreens = 0;
   bool _backgrounded = false;
@@ -371,8 +364,6 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> initialize() async {
     await _prepareHistory().timeout(const Duration(seconds: 10));
-    scope.ensureActive();
-    consent = await _consentStore.read();
     scope.ensureActive();
     check(await coordinator.initialize());
     scope.ensureActive();
@@ -389,10 +380,6 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
     if (crash.health.isOperational) {
       check(await crash.identify(installId));
     }
-    if (consent == AnalyticsConsent.granted) {
-      check(await analytics.setConsent(AnalyticsConsent.granted));
-    }
-    scope.ensureActive();
     if (analytics.health.isOperational) {
       try {
         check(
@@ -442,7 +429,6 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
   /// plan. Later rollout changes reach the SDK through the controller.
   Future<void> _startReplay() async {
     if (!AnalyticsConfig.hasMixpanelToken) return;
-    if (consent != AnalyticsConsent.granted) return;
     final plan = replayPolicy.plan;
     if (!plan.recording) return;
     final controller = MixpanelReplayController(
@@ -465,33 +451,6 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
     scope.add(recorder.dispose);
     check(await replayPolicy.attach(recorder, configuredPlan: plan));
     notifyListeners();
-  }
-
-  /// Records the user's analytics answer and applies it everywhere.
-  ///
-  /// Denying stops event delivery, turns provider-side collection off and
-  /// keeps replay off on this device until the answer changes. Crash
-  /// reporting is unaffected: it carries no product analytics.
-  Future<void> setAnalyticsConsent(AnalyticsConsent choice) async {
-    if (scope.isClosed || choice == consent) return;
-    consent = choice;
-    check(await _consentStore.write(choice));
-    if (scope.isClosed) return;
-    check(await analytics.setConsent(choice));
-    if (scope.isClosed) return;
-    check(
-      await replayPolicy.setOverride(
-        choice == AnalyticsConsent.granted
-            ? SessionReplayOverride.followRemote
-            : SessionReplayOverride.forceOff,
-      ),
-    );
-    if (choice == AnalyticsConsent.granted &&
-        replay == null &&
-        !scope.isClosed) {
-      await _startReplay();
-    }
-    if (!scope.isClosed) notifyListeners();
   }
 
   /// Work that must wait for the first frame: deferred modules, then a fetch

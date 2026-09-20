@@ -73,13 +73,4 @@ const _storageGroups = <DevStorageGroup>[
       DevStorageEntry(key: RatingKeys.lastPromptedAt, label: 'Last prompted'),
     ],
   ),
-  DevStorageGroup(
-    title: 'Privacy',
-    entries: <DevStorageEntry>[
-      DevStorageEntry(
-        key: 'launcher.analytics_consent.v1',
-        label: 'Analytics consent',
-      ),
-    ],
-  ),
 ];
