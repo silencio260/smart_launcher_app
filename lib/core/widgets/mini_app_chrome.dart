@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:smart_launcher_app/core/ads/launcher_ads.dart';
+import 'package:smart_launcher_app/core/ads/launcher_banner_ad.dart';
 
 const miniAppBackground = Color(0xFF000000);
 const miniAppSurface = Color(0xFF1C1C1E);
@@ -25,12 +27,17 @@ class MiniAppScaffold extends StatelessWidget {
   final Widget child;
   final Widget? bottomNavigationBar;
 
+  /// Whether this screen carries the shared banner slot. Secure surfaces and
+  /// pickers opt out.
+  final bool showBannerAd;
+
   const MiniAppScaffold({
     super.key,
     required this.title,
     required this.child,
     this.actions = const [],
     this.bottomNavigationBar,
+    this.showBannerAd = true,
   });
 
   @override
@@ -93,9 +100,22 @@ class MiniAppScaffold extends StatelessWidget {
             child: child,
           ),
         ),
-        bottomNavigationBar: bottomNavigationBar == null
-            ? null
-            : SafeArea(top: false, child: bottomNavigationBar!),
+        // Every mini-app carries the banner slot, above its own bottom bar
+        // when it has one. The slot renders nothing unless ads are configured,
+        // the provider is ready and policy allows it, so a build without an ad
+        // key looks untouched. Nothing like this ever goes on the home screen
+        // or in the drawer.
+        bottomNavigationBar: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (showBannerAd)
+              const LauncherBannerAd(
+                placement: LauncherAdPlacements.miniAppBanner,
+              ),
+            if (bottomNavigationBar != null)
+              SafeArea(top: false, child: bottomNavigationBar!),
+          ],
+        ),
       ),
     );
   }

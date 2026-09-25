@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 import 'package:smart_launcher_app/core/analytics/app_events.dart';
+import 'package:smart_launcher_app/core/ads/launcher_ads.dart';
+import 'package:smart_launcher_app/core/ads/launcher_native_ad.dart';
 import 'package:smart_launcher_app/core/models/app_info.dart';
 import 'package:smart_launcher_app/features/discover/domain/entities/rss_item.dart';
 import 'package:smart_launcher_app/features/discover/data/rss_service.dart';
@@ -131,13 +133,17 @@ class _DiscoverPageState extends State<DiscoverPage> {
   @override
   Widget build(BuildContext context) {
     final hidden = context.watch<SettingsCubit>().state.hiddenApps.toSet();
-    final visibleApps = context
-        .watch<AppsCubit>()
-        .state
-        .apps
-        .where((a) =>
-            !hidden.contains(a.launcherKey) && !hidden.contains(a.packageName))
-        .toList();
+    final visibleApps =
+        context
+            .watch<AppsCubit>()
+            .state
+            .apps
+            .where(
+              (a) =>
+                  !hidden.contains(a.launcherKey) &&
+                  !hidden.contains(a.packageName),
+            )
+            .toList();
     final suggestions = visibleApps.take(8).toList();
     final query = _appQuery.trim().toLowerCase();
     final searching = query.isNotEmpty;
@@ -147,43 +153,48 @@ class _DiscoverPageState extends State<DiscoverPage> {
     return Container(
       color: const Color(0xFF202124),
       child: SafeArea(
-      child: RefreshIndicator(
-        onRefresh: () => _loadFeed(force: true),
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          children: [
-            _searchBar(),
-            const SizedBox(height: 20),
-            if (searching)
-              ..._buildAppResults(visibleApps, query)
-            else ...[
-              if (suggestions.isNotEmpty) ...[
-                _sectionLabel('Suggestions'),
-                const SizedBox(height: 10),
-                _SuggestionsRow(apps: suggestions, onTap: widget.onLaunchApp),
-                const SizedBox(height: 20),
-              ],
-              const _InfoCardsRow(),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(child: _sectionLabel('For you')),
-                  TextButton.icon(
-                    onPressed: _manageSources,
-                    icon: const Icon(Icons.tune,
-                        size: 16, color: Colors.white70),
-                    label: const Text('Sources',
-                        style: TextStyle(color: Colors.white70)),
-                  ),
+        child: RefreshIndicator(
+          onRefresh: () => _loadFeed(force: true),
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            children: [
+              _searchBar(),
+              const SizedBox(height: 20),
+              if (searching)
+                ..._buildAppResults(visibleApps, query)
+              else ...[
+                if (suggestions.isNotEmpty) ...[
+                  _sectionLabel('Suggestions'),
+                  const SizedBox(height: 10),
+                  _SuggestionsRow(apps: suggestions, onTap: widget.onLaunchApp),
+                  const SizedBox(height: 20),
                 ],
-              ),
-              const SizedBox(height: 4),
-              ..._buildFeed(),
+                const _InfoCardsRow(),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(child: _sectionLabel('For you')),
+                    TextButton.icon(
+                      onPressed: _manageSources,
+                      icon: const Icon(
+                        Icons.tune,
+                        size: 16,
+                        color: Colors.white70,
+                      ),
+                      label: const Text(
+                        'Sources',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                ..._buildFeed(),
+              ],
             ],
-          ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -196,8 +207,10 @@ class _DiscoverPageState extends State<DiscoverPage> {
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 40),
           child: Center(
-            child: Text('No apps found',
-                style: TextStyle(color: Colors.white54)),
+            child: Text(
+              'No apps found',
+              style: TextStyle(color: Colors.white54),
+            ),
           ),
         ),
       ];
@@ -215,29 +228,47 @@ class _DiscoverPageState extends State<DiscoverPage> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 40),
           child: Center(
-            child: _loading
-                ? const CircularProgressIndicator(strokeWidth: 2)
-                : Column(
-                    children: [
-                      const Text('No stories yet',
-                          style: TextStyle(color: Colors.white54)),
-                      const SizedBox(height: 8),
-                      TextButton(
-                        onPressed: _manageSources,
-                        child: const Text('Add a news source'),
-                      ),
-                    ],
-                  ),
+            child:
+                _loading
+                    ? const CircularProgressIndicator(strokeWidth: 2)
+                    : Column(
+                      children: [
+                        const Text(
+                          'No stories yet',
+                          style: TextStyle(color: Colors.white54),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          onPressed: _manageSources,
+                          child: const Text('Add a news source'),
+                        ),
+                      ],
+                    ),
           ),
         ),
       ];
     }
     return [
-      for (final item in _items)
+      for (final (index, item) in _items.indexed) ...[
         Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: _ArticleCard(item: item, onTap: () => _openArticle(item)),
         ),
+        if (index == 2)
+          if (widget.activeSection case final section?)
+            ValueListenableBuilder<HomeSection>(
+              valueListenable: section,
+              builder:
+                  (context, current, _) => LauncherNativeAd(
+                    placement: LauncherAdPlacements.discoverNative,
+                    enabled: current == HomeSection.discover,
+                  ),
+            )
+          else
+            const LauncherNativeAd(
+              placement: LauncherAdPlacements.discoverNative,
+            ),
+      ],
     ];
   }
 
@@ -252,16 +283,21 @@ class _DiscoverPageState extends State<DiscoverPage> {
         hintText: 'Search apps',
         hintStyle: const TextStyle(color: Colors.white54, fontSize: 16),
         prefixIcon: const Icon(Icons.search, color: Colors.white54, size: 20),
-        suffixIcon: _appQuery.isEmpty
-            ? null
-            : IconButton(
-                icon: const Icon(Icons.close, color: Colors.white54, size: 20),
-                onPressed: () {
-                  _searchController.clear();
-                  setState(() => _appQuery = '');
-                  FocusScope.of(context).unfocus();
-                },
-              ),
+        suffixIcon:
+            _appQuery.isEmpty
+                ? null
+                : IconButton(
+                  icon: const Icon(
+                    Icons.close,
+                    color: Colors.white54,
+                    size: 20,
+                  ),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() => _appQuery = '');
+                    FocusScope.of(context).unfocus();
+                  },
+                ),
         filled: true,
         fillColor: Colors.white.withValues(alpha: 0.12),
         contentPadding: const EdgeInsets.symmetric(vertical: 12),
@@ -274,14 +310,14 @@ class _DiscoverPageState extends State<DiscoverPage> {
   }
 
   Widget _sectionLabel(String text) => Text(
-        text.toUpperCase(),
-        style: const TextStyle(
-          color: Colors.white54,
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.6,
-        ),
-      );
+    text.toUpperCase(),
+    style: const TextStyle(
+      color: Colors.white54,
+      fontSize: 12,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 0.6,
+    ),
+  );
 }
 
 class _SuggestionsRow extends StatelessWidget {
@@ -311,17 +347,17 @@ class _SuggestionsRow extends StatelessWidget {
             children: [
               app.launcherFeatureId != null
                   ? FeatureIcon(
-                      featureId: app.launcherFeatureId!,
-                      componentName: app.appComponentName,
-                      size: 48,
-                    )
+                    featureId: app.launcherFeatureId!,
+                    componentName: app.appComponentName,
+                    size: 48,
+                  )
                   : ShapedIcon(
-                      iconBytes: app.icon,
-                      iconPath: app.iconPath,
-                      shape: 'squircle',
-                      size: 48,
-                      cacheKey: app.packageName,
-                    ),
+                    iconBytes: app.icon,
+                    iconPath: app.iconPath,
+                    shape: 'squircle',
+                    size: 48,
+                    cacheKey: app.packageName,
+                  ),
               const SizedBox(height: 6),
               Text(
                 app.name,
@@ -390,13 +426,18 @@ class _InfoCard extends StatelessWidget {
         children: [
           Icon(icon, color: Colors.white70, size: 20),
           const SizedBox(height: 12),
-          Text(title,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700)),
-          Text(subtitle,
-              style: const TextStyle(color: Colors.white54, fontSize: 12)),
+          Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          Text(
+            subtitle,
+            style: const TextStyle(color: Colors.white54, fontSize: 12),
+          ),
         ],
       ),
     );
@@ -435,17 +476,22 @@ class _ArticleCard extends StatelessWidget {
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          height: 1.25,
-                          fontWeight: FontWeight.w600),
+                        color: Colors.white,
+                        fontSize: 15,
+                        height: 1.25,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 8),
-                    Text(meta,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            color: Colors.white54, fontSize: 12)),
+                    Text(
+                      meta,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 12,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -464,11 +510,12 @@ class _ArticleCard extends StatelessWidget {
                     // decode and hold in memory.
                     memCacheWidth: 220,
                     memCacheHeight: 220,
-                    placeholder: (_, __) => Container(
-                      width: 84,
-                      height: 84,
-                      color: Colors.white.withValues(alpha: 0.06),
-                    ),
+                    placeholder:
+                        (_, __) => Container(
+                          width: 84,
+                          height: 84,
+                          color: Colors.white.withValues(alpha: 0.06),
+                        ),
                     errorWidget: (_, __, ___) => const SizedBox.shrink(),
                   ),
                 ),

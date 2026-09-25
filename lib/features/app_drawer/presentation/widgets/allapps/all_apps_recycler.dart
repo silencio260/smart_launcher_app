@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
+import 'package:smart_launcher_app/core/ads/launcher_ads.dart';
+import 'package:smart_launcher_app/core/ads/launcher_native_ad.dart';
 import 'package:smart_launcher_app/core/models/app_info.dart';
 import 'package:smart_launcher_app/core/models/item_info.dart';
 import 'package:smart_launcher_app/core/models/launcher_settings.dart';
@@ -8,11 +11,13 @@ import 'package:smart_launcher_app/core/utils/drawer_perf.dart';
 import 'package:smart_launcher_app/features/home/presentation/widgets/drag/pickup_feedback.dart';
 import 'package:smart_launcher_app/core/widgets/icons/badge_listener.dart';
 import 'package:smart_launcher_app/core/widgets/icons/bubble_text_view.dart';
-import 'package:smart_launcher_app/features/home/presentation/widgets/workspace/cell_layout.dart' show kDrawerSourcePage;
+import 'package:smart_launcher_app/features/home/presentation/widgets/workspace/cell_layout.dart'
+    show kDrawerSourcePage;
 import 'package:smart_launcher_app/features/app_drawer/presentation/widgets/allapps/all_apps_grid_adapter.dart';
 
 class AllAppsRecycler extends StatefulWidget {
   final List<AppInfo> apps;
+  final bool showNativeAd;
   final LauncherSettings settings;
   final DragController dragController;
   final void Function(AppInfo app) onAppTap;
@@ -24,6 +29,7 @@ class AllAppsRecycler extends StatefulWidget {
   const AllAppsRecycler({
     super.key,
     required this.apps,
+    this.showNativeAd = false,
     required this.settings,
     required this.dragController,
     required this.onAppTap,
@@ -61,6 +67,16 @@ class _AllAppsRecyclerState extends State<AllAppsRecycler> {
   Widget build(BuildContext context) {
     final items = _items();
     final columns = widget.settings.drawerColumns;
+    var rowCount = 0;
+    int? adIndex;
+    if (widget.showNativeAd) {
+      for (var i = 0; i < items.length; i++) {
+        if (items[i] is AppRow && ++rowCount == 3) {
+          adIndex = i + 1;
+          break;
+        }
+      }
+    }
 
     return Scrollbar(
       controller: widget.scrollController,
@@ -71,12 +87,22 @@ class _AllAppsRecyclerState extends State<AllAppsRecycler> {
         measurePaint: true,
         child: CustomScrollView(
           controller: widget.scrollController,
-          cacheExtent: 1400,
+          scrollCacheExtent: const ScrollCacheExtent.pixels(1400),
           slivers: [
             SliverList(
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
-                  final item = items[index];
+                  if (index == adIndex) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: LauncherNativeAd(
+                        placement: LauncherAdPlacements.drawerNative,
+                      ),
+                    );
+                  }
+                  final item =
+                      items[index -
+                          (adIndex != null && index > adIndex ? 1 : 0)];
                   if (item is SectionHeader) {
                     return Padding(
                       padding: const EdgeInsets.fromLTRB(20, 12, 0, 4),
@@ -96,7 +122,9 @@ class _AllAppsRecyclerState extends State<AllAppsRecycler> {
                         label: 'recycler.row',
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 6),
+                            horizontal: 16,
+                            vertical: 6,
+                          ),
                           child: Row(
                             children: [
                               for (final app in item.apps)
@@ -108,16 +136,19 @@ class _AllAppsRecyclerState extends State<AllAppsRecycler> {
                                       settings: widget.settings,
                                       dragController: widget.dragController,
                                       onTap: () => widget.onAppTap(app),
-                                      onLongPress: (pos) =>
-                                          widget.onAppLongPress(app, pos),
+                                      onLongPress:
+                                          (pos) =>
+                                              widget.onAppLongPress(app, pos),
                                       onDragStarted: widget.onDragStarted,
                                       onDragEnded: widget.onDragEnded,
                                     ),
                                   ),
                                 ),
-                              for (int i = 0;
-                                  i < columns - item.apps.length;
-                                  i++)
+                              for (
+                                int i = 0;
+                                i < columns - item.apps.length;
+                                i++
+                              )
                                 const Expanded(child: SizedBox.shrink()),
                             ],
                           ),
@@ -127,7 +158,7 @@ class _AllAppsRecyclerState extends State<AllAppsRecycler> {
                   }
                   return const SizedBox.shrink();
                 },
-                childCount: items.length,
+                childCount: items.length + (adIndex == null ? 0 : 1),
                 addRepaintBoundaries: false,
               ),
             ),
@@ -190,13 +221,14 @@ class _DrawerAppIconState extends State<_DrawerAppIcon> {
 
     final iconView = BadgeListener(
       packageName: widget.app.packageName,
-      builder: (_, badge) => BubbleTextView(
-        app: widget.app,
-        iconSize: widget.settings.drawerIconSize,
-        showLabel: widget.settings.showDrawerLabels,
-        iconShape: widget.settings.iconShape,
-        badgeCount: badge,
-      ),
+      builder:
+          (_, badge) => BubbleTextView(
+            app: widget.app,
+            iconSize: widget.settings.drawerIconSize,
+            showLabel: widget.settings.showDrawerLabels,
+            iconShape: widget.settings.iconShape,
+            badgeCount: badge,
+          ),
     );
 
     return LongPressDraggable<DragPayload>(
@@ -207,8 +239,12 @@ class _DrawerAppIconState extends State<_DrawerAppIcon> {
         // Do NOT navigate yet; wait until the user drags far enough.
         _dragArmed = true;
         _dragMoved = false;
-        widget.dragController
-            .startDrag(item, kDrawerSourcePage, -1, Offset.zero);
+        widget.dragController.startDrag(
+          item,
+          kDrawerSourcePage,
+          -1,
+          Offset.zero,
+        );
         if (mounted) setState(() => _dragging = true);
         final box = context.findRenderObject() as RenderBox?;
         if (box != null && mounted) {

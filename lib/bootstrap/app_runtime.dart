@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:genrevibes_ads/genrevibes_ads.dart';
-import 'package:genrevibes_ads_admob/genrevibes_ads_admob.dart';
+import 'package:genrevibes_ads_yodo1/genrevibes_ads_yodo1.dart';
 import 'package:genrevibes_analytics/genrevibes_analytics.dart';
 import 'package:genrevibes_analytics_firebase/genrevibes_analytics_firebase.dart';
 import 'package:genrevibes_analytics_mixpanel/genrevibes_analytics_mixpanel.dart';
@@ -31,7 +31,7 @@ import 'package:genrevibes_starter_kit/genrevibes_starter_kit.dart';
 import 'package:genrevibes_storage/genrevibes_storage.dart';
 import 'package:genrevibes_storage_shared_preferences/genrevibes_storage_shared_preferences.dart';
 import 'package:smart_launcher_app/bootstrap/debug_kit_logger.dart';
-import 'package:smart_launcher_app/core/ads/test_ads_config.dart';
+import 'package:smart_launcher_app/core/ads/launcher_ads.dart';
 import 'package:smart_launcher_app/core/analytics/analytics_config.dart';
 import 'package:smart_launcher_app/core/config/app_env.dart';
 
@@ -98,9 +98,25 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
       store: store,
       observer: _LauncherEngagementObserver(this),
     );
-    final config = TestAdsConfig.fromAppEnv();
-    if (config != null) {
-      ads = AdMobAdProvider(configuration: config, testMode: true);
+    if (AppEnv.yodo1AppKey.trim().isNotEmpty) {
+      final provider = Yodo1MasAdProvider(
+        configuration: GenRevibesYodo1Configuration(
+          appKey: AppEnv.yodo1AppKey,
+          // MAS shows its own privacy dialog: the ad network's consent form
+          // is the only consent surface in this app.
+          useMasPrivacyDialog: true,
+        ),
+        logger: logger,
+      );
+      adProvider = provider;
+      adPolicy = AdPolicyController();
+      ads = AdCoordinator(provider: provider, policy: adPolicy!);
+      adPolicyBinder = AdsRemotePolicyBinder.forCoordinator(
+        remoteConfig,
+        policy: adPolicy!,
+        placements: LauncherAdPlacements.all,
+        logger: logger,
+      );
     }
     identity = DeviceIdentityResolver(
       store: store,
@@ -220,10 +236,17 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
           create: () => retention,
           isRequired: false,
         ),
-        if (ads case final provider?)
+        // Ads start after the first frame: the launcher has to be usable
+        // before any network SDK gets a turn.
+        if (adProvider case final provider?)
           StarterModuleRegistration.deferred(
             moduleId: provider.moduleId,
             create: () => provider,
+          ),
+        if (adPolicyBinder case final binder?)
+          StarterModuleRegistration.deferred(
+            moduleId: binder.moduleId,
+            create: () => binder,
           ),
         if (feedback case final provider?)
           StarterModuleRegistration.enabled(
@@ -289,11 +312,20 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
       developerAccessBinder,
       replayPolicy,
       replayPolicyBinder,
-      if (ads != null) ads!,
+      if (adProvider != null) adProvider!,
+      if (adPolicyBinder != null) adPolicyBinder!,
     ]) {
       scope.addModule(module);
     }
     scope.addModule(coordinator);
+    // Warm inventory whenever initialization actually succeeds, including a
+    // late SDK callback after the bounded startup wait has already returned.
+    final adHealthChanges = adProvider?.healthChanges.listen((health) {
+      if (!scope.isClosed && health.isOperational && ads != null) {
+        unawaited(ads!.load(LauncherAdPlacements.miniAppOpen));
+      }
+    });
+    if (adHealthChanges != null) scope.add(adHealthChanges.cancel);
     final planChanges = replayPolicy.planChanges.listen((_) {
       if (!scope.isClosed) notifyListeners();
     });
@@ -352,7 +384,15 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
 
   late final RetentionTracker retention;
   late final GenRevibesStarterKit coordinator;
-  AdProvider? ads;
+  /// Yodo1 MAS, or null when no app key is configured for this build.
+  Yodo1MasAdProvider? adProvider;
+
+  /// Pacing, intervals and the remote master switch.
+  AdPolicyController? adPolicy;
+  AdsRemotePolicyBinder? adPolicyBinder;
+
+  /// Provider plus policy: what app code asks for an ad through.
+  AdCoordinator? ads;
   MixpanelReplayController? replay;
   MixpanelSessionReplayRecorder? replayRecorder;
   int totalSessions = 0;
@@ -466,6 +506,8 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
     if (remoteConfig.health.isOperational) {
       check(await remoteConfig.refresh());
     }
+    if (scope.isClosed) return;
+    // Provider readiness owns preloading; do not race a duplicate request here.
   }
 
   /// Preflight migration so the kit cannot replace unreadable saved history.
@@ -529,6 +571,7 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
     if (state == AppLifecycleState.paused) _backgrounded = true;
     if (state == AppLifecycleState.resumed && _backgrounded) {
       _backgrounded = false;
+      unawaited(LauncherAds.onResumed());
       _sessionWork = _sessionWork
           .then((_) => _recordSession())
           .catchError((Object error) => debugPrint('Retention: $error'));

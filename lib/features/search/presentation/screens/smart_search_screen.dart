@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:smart_launcher_app/core/analytics/app_events.dart';
+import 'package:smart_launcher_app/core/ads/launcher_ads.dart';
+import 'package:smart_launcher_app/core/ads/launcher_native_ad.dart';
 import 'package:smart_launcher_app/core/models/app_info.dart';
 import 'package:smart_launcher_app/core/models/launcher_feature.dart';
 import 'package:smart_launcher_app/features/search/domain/entities/search_result.dart';
@@ -26,15 +28,30 @@ class _SettingsShortcut {
 const _kSettingsShortcuts = <_SettingsShortcut>[
   _SettingsShortcut('Wi-Fi', Icons.wifi, 'android.settings.WIFI_SETTINGS'),
   _SettingsShortcut(
-      'Bluetooth', Icons.bluetooth, 'android.settings.BLUETOOTH_SETTINGS'),
+    'Bluetooth',
+    Icons.bluetooth,
+    'android.settings.BLUETOOTH_SETTINGS',
+  ),
   _SettingsShortcut(
-      'Display', Icons.brightness_6, 'android.settings.DISPLAY_SETTINGS'),
-  _SettingsShortcut('Apps', Icons.apps,
-      'android.settings.APPLICATION_SETTINGS'),
-  _SettingsShortcut('Battery', Icons.battery_full,
-      'android.settings.BATTERY_SAVER_SETTINGS'),
+    'Display',
+    Icons.brightness_6,
+    'android.settings.DISPLAY_SETTINGS',
+  ),
   _SettingsShortcut(
-      'Security', Icons.shield_outlined, 'android.settings.SECURITY_SETTINGS'),
+    'Apps',
+    Icons.apps,
+    'android.settings.APPLICATION_SETTINGS',
+  ),
+  _SettingsShortcut(
+    'Battery',
+    Icons.battery_full,
+    'android.settings.BATTERY_SAVER_SETTINGS',
+  ),
+  _SettingsShortcut(
+    'Security',
+    Icons.shield_outlined,
+    'android.settings.SECURITY_SETTINGS',
+  ),
 ];
 
 /// The richer Smart-search screen opened from the permanent home pill. Searches
@@ -91,8 +108,11 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
         .read<AppsCubit>()
         .state
         .apps
-        .where((a) =>
-            !hidden.contains(a.launcherKey) && !hidden.contains(a.packageName))
+        .where(
+          (a) =>
+              !hidden.contains(a.launcherKey) &&
+              !hidden.contains(a.packageName),
+        )
         .toList();
   }
 
@@ -108,11 +128,13 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
       ];
       final calc = _calcSearch.evaluate(query);
       if (calc != null) results.insert(0, calc);
-      results.add(SearchResult(
-        type: SearchResultType.webSearch,
-        title: 'Search "$query" on the web',
-        score: -1,
-      ));
+      results.add(
+        SearchResult(
+          type: SearchResultType.webSearch,
+          title: 'Search "$query" on the web',
+          score: -1,
+        ),
+      );
       _results = results;
     });
   }
@@ -137,11 +159,17 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
     _rememberQuery(_query);
     _close();
     if (result.componentName != null) {
-      FeatureLaunchDispatcher.launchKey(context, result.componentName!,
-          source: 'search');
+      FeatureLaunchDispatcher.launchKey(
+        context,
+        result.componentName!,
+        source: 'search',
+      );
     } else if (result.packageName != null) {
-      FeatureLaunchDispatcher.launchPackage(context, result.packageName!,
-          source: 'search');
+      FeatureLaunchDispatcher.launchPackage(
+        context,
+        result.packageName!,
+        source: 'search',
+      );
     }
   }
 
@@ -177,17 +205,16 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
   }
 
   static String _resultTypeName(SearchResultType type) => switch (type) {
-        SearchResultType.app => 'app',
-        SearchResultType.webSearch => 'web',
-        SearchResultType.calculator => 'calculator',
-        _ => 'other',
-      };
+    SearchResultType.app => 'app',
+    SearchResultType.webSearch => 'web',
+    SearchResultType.calculator => 'calculator',
+    _ => 'other',
+  };
 
   void _runRecent(String query) {
     AppAnalytics.searchRecentRerun();
     _controller.text = query;
-    _controller.selection =
-        TextSelection.collapsed(offset: query.length);
+    _controller.selection = TextSelection.collapsed(offset: query.length);
     _onQueryChanged(query);
   }
 
@@ -209,9 +236,7 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
         child: Column(
           children: [
             _buildSearchField(),
-            Expanded(
-              child: _query.isEmpty ? _buildIdle() : _buildResults(),
-            ),
+            Expanded(child: _query.isEmpty ? _buildIdle() : _buildResults()),
           ],
         ),
       ),
@@ -292,10 +317,13 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
         return ListTile(
           leading: _buildLeading(r),
           title: Text(r.title, style: const TextStyle(color: Colors.white)),
-          subtitle: r.subtitle != null
-              ? Text(r.subtitle!,
-                  style: const TextStyle(color: Colors.white54))
-              : null,
+          subtitle:
+              r.subtitle != null
+                  ? Text(
+                    r.subtitle!,
+                    style: const TextStyle(color: Colors.white54),
+                  )
+                  : null,
           onTap: () => _onResultTap(r, i),
         );
       },
@@ -327,8 +355,11 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
               Expanded(child: _sectionLabel('Recent searches')),
               IconButton(
                 tooltip: 'Clear',
-                icon: const Icon(Icons.delete_outline,
-                    color: Colors.white54, size: 20),
+                icon: const Icon(
+                  Icons.delete_outline,
+                  color: Colors.white54,
+                  size: 20,
+                ),
                 onPressed: () async {
                   await _recentsStore.clear();
                   if (mounted) setState(() => _recents = const []);
@@ -354,6 +385,8 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
           ),
           const SizedBox(height: 24),
         ],
+        if (suggestions.isNotEmpty || _recents.isNotEmpty)
+          const LauncherNativeAd(placement: LauncherAdPlacements.searchNative),
         _sectionLabel('Settings'),
         const SizedBox(height: 8),
         Wrap(
@@ -364,8 +397,10 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
               _Chip(
                 label: s.label,
                 icon: s.icon,
-                onTap: () => _system
-                    .invokeMethod('openSettingsAction', {'action': s.action}),
+                onTap:
+                    () => _system.invokeMethod('openSettingsAction', {
+                      'action': s.action,
+                    }),
               ),
           ],
         ),
@@ -374,14 +409,14 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
   }
 
   Widget _sectionLabel(String text) => Text(
-        text.toUpperCase(),
-        style: const TextStyle(
-          color: Colors.white54,
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.6,
-        ),
-      );
+    text.toUpperCase(),
+    style: const TextStyle(
+      color: Colors.white54,
+      fontSize: 12,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 0.6,
+    ),
+  );
 
   Widget _buildLeading(SearchResult r) {
     final featureId = LauncherFeatureCatalog.idForComponent(r.componentName);
@@ -396,7 +431,10 @@ class _SmartSearchScreenState extends State<SmartSearchScreen> {
         );
       }
       return FeatureIcon(
-          featureId: featureId, componentName: r.componentName, size: 40);
+        featureId: featureId,
+        componentName: r.componentName,
+        size: 40,
+      );
     }
     if (r.icon != null || (r.iconPath?.isNotEmpty ?? false)) {
       return ShapedIcon(
@@ -517,7 +555,11 @@ class _Chip extends StatelessWidget {
                 const SizedBox(width: 8),
                 GestureDetector(
                   onTap: () => onRemove!.call(),
-                  child: const Icon(Icons.close, size: 15, color: Colors.white54),
+                  child: const Icon(
+                    Icons.close,
+                    size: 15,
+                    color: Colors.white54,
+                  ),
                 ),
               ],
             ],

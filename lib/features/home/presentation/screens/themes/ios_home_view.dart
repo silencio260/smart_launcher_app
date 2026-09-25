@@ -19,6 +19,7 @@ import 'package:smart_launcher_app/core/widgets/icons/shaped_icon.dart';
 import 'package:smart_launcher_app/core/widgets/wallpaper/themed_wallpaper_background.dart';
 import 'package:smart_launcher_app/features/app_library/presentation/screens/app_library_page.dart';
 import 'package:smart_launcher_app/features/discover/presentation/screens/discover_page.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/workspace/home_sections.dart';
 
 class IosHomeView extends StatefulWidget {
   final LauncherSettings settings;
@@ -47,6 +48,7 @@ class _IosHomeViewState extends State<IosHomeView>
   // index 1 and the launcher opens there.
   final _pageController = PageController(initialPage: 1);
   int _currentPage = 1;
+  final _activeSection = ValueNotifier<HomeSection>(HomeSection.home);
   // The page a user drag began from. The snap physics measures commit distance
   // relative to this so the threshold is symmetric forward and backward.
   double _dragOrigin = 1;
@@ -71,6 +73,7 @@ class _IosHomeViewState extends State<IosHomeView>
   void dispose() {
     _jiggle.dispose();
     _pageController.dispose();
+    _activeSection.dispose();
     super.dispose();
   }
 
@@ -138,13 +141,20 @@ class _IosHomeViewState extends State<IosHomeView>
                               origin: () => _dragOrigin,
                             ),
                       itemCount: itemCount,
-                      onPageChanged: (value) =>
-                          setState(() => _currentPage = value),
+                      onPageChanged: (value) {
+                        _activeSection.value = value == 0
+                            ? HomeSection.discover
+                            : value == itemCount - 1
+                                ? HomeSection.library
+                                : HomeSection.home;
+                        setState(() => _currentPage = value);
+                      },
                       itemBuilder: (context, index) {
                         if (index == 0) {
                           return DiscoverPage(
                             onOpenSearch: widget.onOpenSearch,
                             onLaunchApp: widget.onLaunchApp,
+                            activeSection: _activeSection,
                           );
                         }
                         if (index == itemCount - 1) {
@@ -321,6 +331,7 @@ class _IosHomeViewState extends State<IosHomeView>
         AppLibraryPage(
           onLaunchApp: widget.onLaunchApp,
           translucent: true,
+          activeSection: _activeSection,
         ),
       ],
     );

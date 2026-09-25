@@ -1,7 +1,9 @@
 import 'package:genrevibes_app_rating/genrevibes_app_rating.dart';
+import 'package:genrevibes_device_identity_platform/genrevibes_device_identity_platform.dart';
 import 'package:genrevibes_devtools/genrevibes_devtools.dart';
 import 'package:genrevibes_engagement/genrevibes_engagement.dart';
 import 'package:smart_launcher_app/bootstrap/app_runtime.dart';
+import 'package:smart_launcher_app/core/ads/launcher_ads.dart';
 import 'package:smart_launcher_app/core/analytics/dev_event_catalogue.dart';
 
 /// Describes the running launcher to Kit Lab.
@@ -21,9 +23,16 @@ DevToolsHost buildLabHost(AppRuntime runtime) {
     remoteConfig: runtime.remoteConfig,
     remoteConfigSchema: runtime.remoteConfigSchema,
     identity: runtime.identity,
+    // Read only when the developer-access page asks, and never folded into
+    // the identity the app reports. This is the ID to paste into a network's
+    // test-device list.
+    advertisingId: const PlatformAdvertisingIdSource(),
     developerAccess: runtime.developerAccess,
     retention: runtime.retention,
     crash: runtime.crash,
+    ads: runtime.adProvider,
+    adPolicy: runtime.adPolicy,
+    adPlacements: LauncherAdPlacements.all,
     permissions: runtime.permissionProvider,
     feedback: runtime.feedback,
     rating: runtime.rating,

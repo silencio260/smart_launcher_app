@@ -1,7 +1,11 @@
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:smart_launcher_app/core/analytics/app_events.dart';
+import 'package:smart_launcher_app/core/ads/launcher_ads.dart';
+import 'package:smart_launcher_app/core/ads/launcher_native_ad.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/workspace/home_sections.dart';
 import 'package:smart_launcher_app/core/models/app_info.dart';
 import 'package:smart_launcher_app/core/models/launcher_settings.dart';
 import 'package:smart_launcher_app/features/apps/data/app_categories.dart';
@@ -33,11 +37,13 @@ class AppLibraryPage extends StatefulWidget {
   /// iOS theme look). When false (default, the smart theme) it paints solid
   /// opaque black.
   final bool translucent;
+  final ValueListenable<HomeSection>? activeSection;
 
   const AppLibraryPage({
     super.key,
     required this.onLaunchApp,
     this.translucent = false,
+    this.activeSection,
   });
 
   @override
@@ -77,11 +83,14 @@ class _AppLibraryPageState extends State<AppLibraryPage> {
     AppAnalytics.appLibraryOpened();
   }
 
-  List<AppInfo> _visible(AppsState appsState, Set<String> hidden) => appsState
-      .apps
-      .where((a) =>
-          !hidden.contains(a.launcherKey) && !hidden.contains(a.packageName))
-      .toList();
+  List<AppInfo> _visible(AppsState appsState, Set<String> hidden) =>
+      appsState.apps
+          .where(
+            (a) =>
+                !hidden.contains(a.launcherKey) &&
+                !hidden.contains(a.packageName),
+          )
+          .toList();
 
   List<_LibraryFolder> _buildFolders(AppsState appsState, Set<String> hidden) {
     final visible = <AppInfo>[];
@@ -124,9 +133,10 @@ class _AppLibraryPageState extends State<AppLibraryPage> {
         return SafeArea(
           child: CustomScrollView(
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            slivers: _query.isEmpty
-                ? _browseSlivers(appsState, hidden, settings)
-                : _searchSlivers(_filtered(appsState, hidden)),
+            slivers:
+                _query.isEmpty
+                    ? _browseSlivers(appsState, hidden, settings)
+                    : _searchSlivers(_filtered(appsState, hidden)),
           ),
         );
       },
@@ -175,6 +185,25 @@ class _AppLibraryPageState extends State<AppLibraryPage> {
           ),
         ),
       ],
+      if (folders.isNotEmpty && apps.isNotEmpty)
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          sliver: SliverToBoxAdapter(
+            child:
+                widget.activeSection != null
+                    ? ValueListenableBuilder<HomeSection>(
+                      valueListenable: widget.activeSection!,
+                      builder:
+                          (context, current, _) => LauncherNativeAd(
+                            placement: LauncherAdPlacements.libraryNative,
+                            enabled: current == HomeSection.library,
+                          ),
+                    )
+                    : const LauncherNativeAd(
+                      placement: LauncherAdPlacements.libraryNative,
+                    ),
+          ),
+        ),
       const SliverToBoxAdapter(child: _SectionLabel('All apps')),
       ..._appListSlivers(apps, settings),
       const SliverPadding(padding: EdgeInsets.only(bottom: 24)),
@@ -224,48 +253,44 @@ class _AppLibraryPageState extends State<AppLibraryPage> {
     final items = buildSections(apps, columns);
     return [
       SliverList(
-        delegate: SliverChildBuilderDelegate(
-          (context, index) {
-            final item = items[index];
-            if (item is SectionHeader) {
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 0, 4),
-                child: Text(
-                  item.letter,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
+        delegate: SliverChildBuilderDelegate((context, index) {
+          final item = items[index];
+          if (item is SectionHeader) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 0, 4),
+              child: Text(
+                item.letter,
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
                 ),
-              );
-            }
-            if (item is AppRow) {
-              return Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                child: Row(
-                  children: [
-                    for (final app in item.apps)
-                      Expanded(
-                        child: Center(
-                          child: _AppTile(
-                            app: app,
-                            onTap: widget.onLaunchApp,
-                            onLongPress: _showAppMenu,
-                          ),
+              ),
+            );
+          }
+          if (item is AppRow) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: Row(
+                children: [
+                  for (final app in item.apps)
+                    Expanded(
+                      child: Center(
+                        child: _AppTile(
+                          app: app,
+                          onTap: widget.onLaunchApp,
+                          onLongPress: _showAppMenu,
                         ),
                       ),
-                    for (int i = 0; i < columns - item.apps.length; i++)
-                      const Expanded(child: SizedBox.shrink()),
-                  ],
-                ),
-              );
-            }
-            return const SizedBox.shrink();
-          },
-          childCount: items.length,
-        ),
+                    ),
+                  for (int i = 0; i < columns - item.apps.length; i++)
+                    const Expanded(child: SizedBox.shrink()),
+                ],
+              ),
+            );
+          }
+          return const SizedBox.shrink();
+        }, childCount: items.length),
       ),
     ];
   }
@@ -365,19 +390,16 @@ class _AppTile extends StatelessWidget {
   final void Function(AppInfo app) onTap;
   final void Function(AppInfo app, Offset position)? onLongPress;
 
-  const _AppTile({
-    required this.app,
-    required this.onTap,
-    this.onLongPress,
-  });
+  const _AppTile({required this.app, required this.onTap, this.onLongPress});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () => onTap(app),
-      onLongPressStart: onLongPress == null
-          ? null
-          : (details) => onLongPress!(app, details.globalPosition),
+      onLongPressStart:
+          onLongPress == null
+              ? null
+              : (details) => onLongPress!(app, details.globalPosition),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -528,19 +550,20 @@ class _FolderPanel extends StatelessWidget {
                     itemCount: folder.apps.length,
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 4,
-                      mainAxisSpacing: 16,
-                      crossAxisSpacing: 12,
-                      childAspectRatio: 0.78,
-                    ),
-                    itemBuilder: (context, i) => _AppTile(
-                      app: folder.apps[i],
-                      onLongPress: onLongPress,
-                      onTap: (app) {
-                        Navigator.of(context).pop();
-                        onLaunch(app);
-                      },
-                    ),
+                          crossAxisCount: 4,
+                          mainAxisSpacing: 16,
+                          crossAxisSpacing: 12,
+                          childAspectRatio: 0.78,
+                        ),
+                    itemBuilder:
+                        (context, i) => _AppTile(
+                          app: folder.apps[i],
+                          onLongPress: onLongPress,
+                          onTap: (app) {
+                            Navigator.of(context).pop();
+                            onLaunch(app);
+                          },
+                        ),
                   ),
                 ),
               ],

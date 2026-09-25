@@ -2,6 +2,10 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Discover RSS feed fetching -->
+    <!-- Google advertising ID. Required from Android 13 for the mediation
+         SDKs to read it, and for a developer phone to be registered as an ad
+         test device. -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID"/>
     <uses-permission android:name="android.permission.INTERNET"/>
 
     <!-- Good Morning weather card: device location for Open-Meteo lookup.
@@ -95,10 +99,11 @@
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round">
 
-        <!-- Test-only AdMob App ID. Replace with this app's real App ID before release ads. -->
+        <!-- Real AdMob App ID. Required because Yodo1 MAS bundles the AdMob
+             adapter: the Google SDK aborts at startup without it. -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-3940256099942544~3347511713"
+            android:value="ca-app-pub-5784311004955543~6016919408"
             tools:replace="android:value"/>
 
         <activity

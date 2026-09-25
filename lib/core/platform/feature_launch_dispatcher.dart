@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:smart_launcher_app/core/ads/launcher_ads.dart';
 import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/models/app_info.dart';
 import 'package:smart_launcher_app/core/models/launcher_feature.dart';
@@ -103,6 +106,9 @@ class FeatureLaunchDispatcher {
     // each feature's internal lock-screen structure. Replay resumes on pop.
     final miniApp = _miniAppIdFor(featureId);
     if (miniApp != null) AppAnalytics.miniAppOpened(miniApp);
+    // Ads live inside mini-apps only — never in front of the home screen or
+    // the drawer. Not awaited: the screen the user tapped comes first.
+    unawaited(LauncherAds.onMiniAppOpened(featureId));
 
     final future = Navigator.push(
       context,
@@ -121,8 +127,9 @@ class FeatureLaunchDispatcher {
       ),
     );
 
-    if (miniApp != null) {
-      future.whenComplete(() => AppAnalytics.miniAppClosed(miniApp));
-    }
+    future.whenComplete(() {
+      LauncherAds.onMiniAppClosed();
+      if (miniApp != null) AppAnalytics.miniAppClosed(miniApp);
+    });
   }
 }

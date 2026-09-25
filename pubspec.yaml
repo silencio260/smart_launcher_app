@@ -31,10 +31,8 @@ dependencies:
     path: packages/genrevibes_starter_kit/modules/storage/genrevibes_storage_shared_preferences
   genrevibes_ads:
     path: packages/genrevibes_starter_kit/modules/ads/genrevibes_ads
-  genrevibes_ads_admob:
-    path: packages/genrevibes_starter_kit/modules/ads/genrevibes_ads_admob
-  genrevibes_ads_admob_ui:
-    path: packages/genrevibes_starter_kit/modules/ads/genrevibes_ads_admob_ui
+  genrevibes_ads_yodo1:
+    path: packages/genrevibes_starter_kit/modules/ads/genrevibes_ads_yodo1
   genrevibes_crash:
     path: packages/genrevibes_starter_kit/modules/crash/genrevibes_crash
   genrevibes_crash_crashlytics:
@@ -104,8 +102,6 @@ dependencies:
 dependency_overrides:
   genrevibes_ads:
     path: packages/genrevibes_starter_kit/modules/ads/genrevibes_ads
-  genrevibes_ads_admob:
-    path: packages/genrevibes_starter_kit/modules/ads/genrevibes_ads_admob
   genrevibes_analytics:
     path: packages/genrevibes_starter_kit/modules/analytics/genrevibes_analytics
   genrevibes_app_links:

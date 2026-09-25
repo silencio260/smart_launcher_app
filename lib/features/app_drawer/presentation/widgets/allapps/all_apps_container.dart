@@ -68,7 +68,8 @@ class _AllAppsContainerState extends State<AllAppsContainer>
       begin: const Offset(0, 1),
       end: Offset.zero,
     ).animate(
-        CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic));
+      CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic),
+    );
     _animController.forward();
   }
 
@@ -181,10 +182,12 @@ class _AllAppsContainerState extends State<AllAppsContainer>
       children: [
         Container(
           height: screenH,
-          color: widget.settings.drawerShowBackground
-              ? widget.settings.drawerBackgroundColor
-                  .withValues(alpha: widget.settings.drawerBackgroundOpacity)
-              : Colors.transparent,
+          color:
+              widget.settings.drawerShowBackground
+                  ? widget.settings.drawerBackgroundColor.withValues(
+                    alpha: widget.settings.drawerBackgroundOpacity,
+                  )
+                  : Colors.transparent,
           child: Column(
             children: [
               SizedBox(height: MediaQuery.of(context).padding.top + 16),
@@ -244,25 +247,24 @@ class _AllAppsContainerState extends State<AllAppsContainer>
         label: 'Hide app',
         onTap: () {
           _dismissMenu();
-          final hidden = widget.settings.hiddenApps.toSet()
-            ..add(app.launcherKey);
+          final hidden =
+              widget.settings.hiddenApps.toSet()..add(app.launcherKey);
           context.read<SettingsCubit>().update(
-                widget.settings.copyWith(hiddenApps: hidden.toList()..sort()),
-              );
+            widget.settings.copyWith(hiddenApps: hidden.toList()..sort()),
+          );
         },
       ),
       if (!app.isInternalFeature)
         AppMenuAction(
-          icon: _isLocked(app)
-              ? Icons.lock_open_outlined
-              : Icons.lock_outline,
+          icon: _isLocked(app) ? Icons.lock_open_outlined : Icons.lock_outline,
           label: _isLocked(app) ? 'Unlock app' : 'Lock app',
           onTap: () {
             final locked = _isLocked(app);
             _dismissMenu();
-            context
-                .read<LauncherFeatureSettingsCubit>()
-                .setAppLocked(app.packageName, !locked);
+            context.read<LauncherFeatureSettingsCubit>().setAppLocked(
+              app.packageName,
+              !locked,
+            );
           },
         ),
     ];
@@ -273,7 +275,8 @@ class _AllAppsContainerState extends State<AllAppsContainer>
     final x = (_menuPos.dx - menuW / 2).clamp(8.0, screenW - menuW - 8);
     // _menuPos.dy is the bottom edge of the icon; prefer showing below
     final belowY = _menuPos.dy + gap;
-    final approxIconH = widget.settings.drawerIconSize +
+    final approxIconH =
+        widget.settings.drawerIconSize +
         (widget.settings.showDrawerLabels ? 20.0 : 0.0) +
         8.0;
     final aboveY = _menuPos.dy - approxIconH - menuH - gap;
@@ -303,15 +306,18 @@ class _AllAppsContainerState extends State<AllAppsContainer>
           buildWhen: (prev, next) => !identical(prev.apps, next.apps),
           builder: (context, appsState) {
             final hidden = widget.settings.hiddenApps.toSet();
-            final displayApps = searchState.query.isEmpty
-                ? _visibleApps(appsState.apps, hidden)
-                : context
-                    .read<AppsCubit>()
-                    .searchApps(searchState.query)
-                    .where((a) =>
-                        !hidden.contains(a.launcherKey) &&
-                        !hidden.contains(a.packageName))
-                    .toList(growable: false);
+            final displayApps =
+                searchState.query.isEmpty
+                    ? _visibleApps(appsState.apps, hidden)
+                    : context
+                        .read<AppsCubit>()
+                        .searchApps(searchState.query)
+                        .where(
+                          (a) =>
+                              !hidden.contains(a.launcherKey) &&
+                              !hidden.contains(a.packageName),
+                        )
+                        .toList(growable: false);
             return _buildRecycler(displayApps);
           },
         );
@@ -330,13 +336,16 @@ class _AllAppsContainerState extends State<AllAppsContainer>
         _setsEqual(_visibleCacheHidden!, hidden)) {
       return _visibleCache!;
     }
-    final result = hidden.isEmpty
-        ? source
-        : source
-            .where((a) =>
-                !hidden.contains(a.launcherKey) &&
-                !hidden.contains(a.packageName))
-            .toList(growable: false);
+    final result =
+        hidden.isEmpty
+            ? source
+            : source
+                .where(
+                  (a) =>
+                      !hidden.contains(a.launcherKey) &&
+                      !hidden.contains(a.packageName),
+                )
+                .toList(growable: false);
     _visibleCacheSource = source;
     _visibleCache = result;
     _visibleCacheHidden = hidden;
@@ -354,6 +363,7 @@ class _AllAppsContainerState extends State<AllAppsContainer>
   Widget _buildRecycler(List<AppInfo> displayApps) {
     return AllAppsRecycler(
       apps: displayApps,
+      showNativeAd: context.read<SearchCubit>().state.query.isEmpty,
       settings: widget.settings,
       dragController: widget.dragController,
       onAppTap: widget.onAppTap,
@@ -411,8 +421,11 @@ class _SearchRow extends StatelessWidget {
                 color: Colors.white.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.keyboard_arrow_down,
-                  color: Colors.white70, size: 24),
+              child: const Icon(
+                Icons.keyboard_arrow_down,
+                color: Colors.white70,
+                size: 24,
+              ),
             ),
           ),
         ],

@@ -47,6 +47,12 @@ class AppEnv {
   static const String rewardedAdId = String.fromEnvironment('rewarded_ad_id');
   static const String nativeAdId = String.fromEnvironment('native_ad_id');
 
+  // --- Ads (Yodo1 MAS mediation) ---
+
+  /// App key from the Yodo1 MAS dashboard. Empty leaves ads unconfigured, so
+  /// the provider never starts and nothing is requested.
+  static const String yodo1AppKey = String.fromEnvironment('yodo1_app_key');
+
   // --- Third-party services ---
 
   static const String oneSignalAppId =
@@ -90,8 +96,12 @@ class AppEnv {
     'developer_device_hashes',
   );
 
-  /// Development-only simulation of an unlisted store build, so the hidden
-  /// unlock gesture can be exercised on a dev device.
+  /// Development-only simulation of an unlisted store build.
+  ///
+  /// Leave this false: a development build then grants developer access
+  /// automatically, so Developer Options and Kit Lab are simply there. Set it
+  /// true only to rehearse what a real user sees — the automatic grant is
+  /// withheld and access needs the 7-tap unlock and the passcode.
   static const bool developerAccessStoreBuild = bool.fromEnvironment(
     'developer_access_store_build',
     defaultValue: false,
