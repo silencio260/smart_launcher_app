@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -8,95 +9,102 @@ import 'package:path_provider/path_provider.dart';
 import 'package:smart_launcher_app/core/models/wallpaper_item.dart';
 
 class WallpaperService {
-  static const _channel =
-      MethodChannel('com.genrevibes.smartlauncher/wallpaper');
+  static const _channel = MethodChannel(
+    'com.genrevibes.smartlauncher/wallpaper',
+  );
   static const iosTemplateWallpaperAsset =
       'assets/ios_theme/wallpaper/ios_default.webp';
-  static const storeUrl =
-      'https://raw.githubusercontent.com/code3-dev/code3-dev/refs/heads/main/pc.json';
+  static const sandboxUrl =
+      'https://nexwall.kodnextech.com/wallpaper-api/sandbox';
 
-  static const fallbackUrls = <String>[
-    'https://raw.githubusercontent.com/code3-dev/code3-dev/refs/heads/main/data/m1.jpg',
-    'https://raw.githubusercontent.com/code3-dev/code3-dev/refs/heads/main/data/m2.jpg',
-    'https://raw.githubusercontent.com/code3-dev/code3-dev/refs/heads/main/data/m3.jpg',
-    'https://raw.githubusercontent.com/code3-dev/code3-dev/refs/heads/main/data/m4.jpg',
-    'https://raw.githubusercontent.com/code3-dev/code3-dev/refs/heads/main/data/m5.jpg',
-    'https://raw.githubusercontent.com/code3-dev/code3-dev/refs/heads/main/data/m6.jpg',
-    'https://raw.githubusercontent.com/code3-dev/code3-dev/refs/heads/main/data/public.gif',
-  ];
-
-  static Future<List<WallpaperItem>> fetchStore() async {
+  /// Uses NexWall's public sandbox, not its authenticated production API.
+  static Future<WallpaperPage> fetchPage({int page = 1}) async {
+    final uri = Uri.parse(sandboxUrl).replace(
+      queryParameters: {
+        'endpoint': 'wallpapers',
+        'type': 'image',
+        'per_page': '10',
+        'page': '$page',
+      },
+    );
+    final client =
+        HttpClient()..connectionTimeout = const Duration(seconds: 15);
     try {
-      final request = await HttpClient().getUrl(Uri.parse(storeUrl));
-      final response = await request.close().timeout(
-            const Duration(seconds: 30),
+      return await (() async {
+        final request = await client.getUrl(uri);
+        request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+        final response = await request.close();
+        final limit = response.headers.value('x-ratelimit-limit');
+        final remaining = response.headers.value('x-ratelimit-remaining');
+        final retryAfter = response.headers.value('retry-after');
+        if (kDebugMode) {
+          debugPrint(
+            '[Wallpaper] page=$page HTTP ${response.statusCode} '
+            'limit=$limit remaining=$remaining retryAfter=$retryAfter',
           );
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw HttpException('Wallpaper store failed: ${response.statusCode}');
+        }
+        if (response.statusCode == 429) {
+          final seconds = int.tryParse(retryAfter ?? '');
+          throw WallpaperRequestException(
+            seconds != null && seconds > 0
+                ? 'Wallpaper request limit reached. Try again in $seconds seconds.'
+                : 'Wallpaper request limit reached. Please wait before retrying.',
+          );
+        }
+        if (response.statusCode != HttpStatus.ok) {
+          throw WallpaperRequestException(
+            'Wallpaper service returned HTTP ${response.statusCode}. Please try again later.',
+          );
+        }
+        final data =
+            jsonDecode(await response.transform(utf8.decoder).join())
+                as Map<String, dynamic>;
+        if (data['status'] != 'success' || data['data'] is! List) {
+          throw const FormatException('Invalid wallpaper response');
+        }
+        final items = (data['data'] as List)
+            .cast<Map<String, dynamic>>()
+            .where((item) => item['type'] == 'image')
+            .map(WallpaperItem.fromNexWall)
+            .toList(growable: false);
+        return WallpaperPage(
+          items: items,
+          currentPage: (data['current_page'] as num).toInt(),
+          lastPage: (data['last_page'] as num).toInt(),
+        );
+      })().timeout(const Duration(seconds: 30));
+    } on TimeoutException catch (error, stack) {
+      if (kDebugMode) {
+        debugPrint('[Wallpaper] $error');
+        debugPrintStack(stackTrace: stack);
       }
-      final text = await response.transform(utf8.decoder).join();
-      final data = jsonDecode(text) as List<dynamic>;
-      return _withBundledWallpapers(
-          _itemsFromUrls(data.map((item) => item.toString()).toList()));
-    } catch (_) {
-      return _withBundledWallpapers(_itemsFromUrls(fallbackUrls));
-    }
-  }
-
-  static List<WallpaperItem> _withBundledWallpapers(
-    List<WallpaperItem> wallpapers,
-  ) {
-    return [
-      const WallpaperItem(
-        id: 'ios_template_default',
-        title: 'iOS Template',
-        collection: 'Bundled',
-        imageUrl: '',
-        thumbnailUrl: '',
-        assetPath: iosTemplateWallpaperAsset,
-      ),
-      ...wallpapers,
-    ];
-  }
-
-  static List<WallpaperItem> _itemsFromUrls(List<String> urls) {
-    return urls
-        .where((url) => url.startsWith('http://') || url.startsWith('https://'))
-        .map((url) {
-      final uri = Uri.parse(url);
-      final fileName = uri.pathSegments.isEmpty
-          ? 'wallpaper'
-          : uri.pathSegments.last.split('?').first;
-      final title = _titleFromFileName(fileName);
-      final ext = _extension(fileName);
-      return WallpaperItem(
-        id: fileName.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_'),
-        title: title,
-        collection: ext == 'gif' ? 'Live' : 'ProxyCloud',
-        imageUrl: url,
-        thumbnailUrl: url,
-        isLive: ext == 'gif',
+      throw const WallpaperRequestException(
+        'The wallpaper request timed out. Check your connection and retry.',
       );
-    }).toList(growable: false);
+    } on SocketException catch (error, stack) {
+      if (kDebugMode) {
+        debugPrint('[Wallpaper] $error');
+        debugPrintStack(stackTrace: stack);
+      }
+      throw const WallpaperRequestException(
+        'Cannot connect to the wallpaper service. Check your internet connection and retry.',
+      );
+    } on HandshakeException catch (error, stack) {
+      if (kDebugMode) {
+        debugPrint('[Wallpaper] $error');
+        debugPrintStack(stackTrace: stack);
+      }
+      throw const WallpaperRequestException(
+        'Could not establish a secure connection to the wallpaper service.',
+      );
+    } finally {
+      client.close(force: true);
+    }
   }
 
   static String _extension(String fileName) {
     final parts = fileName.toLowerCase().split('.');
     return parts.length < 2 ? '' : parts.last;
-  }
-
-  static String _titleFromFileName(String fileName) {
-    final name = fileName
-        .replaceAll(RegExp(r'\.[A-Za-z0-9]+$'), '')
-        .replaceAll('_upscaled', '')
-        .replaceAll(RegExp(r'[_-]+'), ' ')
-        .trim();
-    if (name.isEmpty) return 'Wallpaper';
-    return name
-        .split(' ')
-        .where((part) => part.isNotEmpty)
-        .map((part) => part[0].toUpperCase() + part.substring(1))
-        .join(' ');
   }
 
   static Future<String> download(WallpaperItem item) async {
@@ -115,21 +123,40 @@ class WallpaperService {
     final file = File('${dir.path}/${item.id}.${ext.isEmpty ? 'jpg' : ext}');
     if (await file.exists()) return file.path;
 
-    final request = await HttpClient().getUrl(Uri.parse(item.imageUrl));
-    final response = await request.close();
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw HttpException('Wallpaper download failed: ${response.statusCode}');
+    final client =
+        HttpClient()..connectionTimeout = const Duration(seconds: 15);
+    final temporaryFile = File('${file.path}.part');
+    try {
+      final bytes = await (() async {
+        final request = await client.getUrl(Uri.parse(item.imageUrl));
+        final response = await request.close();
+        if (response.statusCode != HttpStatus.ok) {
+          throw HttpException(
+            'Wallpaper download failed: ${response.statusCode}',
+          );
+        }
+        final contentType = response.headers.contentType?.mimeType ?? '';
+        if (!contentType.startsWith('image/')) {
+          throw const FormatException('The download is not an image');
+        }
+        return consolidateHttpClientResponseBytes(response);
+      })().timeout(const Duration(seconds: 60));
+      if (bytes.isEmpty) {
+        throw const FormatException('Empty wallpaper download');
+      }
+      await temporaryFile.writeAsBytes(bytes, flush: true);
+      await temporaryFile.rename(file.path);
+      return file.path;
+    } finally {
+      client.close(force: true);
+      if (await temporaryFile.exists()) await temporaryFile.delete();
     }
-    final bytes = await consolidateHttpClientResponseBytes(response);
-    await file.writeAsBytes(bytes, flush: true);
-    return file.path;
   }
 
   static Future<bool> applyFile(String path) async {
-    final result = await _channel.invokeMethod<bool>(
-      'setWallpaperFromFile',
-      {'path': path},
-    );
+    final result = await _channel.invokeMethod<bool>('setWallpaperFromFile', {
+      'path': path,
+    });
     if (result ?? false) invalidateSystemWallpaperCache();
     return result ?? false;
   }
@@ -179,4 +206,13 @@ class WallpaperService {
     if (!await dir.exists()) await dir.create(recursive: true);
     return dir;
   }
+}
+
+class WallpaperRequestException implements Exception {
+  final String message;
+
+  const WallpaperRequestException(this.message);
+
+  @override
+  String toString() => message;
 }

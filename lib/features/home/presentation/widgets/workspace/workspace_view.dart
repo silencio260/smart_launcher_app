@@ -83,6 +83,7 @@ class _WorkspaceViewState extends State<WorkspaceView> {
   static const double _verticalPadding = 8;
 
   late PageController _controller;
+  double? _dragOrigin;
   final GlobalKey _pageViewKey = GlobalKey();
   DateTime _lastOffsetSentAt = DateTime.fromMillisecondsSinceEpoch(0);
   double _lastOffsetSent = -1;
@@ -350,47 +351,71 @@ class _WorkspaceViewState extends State<WorkspaceView> {
         return ValueListenableBuilder<bool>(
           valueListenable: WidgetResizeGestureGuard.isResizingNotifier,
           builder: (context, isResizing, _) {
-            return PageView.builder(
-              key: _pageViewKey,
-              controller: _controller,
-              // Keeps adjacent pages alive across swipes so their AndroidView
-              // widget hosts don't tear down/re-attach on every page change.
-              allowImplicitScrolling: true,
-              physics: isResizing
-                  ? const NeverScrollableScrollPhysics()
-                  : const BouncingScrollPhysics(),
-              onPageChanged: (i) {
-                if (_effectiveInfinite) {
-                  context
-                      .read<WorkspaceCubit>()
-                      .setCurrentPage(i % state.pages.length);
-                  widget.onSectionSettled?.call(HomeSection.home);
-                  return;
+            return NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                if (notification.depth != 0) return false;
+                if (notification is ScrollStartNotification &&
+                    notification.dragDetails != null) {
+                  // Use the same origin in both directions, including when a
+                  // new swipe interrupts an unfinished snap animation.
+                  _dragOrigin = _controller.page?.roundToDouble();
+                } else if (notification is ScrollEndNotification) {
+                  _dragOrigin = null;
                 }
-                final section = layout.sectionFor(i);
-                if (section == HomeSection.home) {
-                  context
-                      .read<WorkspaceCubit>()
-                      .setCurrentPage(layout.homeIndexFor(i));
-                }
-                widget.onSectionSettled?.call(section);
+                return false;
               },
-              itemCount: _effectiveInfinite ? null : layout.itemCount,
-              itemBuilder: (context, rawIndex) {
-                if (_effectiveInfinite) {
-                  final i = rawIndex % state.pages.length;
-                  return _buildHomePage(context, state, i);
-                }
-                switch (layout.sectionFor(rawIndex)) {
-                  case HomeSection.discover:
-                    return widget.discoverBuilder!(context);
-                  case HomeSection.library:
-                    return widget.libraryBuilder!(context);
-                  case HomeSection.home:
-                    return _buildHomePage(
-                        context, state, layout.homeIndexFor(rawIndex));
-                }
-              },
+              child: PageView.builder(
+                key: _pageViewKey,
+                controller: _controller,
+                // Keeps adjacent pages alive across swipes so their AndroidView
+                // widget hosts don't tear down/re-attach on every page change.
+                allowImplicitScrolling: true,
+                // Let our distance threshold decide the destination instead of
+                // Flutter's default halfway/last-release-direction rule.
+                pageSnapping: false,
+                physics:
+                    isResizing
+                        ? const NeverScrollableScrollPhysics()
+                        : _WorkspacePagePhysics(
+                          dragOrigin: () => _dragOrigin,
+                          parent: const BouncingScrollPhysics(),
+                        ),
+                onPageChanged: (i) {
+                  if (_effectiveInfinite) {
+                    context.read<WorkspaceCubit>().setCurrentPage(
+                      i % state.pages.length,
+                    );
+                    widget.onSectionSettled?.call(HomeSection.home);
+                    return;
+                  }
+                  final section = layout.sectionFor(i);
+                  if (section == HomeSection.home) {
+                    context.read<WorkspaceCubit>().setCurrentPage(
+                      layout.homeIndexFor(i),
+                    );
+                  }
+                  widget.onSectionSettled?.call(section);
+                },
+                itemCount: _effectiveInfinite ? null : layout.itemCount,
+                itemBuilder: (context, rawIndex) {
+                  if (_effectiveInfinite) {
+                    final i = rawIndex % state.pages.length;
+                    return _buildHomePage(context, state, i);
+                  }
+                  switch (layout.sectionFor(rawIndex)) {
+                    case HomeSection.discover:
+                      return widget.discoverBuilder!(context);
+                    case HomeSection.library:
+                      return widget.libraryBuilder!(context);
+                    case HomeSection.home:
+                      return _buildHomePage(
+                        context,
+                        state,
+                        layout.homeIndexFor(rawIndex),
+                      );
+                  }
+                },
+              ),
             );
           },
         );
@@ -419,6 +444,57 @@ class _WorkspaceViewState extends State<WorkspaceView> {
         bottom: widget.homeBottomInset,
       ),
       child: cell,
+    );
+  }
+}
+
+/// A deliberate drag commits after one fifth of a page. Release velocity can
+/// assist shorter flicks, but cannot undo that distance with a small reversal.
+class _WorkspacePagePhysics extends PageScrollPhysics {
+  const _WorkspacePagePhysics({required this.dragOrigin, super.parent});
+
+  final double? Function() dragOrigin;
+  static const double _commitFraction = 0.2;
+
+  @override
+  _WorkspacePagePhysics applyTo(ScrollPhysics? ancestor) =>
+      _WorkspacePagePhysics(
+        dragOrigin: dragOrigin,
+        parent: buildParent(ancestor),
+      );
+
+  @override
+  Simulation? createBallisticSimulation(
+    ScrollMetrics position,
+    double velocity,
+  ) {
+    final origin = dragOrigin();
+    if (origin == null ||
+        position.viewportDimension <= 0 ||
+        (velocity <= 0 && position.pixels <= position.minScrollExtent) ||
+        (velocity >= 0 && position.pixels >= position.maxScrollExtent)) {
+      return super.createBallisticSimulation(position, velocity);
+    }
+
+    final travel = position.pixels / position.viewportDimension - origin;
+    double targetPage = origin;
+    if (travel.abs() >= _commitFraction) {
+      targetPage += travel.sign;
+    } else if (velocity.abs() >= minFlingVelocity) {
+      targetPage += velocity.sign;
+    }
+    final target = (targetPage * position.viewportDimension).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    final tolerance = toleranceFor(position);
+    if ((target - position.pixels).abs() < tolerance.distance) return null;
+    return ScrollSpringSimulation(
+      spring,
+      position.pixels,
+      target,
+      velocity,
+      tolerance: tolerance,
     );
   }
 }

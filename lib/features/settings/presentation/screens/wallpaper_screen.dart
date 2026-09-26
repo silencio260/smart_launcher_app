@@ -1,14 +1,13 @@
 import 'dart:io';
-import 'dart:typed_data';
 
-// ProxyCloud wallpaper store is disabled — these are only used by the
-// commented-out remote listing below.
-// import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:smart_launcher_app/core/models/launcher_settings.dart';
-// import 'package:smart_launcher_app/core/models/wallpaper_item.dart';
+import 'package:smart_launcher_app/core/models/wallpaper_item.dart';
 import 'package:smart_launcher_app/core/services/wallpaper_service.dart';
 import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
 
@@ -21,14 +20,51 @@ class WallpaperScreen extends StatefulWidget {
 
 class _WallpaperScreenState extends State<WallpaperScreen> {
   Future<Uint8List?>? _currentWallpaper;
-  // ProxyCloud wallpaper store fetching is disabled.
-  // late Future<List<WallpaperItem>> _store;
+  final List<WallpaperItem> _wallpapers = [];
+  int _page = 0;
+  bool _hasMore = true;
+  bool _loading = false;
+  String? _loadError;
+
+  Future<void> _loadMore() async {
+    if (_loading || !_hasMore) return;
+    setState(() {
+      _loading = true;
+      _loadError = null;
+    });
+    try {
+      final result = await WallpaperService.fetchPage(page: _page + 1);
+      if (!mounted) return;
+      setState(() {
+        final knownIds = _wallpapers.map((item) => item.id).toSet();
+        _wallpapers.addAll(result.items.where((item) => knownIds.add(item.id)));
+        _page = result.currentPage;
+        _hasMore = result.hasMore;
+      });
+    } catch (error, stack) {
+      if (kDebugMode) {
+        debugPrint('[Wallpaper] page=${_page + 1} failed: $error');
+        debugPrintStack(stackTrace: stack);
+      }
+      if (mounted) {
+        setState(
+          () =>
+              _loadError =
+                  error is WallpaperRequestException
+                      ? error.message
+                      : 'The wallpaper service returned an unexpected response. Please retry.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _currentWallpaper = WallpaperService.currentSystemWallpaper();
-    // _store = WallpaperService.fetchStore();
+    _loadMore();
   }
 
   @override
@@ -37,9 +73,6 @@ class _WallpaperScreenState extends State<WallpaperScreen> {
       appBar: AppBar(title: const Text('Wallpaper')),
       body: BlocBuilder<SettingsCubit, LauncherSettings>(
         builder: (context, settings) {
-          // ProxyCloud wallpaper fetching is disabled. Only the current
-          // wallpaper card + the system picker remain; the remote ProxyCloud
-          // store listing below is commented out.
           return CustomScrollView(
             slivers: [
               SliverPadding(
@@ -49,65 +82,87 @@ class _WallpaperScreenState extends State<WallpaperScreen> {
                     settings: settings,
                     currentWallpaper: _currentWallpaper,
                     onSystemPicker: () => WallpaperService.openSystemPicker(),
-                    onReset: settings.customWallpaperPath.isEmpty
-                        ? null
-                        : () => context.read<SettingsCubit>().update(
+                    onReset:
+                        settings.customWallpaperPath.isEmpty
+                            ? null
+                            : () => context.read<SettingsCubit>().update(
                               settings.copyWith(customWallpaperPath: ''),
                             ),
                   ),
                 ),
               ),
-              // --- ProxyCloud wallpapers (disabled) ---
-              // const SliverPadding(
-              //   padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
-              //   sliver: SliverToBoxAdapter(
-              //     child: Text(
-              //       'ProxyCloud wallpapers',
-              //       style: TextStyle(fontWeight: FontWeight.w700),
-              //     ),
-              //   ),
-              // ),
-              // if (wallpapers == null)
-              //   const SliverFillRemaining(
-              //     hasScrollBody: false,
-              //     child: Center(child: CircularProgressIndicator()),
-              //   )
-              // else if (wallpapers.isEmpty)
-              //   const SliverFillRemaining(
-              //     hasScrollBody: false,
-              //     child: Center(child: Text('No wallpapers available')),
-              //   )
-              // else
-              //   SliverPadding(
-              //     padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-              //     sliver: SliverGrid(
-              //       gridDelegate:
-              //           const SliverGridDelegateWithFixedCrossAxisCount(
-              //         crossAxisCount: 2,
-              //         mainAxisSpacing: 12,
-              //         crossAxisSpacing: 12,
-              //         childAspectRatio: 0.72,
-              //       ),
-              //       delegate: SliverChildBuilderDelegate(
-              //         (context, index) {
-              //           final item = wallpapers[index];
-              //           return _WallpaperTile(
-              //             item: item,
-              //             onTap: () => Navigator.push(
-              //               context,
-              //               MaterialPageRoute(
-              //                 builder: (_) => BlocProvider.value(
-              //                   value: context.read<SettingsCubit>(),
-              //                   child: _WallpaperPreviewScreen(item: item),
-              //                 ),
-              //               ),
-              //             ),
-              //           );
-              //         },
-              //         childCount: wallpapers.length,
-              //       ),
-              //     ),
-              //   ),
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(16, 4, 16, 16),
+                  child: Text('NexWall wallpapers · Sandbox preview'),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 0.62,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => _WallpaperTile(
+                      item: _wallpapers[index],
+                      onTap:
+                          () => Navigator.push(
+                            context,
+                            MaterialPageRoute<void>(
+                              builder:
+                                  (_) => BlocProvider.value(
+                                    value: context.read<SettingsCubit>(),
+                                    child: _WallpaperPreviewScreen(
+                                      item: _wallpapers[index],
+                                    ),
+                                  ),
+                            ),
+                          ),
+                    ),
+                    childCount: _wallpapers.length,
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Center(
+                      child:
+                          _loading
+                              ? const CircularProgressIndicator()
+                              : _loadError != null
+                              ? Column(
+                                children: [
+                                  Text(
+                                    _loadError!,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  TextButton(
+                                    onPressed: _loadMore,
+                                    child: const Text('Retry'),
+                                  ),
+                                ],
+                              )
+                              : _hasMore
+                              ? OutlinedButton(
+                                onPressed: _loadMore,
+                                child: const Text('Load more'),
+                              )
+                              : Text(
+                                _wallpapers.isEmpty
+                                    ? 'No wallpapers available'
+                                    : 'All wallpapers loaded',
+                              ),
+                    ),
+                  ),
+                ),
+              ),
             ],
           );
         },
@@ -132,18 +187,14 @@ class _CurrentWallpaperCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Theme.of(context)
-          .colorScheme
-          .surfaceContainerHighest
-          .withValues(alpha: 0.36),
+      color: Theme.of(
+        context,
+      ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.36),
       borderRadius: BorderRadius.circular(8),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          AspectRatio(
-            aspectRatio: 16 / 9,
-            child: _preview(),
-          ),
+          AspectRatio(aspectRatio: 16 / 9, child: _preview()),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
             child: Row(
@@ -197,8 +248,6 @@ class _CurrentWallpaperCard extends StatelessWidget {
   }
 }
 
-// --- ProxyCloud wallpaper tiles / preview / image (disabled) ---
-/*
 class _WallpaperTile extends StatelessWidget {
   final WallpaperItem item;
   final VoidCallback onTap;
@@ -220,26 +269,29 @@ class _WallpaperTile extends StatelessWidget {
             Positioned(
               top: 8,
               right: 8,
-              child: item.isLive
-                  ? DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.68),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: const Padding(
-                        padding:
-                            EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        child: Text(
-                          'Live',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
+              child:
+                  item.isLive
+                      ? DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.68),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          child: Text(
+                            'Live',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
-                      ),
-                    )
-                  : const SizedBox.shrink(),
+                      )
+                      : const SizedBox.shrink(),
             ),
             Positioned(
               left: 0,
@@ -305,26 +357,30 @@ class _WallpaperPreviewScreenState extends State<_WallpaperPreviewScreen> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       final path = await WallpaperService.download(widget.item);
+      if (!mounted) return;
       if (deviceWallpaper) {
         final ok = await WallpaperService.applyFile(path);
         if (!ok) throw Exception('Could not apply wallpaper');
       }
       if (!mounted) return;
-      context.read<SettingsCubit>().update(
-            context
-                .read<SettingsCubit>()
-                .state
-                .copyWith(customWallpaperPath: path),
-          );
+      await context.read<SettingsCubit>().update(
+        context.read<SettingsCubit>().state.copyWith(customWallpaperPath: path),
+      );
+      if (!mounted) return;
       messenger
         ..removeCurrentSnackBar()
-        ..showSnackBar(SnackBar(
-          content: Text(deviceWallpaper
-              ? 'Device wallpaper applied.'
-              : 'Theme wallpaper saved.'),
-        ));
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              deviceWallpaper
+                  ? 'Device wallpaper applied.'
+                  : 'Theme wallpaper saved.',
+            ),
+          ),
+        );
       if (mounted) Navigator.pop(context);
     } catch (error) {
+      if (!mounted) return;
       messenger
         ..removeCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text('Wallpaper failed: $error')));
@@ -347,6 +403,7 @@ class _WallpaperPreviewScreenState extends State<_WallpaperPreviewScreen> {
         children: [
           _WallpaperImage(
             item: widget.item,
+            fullResolution: true,
             loadingColor: Colors.white,
             brokenColor: Colors.white70,
           ),
@@ -365,24 +422,25 @@ class _WallpaperPreviewScreenState extends State<_WallpaperPreviewScreen> {
                     onPressed:
                         _busy ? null : () => _save(deviceWallpaper: false),
                     icon: const Icon(Icons.download_rounded),
-                    label:
-                        Text(widget.item.isLive ? 'Live theme' : 'Theme wall'),
+                    label: const Text('Use in launcher'),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: _busy || widget.item.isLive
-                        ? null
-                        : () => _save(deviceWallpaper: true),
-                    icon: _busy
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.check_rounded),
-                    label: Text(widget.item.isLive ? 'Theme only' : 'Device'),
+                    onPressed:
+                        _busy || widget.item.isLive
+                            ? null
+                            : () => _save(deviceWallpaper: true),
+                    icon:
+                        _busy
+                            ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Icon(Icons.check_rounded),
+                    label: const Text('Set wallpaper'),
                   ),
                 ),
               ],
@@ -396,11 +454,13 @@ class _WallpaperPreviewScreenState extends State<_WallpaperPreviewScreen> {
 
 class _WallpaperImage extends StatelessWidget {
   final WallpaperItem item;
+  final bool fullResolution;
   final Color? loadingColor;
   final Color? brokenColor;
 
   const _WallpaperImage({
     required this.item,
+    this.fullResolution = false,
     this.loadingColor,
     this.brokenColor,
   });
@@ -411,27 +471,24 @@ class _WallpaperImage extends StatelessWidget {
       return Image.asset(
         item.assetPath,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => Icon(
-          Icons.broken_image,
-          color: brokenColor,
-        ),
+        errorBuilder:
+            (_, __, ___) => Icon(Icons.broken_image, color: brokenColor),
       );
     }
     return CachedNetworkImage(
       imageUrl:
-          item.thumbnailUrl.isNotEmpty ? item.thumbnailUrl : item.imageUrl,
+          !fullResolution && item.thumbnailUrl.isNotEmpty
+              ? item.thumbnailUrl
+              : item.imageUrl,
       fit: BoxFit.cover,
-      placeholder: (_, __) => Center(
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          color: loadingColor,
-        ),
-      ),
-      errorWidget: (_, __, ___) => Icon(
-        Icons.broken_image,
-        color: brokenColor,
-      ),
+      placeholder:
+          (_, __) => Center(
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: loadingColor,
+            ),
+          ),
+      errorWidget: (_, __, ___) => Icon(Icons.broken_image, color: brokenColor),
     );
   }
 }
-*/
