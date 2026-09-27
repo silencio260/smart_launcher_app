@@ -98,7 +98,10 @@ Future<void> _followPhoneWallpaper(SettingsCubit cubit) {
 }
 
 class WallpaperScreen extends StatefulWidget {
-  const WallpaperScreen({super.key});
+  const WallpaperScreen({super.key, this.embedded = false});
+
+  /// Hosted inside another screen (onboarding), which supplies the title.
+  final bool embedded;
 
   @override
   State<WallpaperScreen> createState() => _WallpaperScreenState();
@@ -224,7 +227,8 @@ class _WallpaperScreenState extends State<WallpaperScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Wallpaper')),
+      backgroundColor: widget.embedded ? Colors.transparent : null,
+      appBar: widget.embedded ? null : AppBar(title: const Text('Wallpaper')),
       body: BlocBuilder<SettingsCubit, LauncherSettings>(
         builder: (context, settings) {
           return CustomScrollView(

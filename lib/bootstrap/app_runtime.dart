@@ -34,6 +34,7 @@ import 'package:smart_launcher_app/bootstrap/debug_kit_logger.dart';
 import 'package:smart_launcher_app/core/ads/launcher_ads.dart';
 import 'package:smart_launcher_app/core/analytics/analytics_config.dart';
 import 'package:smart_launcher_app/core/config/app_env.dart';
+import 'package:smart_launcher_app/core/config/launcher_policy_keys.dart';
 
 /// Instances owned by one launcher startup attempt, shared by all consumers.
 class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
@@ -45,6 +46,7 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
       logger: logger,
     );
     remoteConfigSchema = PortfolioRemoteConfigSchema.build(
+      appKeys: LauncherPolicyKeys.all,
       // The launcher already records every release session; remote config
       // lowers this, it does not have to raise it first.
       replayDefaults: const SessionReplayPolicy(percentOfUsers: 100),
@@ -345,6 +347,10 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
   late final CrashCoordinator crash;
   late final RemoteConfigSchema remoteConfigSchema;
   late final RemoteConfigCoordinator remoteConfig;
+
+  /// Remote switch: the launcher is unusable until it is the default home app.
+  bool get forceDefaultLauncher =>
+      remoteConfig.current.read(LauncherPolicyKeys.forceDefaultLauncher);
   late final AnalyticsPipeline analytics;
 
   /// Mixpanel behind its remote kill switch; null without a token.

@@ -3,7 +3,6 @@ package com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app
 import android.app.Activity
 import android.app.AppOpsManager
 import android.os.BatteryManager
-import android.app.role.RoleManager
 import android.content.Context
 import android.content.ComponentName
 import android.content.Intent
@@ -15,13 +14,13 @@ import android.provider.Settings
 import android.text.TextUtils
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
+import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.features.HomeRoleRequestActivity
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.services.AppLockWatcherService
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.services.LauncherAccessibilityService
 
 class SystemChannel(private val activity: Activity) {
 
     companion object {
-        private const val REQUEST_CODE_HOME_ROLE = 4011
         private const val APP_LOCK_PREFS = "app_lock_policy"
         private const val KEY_LOCKED_PACKAGES = "locked_packages"
 
@@ -226,28 +225,16 @@ class SystemChannel(private val activity: Activity) {
         return resolved?.activityInfo?.packageName == activity.packageName
     }
 
-    // Prompts the user to make this app the default home launcher. On Android 10+
-    // this uses RoleManager.ROLE_HOME (a single system dialog); on older versions
-    // (or if the role is unavailable / already held) it opens Home settings so the
-    // user can pick a launcher manually. Returns false only if nothing could be
-    // launched. The Dart side re-checks isDefaultLauncher on resume.
+    // Prompts the user to make this app the default home launcher. The request
+    // runs in HomeRoleRequestActivity: started from this singleTask activity the
+    // role dialog is cancelled before it shows. Returns false only if nothing
+    // could be launched. The Dart side re-checks isDefaultLauncher on resume.
     private fun requestHomeRole(): Boolean {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val roleManager = activity.getSystemService(RoleManager::class.java)
-                if (roleManager != null &&
-                    roleManager.isRoleAvailable(RoleManager.ROLE_HOME) &&
-                    !roleManager.isRoleHeld(RoleManager.ROLE_HOME)
-                ) {
-                    val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_HOME)
-                    activity.startActivityForResult(intent, REQUEST_CODE_HOME_ROLE)
-                    return true
-                }
-            }
-            activity.startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
-            return true
+        return try {
+            activity.startActivity(Intent(activity, HomeRoleRequestActivity::class.java))
+            true
         } catch (e: Exception) {
-            return try {
+            try {
                 activity.startActivity(Intent(Settings.ACTION_HOME_SETTINGS))
                 true
             } catch (e2: Exception) {

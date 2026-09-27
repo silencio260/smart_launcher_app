@@ -80,9 +80,13 @@ class WallpaperService {
       'target': target.name,
     });
     final applied = result ?? false;
+    if (applied) wallpaperApplied.value++;
     if (applied && target.includesHome) invalidateSystemWallpaperCache();
     return applied;
   }
+
+  /// Bumped after any wallpaper is set from the app, home or lock screen.
+  static final wallpaperApplied = ValueNotifier<int>(0);
 
   static Future<bool> downloadAndApply(
     WallpaperItem item,

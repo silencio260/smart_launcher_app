@@ -12,6 +12,8 @@ import 'package:smart_launcher_app/features/home/presentation/screens/home_scree
 import 'package:smart_launcher_app/features/home/presentation/widgets/workspace/route_coverage_scope.dart';
 import 'package:smart_launcher_app/features/onboarding/data/onboarding_store.dart';
 import 'package:smart_launcher_app/features/onboarding/presentation/screens/onboarding_screen.dart';
+import 'package:smart_launcher_app/features/onboarding/presentation/screens/setup_flow_screens.dart';
+import 'package:smart_launcher_app/features/onboarding/presentation/widgets/default_launcher_gate.dart';
 import 'package:smart_launcher_app/features/search/presentation/bloc/search_cubit.dart';
 import 'package:smart_launcher_app/features/settings/presentation/bloc/launcher_feature_cubit.dart';
 import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
@@ -51,9 +53,15 @@ class MyApp extends StatelessWidget {
             navigatorObservers: [homeRouteObserver, _analyticsObserver],
             theme: AppTheme.light,
             darkTheme: AppTheme.dark,
-            home: OnboardingStore.isCompletedSync
-                ? const HomeScreen()
-                : const OnboardingScreen(),
+            // Onboarding, then set-as-default + wallpaper (resumed if the app
+            // was closed part-way), then the launcher.
+            home: !OnboardingStore.isCompletedSync
+                ? const OnboardingScreen()
+                : !OnboardingStore.isSetupCompletedSync
+                    ? const SetDefaultScreen()
+                    : const HomeScreen(),
+            builder: (context, child) =>
+                DefaultLauncherGate(child: child ?? const SizedBox.shrink()),
           );
         },
       ),

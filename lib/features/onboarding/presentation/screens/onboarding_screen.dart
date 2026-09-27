@@ -3,20 +3,19 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:smart_launcher_app/container_injector.dart';
 import 'package:smart_launcher_app/core/models/launcher_settings.dart';
-import 'package:smart_launcher_app/features/home/presentation/screens/home_screen.dart';
 import 'package:smart_launcher_app/features/onboarding/presentation/bloc/onboarding_cubit.dart';
-import 'package:smart_launcher_app/features/onboarding/presentation/widgets/onboarding_done_page.dart';
-import 'package:smart_launcher_app/features/onboarding/presentation/widgets/set_default_page.dart';
+import 'package:smart_launcher_app/features/onboarding/presentation/screens/setup_flow_screens.dart';
 import 'package:smart_launcher_app/features/onboarding/presentation/widgets/welcome_page.dart';
 import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
 
-/// First-run launcher onboarding. Shown by the `MyApp` home gate when
-/// onboarding hasn't completed; replaces itself with [HomeScreen] on finish.
+/// First-run launcher onboarding: three screens. Shown by the `MyApp` home
+/// gate when onboarding hasn't completed; replaces itself with
+/// [SetDefaultScreen] on finish.
 class OnboardingScreen extends StatelessWidget {
   const OnboardingScreen({super.key, this.previewMode = false});
 
-  /// When true (Dev View preview) the flow pops back to its launcher instead of
-  /// replacing into [HomeScreen], and does not persist completion.
+  /// When true (Dev View preview) the flow returns to its launcher at the end
+  /// instead of opening Home, and does not persist completion.
   final bool previewMode;
 
   @override
@@ -37,60 +36,26 @@ class _OnboardingView extends StatefulWidget {
   State<_OnboardingView> createState() => _OnboardingViewState();
 }
 
-class _OnboardingViewState extends State<_OnboardingView>
-    with WidgetsBindingObserver {
+class _OnboardingViewState extends State<_OnboardingView> {
   final _pageController = PageController();
   bool _finishing = false;
-  bool _doneScheduled = false;
   bool _programmaticPageChange = false;
 
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    if (widget.previewMode) return;
-    // Catch the rare case where the role was already granted (e.g. set via
-    // system, then app data cleared): skip straight to the confirmation.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<OnboardingCubit>().refreshDefaultStatus();
-    });
-  }
-
-  @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     _pageController.dispose();
     super.dispose();
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // The home-role grant happens in Android's own dialog; re-poll on resume.
-    if (state == AppLifecycleState.resumed && mounted && !widget.previewMode) {
-      context.read<OnboardingCubit>().refreshDefaultStatus();
-    }
-  }
-
-  int _indexFor(OnboardingStep step) => switch (step) {
-        OnboardingStep.welcome => 0,
-        OnboardingStep.search => 1,
-        OnboardingStep.style => 2,
-        OnboardingStep.setDefault => 3,
-        OnboardingStep.done => 4,
-      };
-
-  Future<void> _finishToHome({required bool setDefault}) async {
+  Future<void> _finish() async {
     if (_finishing) return;
     _finishing = true;
-    // Preview from Dev View: don't persist or replace the stack — just return.
-    if (widget.previewMode) {
-      if (mounted) Navigator.of(context).maybePop();
-      return;
-    }
-    await context.read<OnboardingCubit>().finish(setDefault: setDefault);
+    if (!widget.previewMode) await context.read<OnboardingCubit>().finish();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const HomeScreen(firstRun: true)),
+      MaterialPageRoute<void>(
+        builder: (_) => SetDefaultScreen(previewMode: widget.previewMode),
+      ),
     );
   }
 
@@ -104,19 +69,11 @@ class _OnboardingViewState extends State<_OnboardingView>
           _programmaticPageChange = true;
           _pageController
               .animateToPage(
-                _indexFor(state.step),
+                state.step.index,
                 duration: const Duration(milliseconds: 300),
                 curve: Curves.easeInOut,
               )
               .whenComplete(() => _programmaticPageChange = false);
-        }
-        if (state.step == OnboardingStep.done &&
-            !_doneScheduled &&
-            !widget.previewMode) {
-          _doneScheduled = true;
-          Future.delayed(const Duration(milliseconds: 1100), () {
-            if (mounted) _finishToHome(setDefault: true);
-          });
         }
       },
       builder: (context, state) {
@@ -131,12 +88,7 @@ class _OnboardingViewState extends State<_OnboardingView>
                     controller: _pageController,
                     onPageChanged: (index) {
                       if (_programmaticPageChange) return;
-                      final step = _stepFor(index);
-                      if (step == OnboardingStep.done) {
-                        _pageController.jumpToPage(_indexFor(state.step));
-                        return;
-                      }
-                      cubit.pageChanged(step);
+                      cubit.pageChanged(OnboardingStep.values[index]);
                     },
                     children: [
                       WelcomePage(onGetStarted: cubit.goToSearch),
@@ -154,20 +106,11 @@ class _OnboardingViewState extends State<_OnboardingView>
                                     settings.copyWith(homeMode: mode),
                                   );
                             },
-                            onContinue: cubit.goToSetDefault,
+                            onContinue: _finish,
                             onBack: cubit.backToSearch,
                           );
                         },
                       ),
-                      SetDefaultPage(
-                        requestInFlight: state.requestInFlight,
-                        onSetDefault: widget.previewMode
-                            ? cubit.markDoneForPreview
-                            : cubit.requestDefault,
-                        onNotNow: () => _finishToHome(setDefault: false),
-                        onBack: cubit.backToStyle,
-                      ),
-                      const OnboardingDonePage(),
                     ],
                   ),
                 ),
@@ -182,15 +125,7 @@ class _OnboardingViewState extends State<_OnboardingView>
   }
 }
 
-OnboardingStep _stepFor(int index) => switch (index) {
-      0 => OnboardingStep.welcome,
-      1 => OnboardingStep.search,
-      2 => OnboardingStep.style,
-      3 => OnboardingStep.setDefault,
-      _ => OnboardingStep.done,
-    };
-
-/// Four-step progress indicator; hidden on the terminal confirmation.
+/// One dot per onboarding screen.
 class _ProgressDots extends StatelessWidget {
   const _ProgressDots({required this.step});
 
@@ -198,20 +133,14 @@ class _ProgressDots extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (step == OnboardingStep.done) return const SizedBox(height: 8);
     final scheme = Theme.of(context).colorScheme;
-    final active = switch (step) {
-      OnboardingStep.welcome => 0,
-      OnboardingStep.search => 1,
-      OnboardingStep.style => 2,
-      OnboardingStep.setDefault => 3,
-      OnboardingStep.done => 3,
-    };
+    final count = OnboardingStep.values.length;
+    final active = step.index;
     return Semantics(
-      label: 'Onboarding step ${active + 1} of 4',
+      label: 'Onboarding step ${active + 1} of $count',
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
-        children: List.generate(4, (i) {
+        children: List.generate(count, (i) {
           final isActive = i == active;
           return AnimatedContainer(
             duration: const Duration(milliseconds: 200),

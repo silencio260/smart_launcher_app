@@ -2,20 +2,20 @@ import 'package:flutter/material.dart';
 
 import 'package:smart_launcher_app/core/utils/app_strings.dart';
 
-/// Second onboarding page: the nudged, skippable home-role request.
+/// The home-role request shown after onboarding. There is no "Not now": the
+/// close button only appears once the user has been to the system prompt and
+/// come back without granting it (and never when the role is forced).
 class SetDefaultPage extends StatelessWidget {
   const SetDefaultPage({
     super.key,
     required this.requestInFlight,
     required this.onSetDefault,
-    required this.onNotNow,
-    required this.onBack,
+    this.onClose,
   });
 
   final bool requestInFlight;
   final VoidCallback onSetDefault;
-  final VoidCallback onNotNow;
-  final VoidCallback onBack;
+  final VoidCallback? onClose;
 
   @override
   Widget build(BuildContext context) {
@@ -29,14 +29,16 @@ class SetDefaultPage extends StatelessWidget {
         children: [
           SizedBox(
             height: 48,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: IconButton(
-                onPressed: requestInFlight ? null : onBack,
-                icon: const Icon(Icons.arrow_back),
-                color: scheme.onSurface,
-              ),
-            ),
+            child: onClose == null
+                ? null
+                : Align(
+                    alignment: Alignment.centerRight,
+                    child: IconButton(
+                      onPressed: requestInFlight ? null : onClose,
+                      icon: const Icon(Icons.close),
+                      color: scheme.onSurface,
+                    ),
+                  ),
           ),
           const Spacer(),
           Center(
@@ -118,12 +120,7 @@ class SetDefaultPage extends StatelessWidget {
                   )
                 : const Text(AppStrings.onboardingSetDefault),
           ),
-          const SizedBox(height: 4),
-          TextButton(
-            onPressed: requestInFlight ? null : onNotNow,
-            child: const Text(AppStrings.onboardingNotNow),
-          ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
         ],
       ),
     );

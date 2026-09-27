@@ -39,6 +39,9 @@ class AppStrings {
   static const String onboardingStyleMinimalBody =
       'A clean text-first home screen with less noise.';
 
+  // --- Onboarding: wallpaper ---
+  static const String onboardingWallpaperTitle = 'Choose a wallpaper';
+
   // --- Onboarding: set as default ---
   static const String onboardingDefaultTitle = 'Make this your home screen';
   static const String onboardingDefaultBody =

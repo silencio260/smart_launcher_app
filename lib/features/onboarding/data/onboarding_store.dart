@@ -20,10 +20,14 @@ class OnboardingStore {
   /// First-run launcher onboarding finished (completed OR explicitly skipped).
   static const _completedKey = 'onboarding_completed_v1';
 
+  /// The set-as-default and wallpaper steps that follow onboarding finished.
+  static const _setupCompletedKey = 'setup_completed_v1';
+
   /// User dismissed the persistent "set as default" home-screen nudge.
   static const _nudgeDismissedKey = 'default_nudge_dismissed_v1';
 
   static bool? _completedCache;
+  static bool? _setupCompletedCache;
 
   /// Ids of mini-apps whose first-open intro has been seen, cached for the
   /// synchronous gate inside each mini-app's `build`.
@@ -35,6 +39,10 @@ class OnboardingStore {
   static Future<void> preload() async {
     final prefs = await SharedPreferences.getInstance();
     _completedCache = prefs.getBool(_completedKey) ?? false;
+    // Installs from before these steps existed finished onboarding without
+    // them, so a missing flag follows onboarding.
+    _setupCompletedCache =
+        prefs.getBool(_setupCompletedKey) ?? _completedCache;
     _miniAppOnboarded.clear();
     for (final id in kMiniAppOnboardingIds) {
       if (prefs.getBool(_miniAppKey(id)) ?? false) _miniAppOnboarded.add(id);
@@ -47,8 +55,22 @@ class OnboardingStore {
 
   static Future<void> markCompleted() async {
     _completedCache = true;
+    _setupCompletedCache ??= false;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_completedKey, true);
+    // Written explicitly so a restart mid-setup resumes it (see [preload]).
+    if (!prefs.containsKey(_setupCompletedKey)) {
+      await prefs.setBool(_setupCompletedKey, false);
+    }
+  }
+
+  /// Synchronous read for the home gate. False until [preload] has run.
+  static bool get isSetupCompletedSync => _setupCompletedCache ?? false;
+
+  static Future<void> markSetupCompleted() async {
+    _setupCompletedCache = true;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_setupCompletedKey, true);
   }
 
   static Future<bool> isNudgeDismissed() async {
@@ -99,8 +121,10 @@ class OnboardingStore {
   /// next cold start (and the sync gate routes to it).
   static Future<void> resetCompleted() async {
     _completedCache = false;
+    _setupCompletedCache = false;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_completedKey);
+    await prefs.remove(_setupCompletedKey);
   }
 
   /// Clears the dismissed flag so the "set as default" home nudge reappears.
