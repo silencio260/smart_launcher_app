@@ -40,6 +40,7 @@ class MainActivity : FlutterActivity() {
     private var securityChannel: SecurityChannel? = null
     private var fileLockerChannel: FileLockerChannel? = null
     private var alarmChannel: AlarmChannel? = null
+    private var wallpaperChannel: WallpaperChannel? = null
 
     override fun getRenderMode(): RenderMode = RenderMode.texture
     override fun getTransparencyMode(): TransparencyMode = TransparencyMode.transparent
@@ -109,7 +110,7 @@ class MainActivity : FlutterActivity() {
         AppsChannel(this).register(messenger)
         SystemChannel(this).register(messenger)
         AppLockChannel(this).register(messenger)
-        WallpaperChannel(this).register(messenger)
+        wallpaperChannel = WallpaperChannel(this).also { it.register(messenger) }
         notificationChannel = NotificationChannel(this).also { it.register(messenger) }
         // Contacts search + Calendar events are unimplemented features (see
         // AndroidManifest comment); their channels are left unregistered.
@@ -138,6 +139,10 @@ class MainActivity : FlutterActivity() {
 
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (wallpaperChannel?.onActivityResult(requestCode, resultCode, data) == true) {
+            super.onActivityResult(requestCode, resultCode, data)
+            return
+        }
         if (securityChannel?.onActivityResult(requestCode, resultCode) == true) {
             super.onActivityResult(requestCode, resultCode, data)
             return

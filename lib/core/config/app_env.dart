@@ -33,6 +33,13 @@ class AppEnv {
   static const String firebaseApiKeyIos =
       String.fromEnvironment('firebase_api_key_ios');
 
+  // --- Wallpaper Worker (endpoint configuration, never API secrets) ---
+
+  static const String wallpaperApiEnvironment =
+      String.fromEnvironment('WALLPAPER_API_ENV');
+  static const String wallpaperSandboxBaseUrl =
+      String.fromEnvironment('WALLPAPER_SANDBOX_BASE_URL');
+
   // --- Backend ---
 
   static const String cloudFunctionsBaseUrl =

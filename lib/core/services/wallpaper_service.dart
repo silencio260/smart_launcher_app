@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -14,94 +13,6 @@ class WallpaperService {
   );
   static const iosTemplateWallpaperAsset =
       'assets/ios_theme/wallpaper/ios_default.webp';
-  static const sandboxUrl =
-      'https://nexwall.kodnextech.com/wallpaper-api/sandbox';
-
-  /// Uses NexWall's public sandbox, not its authenticated production API.
-  static Future<WallpaperPage> fetchPage({int page = 1}) async {
-    final uri = Uri.parse(sandboxUrl).replace(
-      queryParameters: {
-        'endpoint': 'wallpapers',
-        'type': 'image',
-        'per_page': '10',
-        'page': '$page',
-      },
-    );
-    final client =
-        HttpClient()..connectionTimeout = const Duration(seconds: 15);
-    try {
-      return await (() async {
-        final request = await client.getUrl(uri);
-        request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-        final response = await request.close();
-        final limit = response.headers.value('x-ratelimit-limit');
-        final remaining = response.headers.value('x-ratelimit-remaining');
-        final retryAfter = response.headers.value('retry-after');
-        if (kDebugMode) {
-          debugPrint(
-            '[Wallpaper] page=$page HTTP ${response.statusCode} '
-            'limit=$limit remaining=$remaining retryAfter=$retryAfter',
-          );
-        }
-        if (response.statusCode == 429) {
-          final seconds = int.tryParse(retryAfter ?? '');
-          throw WallpaperRequestException(
-            seconds != null && seconds > 0
-                ? 'Wallpaper request limit reached. Try again in $seconds seconds.'
-                : 'Wallpaper request limit reached. Please wait before retrying.',
-          );
-        }
-        if (response.statusCode != HttpStatus.ok) {
-          throw WallpaperRequestException(
-            'Wallpaper service returned HTTP ${response.statusCode}. Please try again later.',
-          );
-        }
-        final data =
-            jsonDecode(await response.transform(utf8.decoder).join())
-                as Map<String, dynamic>;
-        if (data['status'] != 'success' || data['data'] is! List) {
-          throw const FormatException('Invalid wallpaper response');
-        }
-        final items = (data['data'] as List)
-            .cast<Map<String, dynamic>>()
-            .where((item) => item['type'] == 'image')
-            .map(WallpaperItem.fromNexWall)
-            .toList(growable: false);
-        return WallpaperPage(
-          items: items,
-          currentPage: (data['current_page'] as num).toInt(),
-          lastPage: (data['last_page'] as num).toInt(),
-        );
-      })().timeout(const Duration(seconds: 30));
-    } on TimeoutException catch (error, stack) {
-      if (kDebugMode) {
-        debugPrint('[Wallpaper] $error');
-        debugPrintStack(stackTrace: stack);
-      }
-      throw const WallpaperRequestException(
-        'The wallpaper request timed out. Check your connection and retry.',
-      );
-    } on SocketException catch (error, stack) {
-      if (kDebugMode) {
-        debugPrint('[Wallpaper] $error');
-        debugPrintStack(stackTrace: stack);
-      }
-      throw const WallpaperRequestException(
-        'Cannot connect to the wallpaper service. Check your internet connection and retry.',
-      );
-    } on HandshakeException catch (error, stack) {
-      if (kDebugMode) {
-        debugPrint('[Wallpaper] $error');
-        debugPrintStack(stackTrace: stack);
-      }
-      throw const WallpaperRequestException(
-        'Could not establish a secure connection to the wallpaper service.',
-      );
-    } finally {
-      client.close(force: true);
-    }
-  }
-
   static String _extension(String fileName) {
     final parts = fileName.toLowerCase().split('.');
     return parts.length < 2 ? '' : parts.last;
@@ -171,6 +82,11 @@ class WallpaperService {
     invalidateSystemWallpaperCache();
   }
 
+  /// Returns an app-owned copy of a gallery image, or null when cancelled.
+  static Future<String?> pickFromGallery() async {
+    return _channel.invokeMethod<String>('pickWallpaperFromGallery');
+  }
+
   static Uint8List? _systemWallpaperCache;
   static bool _systemWallpaperResolved = false;
 
@@ -206,13 +122,4 @@ class WallpaperService {
     if (!await dir.exists()) await dir.create(recursive: true);
     return dir;
   }
-}
-
-class WallpaperRequestException implements Exception {
-  final String message;
-
-  const WallpaperRequestException(this.message);
-
-  @override
-  String toString() => message;
 }

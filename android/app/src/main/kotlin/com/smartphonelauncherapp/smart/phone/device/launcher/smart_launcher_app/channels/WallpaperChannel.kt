@@ -2,17 +2,27 @@ package com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app
 
 import android.app.Activity
 import android.app.WallpaperManager
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.os.Build
+import android.provider.MediaStore
+import android.webkit.MimeTypeMap
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.FileInputStream
 import java.io.ByteArrayOutputStream
+import java.util.UUID
 
 class WallpaperChannel(private val activity: Activity) {
+    companion object {
+        private const val REQUEST_GALLERY_WALLPAPER = 4087
+        private const val MAX_GALLERY_BYTES = 40L * 1024 * 1024
+    }
+
+    private var galleryResult: MethodChannel.Result? = null
 
     // Cached, already-compressed static wallpaper bytes. Fetching + compressing
     // the wallpaper is expensive, so we do it once and reuse it. `false` for the
@@ -33,6 +43,27 @@ class WallpaperChannel(private val activity: Activity) {
                             result.success(true)
                         } catch (e: Exception) {
                             result.error("WALLPAPER_ERROR", e.message, null)
+                        }
+                    }
+                    "pickWallpaperFromGallery" -> {
+                        if (galleryResult != null) {
+                            result.error("PICKER_BUSY", "Gallery selection is already open", null)
+                            return@setMethodCallHandler
+                        }
+                        try {
+                            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                Intent(MediaStore.ACTION_PICK_IMAGES)
+                            } else {
+                                Intent(Intent.ACTION_GET_CONTENT).apply {
+                                    addCategory(Intent.CATEGORY_OPENABLE)
+                                }
+                            }.apply { type = "image/*" }
+                            galleryResult = result
+                            @Suppress("DEPRECATION")
+                            activity.startActivityForResult(intent, REQUEST_GALLERY_WALLPAPER)
+                        } catch (e: Exception) {
+                            galleryResult = null
+                            result.error("GALLERY_ERROR", e.message, null)
                         }
                     }
                     "getWallpaperColors" -> {
@@ -112,6 +143,52 @@ class WallpaperChannel(private val activity: Activity) {
                     else -> result.notImplemented()
                 }
         }
+    }
+
+    fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
+        if (requestCode != REQUEST_GALLERY_WALLPAPER) return false
+        val pending = galleryResult ?: return true
+        galleryResult = null
+        val uri = if (resultCode == Activity.RESULT_OK) data?.data else null
+        if (uri == null) {
+            pending.success(null)
+            return true
+        }
+        Thread {
+            var output: File? = null
+            try {
+                val resolver = activity.contentResolver
+                val mimeType = resolver.getType(uri)
+                if (mimeType?.startsWith("image/") != true) {
+                    throw IllegalArgumentException("Selected file is not an image")
+                }
+                val extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType) ?: "jpg"
+                val directory = File(activity.filesDir, "wallpapers").apply { mkdirs() }
+                val file = File(directory, "gallery-${UUID.randomUUID()}.$extension")
+                output = file
+                val input = resolver.openInputStream(uri) ?: throw IllegalStateException("Cannot open selected image")
+                input.use { source ->
+                    file.outputStream().use { destination ->
+                        val buffer = ByteArray(64 * 1024)
+                        var total = 0L
+                        while (true) {
+                            val count = source.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            if (total > MAX_GALLERY_BYTES) throw IllegalArgumentException("Image exceeds 40 MB")
+                            destination.write(buffer, 0, count)
+                        }
+                        if (total == 0L) throw IllegalArgumentException("Selected image is empty")
+                    }
+                }
+                val path = file.absolutePath
+                activity.runOnUiThread { pending.success(path) }
+            } catch (e: Exception) {
+                output?.delete()
+                activity.runOnUiThread { pending.error("GALLERY_ERROR", e.message, null) }
+            }
+        }.start()
+        return true
     }
 
     private fun clearWallpaperCache() {
