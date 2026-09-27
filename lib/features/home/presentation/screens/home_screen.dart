@@ -1253,6 +1253,7 @@ class _HomeScreenState extends State<HomeScreen>
                           FeatureLaunchDispatcher.launch(context, app),
                       onOpenSearch: () => _openSmartSearch(pinToHome: true),
                       onOpenSettings: _openSettings,
+                      onOpenWallpaper: _openWallpaper,
                     ),
                   if (_drawerOpen)
                     AllAppsContainer(

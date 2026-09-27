@@ -3,9 +3,19 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:smart_launcher_app/core/models/wallpaper_item.dart';
+
+/// Which screen(s) a new phone wallpaper is applied to.
+enum WallpaperTarget {
+  home,
+  lock,
+  both;
+
+  bool get includesHome => this != lock;
+}
 
 class WallpaperService {
   static const _channel = MethodChannel(
@@ -64,17 +74,22 @@ class WallpaperService {
     }
   }
 
-  static Future<bool> applyFile(String path) async {
+  static Future<bool> applyFile(String path, WallpaperTarget target) async {
     final result = await _channel.invokeMethod<bool>('setWallpaperFromFile', {
       'path': path,
+      'target': target.name,
     });
-    if (result ?? false) invalidateSystemWallpaperCache();
-    return result ?? false;
+    final applied = result ?? false;
+    if (applied && target.includesHome) invalidateSystemWallpaperCache();
+    return applied;
   }
 
-  static Future<bool> downloadAndApply(WallpaperItem item) async {
+  static Future<bool> downloadAndApply(
+    WallpaperItem item,
+    WallpaperTarget target,
+  ) async {
     final path = await download(item);
-    return applyFile(path);
+    return applyFile(path, target);
   }
 
   static Future<void> openSystemPicker() async {
@@ -96,6 +111,7 @@ class WallpaperService {
   /// wallpaper). Call [invalidateSystemWallpaperCache] after the user changes
   /// the wallpaper.
   static Future<Uint8List?> currentSystemWallpaper() async {
+    _watchForExternalChanges();
     if (_systemWallpaperResolved) return _systemWallpaperCache;
     final bytes = await _channel.invokeMethod<Uint8List>('getWallpaperBitmap');
     _systemWallpaperCache = bytes;
@@ -114,6 +130,57 @@ class WallpaperService {
   static void invalidateSystemWallpaperCache() {
     _systemWallpaperCache = null;
     _systemWallpaperResolved = false;
+    systemWallpaperChanges.value++;
+  }
+
+  /// Bumped whenever the phone's wallpaper may have changed, so backgrounds
+  /// showing it can reload.
+  static final systemWallpaperChanges = ValueNotifier<int>(0);
+
+  static AppLifecycleListener? _lifecycle;
+  static Future<void>? _changeCheck;
+
+  /// The wallpaper can change outside the launcher (Gallery, system Settings),
+  /// so each resume asks native whether its id still matches the cache.
+  static void _watchForExternalChanges() {
+    _lifecycle ??= AppLifecycleListener(
+      onResume: () => _changeCheck ??= _checkForExternalChange().whenComplete(
+        () => _changeCheck = null,
+      ),
+    );
+  }
+
+  static Future<void> _checkForExternalChange() async {
+    try {
+      final changed =
+          await _channel.invokeMethod<bool>('checkWallpaperChanged') ?? false;
+      if (changed) invalidateSystemWallpaperCache();
+    } on PlatformException {
+      // Keep the current cache; the next resume retries.
+    }
+  }
+
+  /// Deletes gallery copies (see [pickFromGallery]) that no setting uses.
+  static Future<void> deleteUnusedGalleryCopies(Iterable<String> keep) async {
+    final kept = keep
+        .where((path) => path.isNotEmpty)
+        .map((path) => path.split('/').last)
+        .toSet();
+    try {
+      final base = await getApplicationSupportDirectory();
+      final dir = Directory('${base.path}/wallpapers');
+      if (!await dir.exists()) return;
+      await for (final entry in dir.list()) {
+        final name = entry.uri.pathSegments.last;
+        if (entry is File &&
+            name.startsWith('gallery-') &&
+            !kept.contains(name)) {
+          await entry.delete();
+        }
+      }
+    } on FileSystemException {
+      // Best effort; a leftover copy is retried on the next cleanup.
+    }
   }
 
   static Future<Directory> _wallpaperDir() async {

@@ -43,7 +43,7 @@ class ThemedWallpaperBackground extends StatefulWidget {
 
 class _ThemedWallpaperBackgroundState extends State<ThemedWallpaperBackground> {
   Uint8List? _systemBytes;
-  bool _loadingSystem = false;
+  int _loadGeneration = 0;
 
   bool get _hasFile => widget.path.isNotEmpty && File(widget.path).existsSync();
 
@@ -55,7 +55,14 @@ class _ThemedWallpaperBackgroundState extends State<ThemedWallpaperBackground> {
     if (widget.useSystemWallpaper && !_hasFile) {
       _systemBytes = WallpaperService.cachedSystemWallpaper;
     }
+    WallpaperService.systemWallpaperChanges.addListener(_maybeLoadSystem);
     _maybeLoadSystem();
+  }
+
+  @override
+  void dispose() {
+    WallpaperService.systemWallpaperChanges.removeListener(_maybeLoadSystem);
+    super.dispose();
   }
 
   @override
@@ -68,18 +75,13 @@ class _ThemedWallpaperBackgroundState extends State<ThemedWallpaperBackground> {
   }
 
   void _maybeLoadSystem() {
-    if (!widget.useSystemWallpaper || _hasFile || _loadingSystem) return;
-    _loadingSystem = true;
+    if (!widget.useSystemWallpaper || _hasFile) return;
+    // A newer load (e.g. after a wallpaper change) supersedes older ones.
+    final generation = ++_loadGeneration;
     WallpaperService.currentSystemWallpaper().then((bytes) {
-      if (!mounted) return;
-      setState(() {
-        _systemBytes = bytes;
-        _loadingSystem = false;
-      });
-    }).catchError((_) {
-      if (!mounted) return;
-      setState(() => _loadingSystem = false);
-    });
+      if (!mounted || generation != _loadGeneration) return;
+      setState(() => _systemBytes = bytes);
+    }).catchError((_) {});
   }
 
   Widget _gradient() => DecoratedBox(
@@ -129,11 +131,14 @@ class _ThemedWallpaperBackgroundState extends State<ThemedWallpaperBackground> {
     }
 
     if (!widget.blur) return Positioned.fill(child: child);
+    // Isolated so paging/animating content above doesn't re-run the blur.
     return Positioned.fill(
-      child: ImageFiltered(
-        imageFilter: ImageFilter.blur(
-            sigmaX: widget.blurSigma, sigmaY: widget.blurSigma),
-        child: child,
+      child: RepaintBoundary(
+        child: ImageFiltered(
+          imageFilter: ImageFilter.blur(
+              sigmaX: widget.blurSigma, sigmaY: widget.blurSigma),
+          child: child,
+        ),
       ),
     );
   }

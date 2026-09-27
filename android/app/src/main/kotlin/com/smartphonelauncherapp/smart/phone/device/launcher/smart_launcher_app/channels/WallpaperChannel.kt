@@ -30,6 +30,9 @@ class WallpaperChannel(private val activity: Activity) {
     // wallpaper) so we don't keep retrying the slow path on every open.
     private var cachedBytes: ByteArray? = null
     private var cacheResolved = false
+    // Wallpaper id the cache was built from, so a wallpaper changed outside the
+    // launcher (Gallery, system Settings) can be detected cheaply on resume.
+    private var cachedWallpaperId = -1
 
     fun register(messenger: BinaryMessenger) {
         MethodChannel(messenger, "com.genrevibes.smartlauncher/wallpaper")
@@ -97,11 +100,20 @@ class WallpaperChannel(private val activity: Activity) {
                         // on some devices (Samsung's openDefaultWallpaper path), so do
                         // it off the main thread and post the result back.
                         Thread {
+                            val id = currentWallpaperId()
                             val bytes = loadStaticWallpaperBytes()
                             cachedBytes = bytes
+                            cachedWallpaperId = id
                             cacheResolved = true
                             activity.runOnUiThread { result.success(bytes) }
                         }.start()
+                    }
+                    "checkWallpaperChanged" -> {
+                        // Drops the cached bitmap when the phone's wallpaper no
+                        // longer matches it; true tells Dart to reload.
+                        val changed = cacheResolved && currentWallpaperId() != cachedWallpaperId
+                        if (changed) clearWallpaperCache()
+                        result.success(changed)
                     }
                     "setWallpaperOffset" -> {
                         val xOffset = call.argument<Double>("xOffset") ?: 0.0
@@ -126,9 +138,17 @@ class WallpaperChannel(private val activity: Activity) {
                                 return@setMethodCallHandler
                             }
                             val wm = WallpaperManager.getInstance(activity)
+                            // "home", "lock" or "both" (default). Before Android 7
+                            // the two screens can't be set separately.
+                            val target = call.argument<String>("target")
                             FileInputStream(file).use { input ->
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                                    wm.setStream(input, null, true, WallpaperManager.FLAG_SYSTEM)
+                                    val which = when (target) {
+                                        "home" -> WallpaperManager.FLAG_SYSTEM
+                                        "lock" -> WallpaperManager.FLAG_LOCK
+                                        else -> WallpaperManager.FLAG_SYSTEM or WallpaperManager.FLAG_LOCK
+                                    }
+                                    wm.setStream(input, null, true, which)
                                 } else {
                                     @Suppress("DEPRECATION")
                                     wm.setStream(input)
@@ -189,6 +209,15 @@ class WallpaperChannel(private val activity: Activity) {
             }
         }.start()
         return true
+    }
+
+    private fun currentWallpaperId(): Int {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return -1
+        return try {
+            WallpaperManager.getInstance(activity).getWallpaperId(WallpaperManager.FLAG_SYSTEM)
+        } catch (e: Exception) {
+            -1
+        }
     }
 
     private fun clearWallpaperCache() {

@@ -124,7 +124,10 @@ class BackupService {
         'wallpaperDepthEffect': s.wallpaperDepthEffect,
         'wallpaperBlur': s.wallpaperBlur,
         'wallpaperBlurIntensity': s.wallpaperBlurIntensity,
-        'customWallpaperPath': s.customWallpaperPath,
+        'iosBackground': s.iosBackground.index,
+        'iosPhotoPath': s.iosPhotoPath,
+        'iosBlur': s.iosBlur,
+        'iosDim': s.iosDim,
         'iosGridColumns': s.iosGridColumns,
         'iosLibraryViewMode': s.iosLibraryViewMode.index,
         'iosDockPackages': s.iosDockPackages,
@@ -133,7 +136,10 @@ class BackupService {
         'minimalUse24HourClock': s.minimalUse24HourClock,
         'minimalDayStartMinutes': s.minimalDayStartMinutes,
         'minimalDayEndMinutes': s.minimalDayEndMinutes,
-        'minimalUseWallpaper': s.minimalUseWallpaper,
+        'minimalBackground': s.minimalBackground.index,
+        'minimalPhotoPath': s.minimalPhotoPath,
+        'minimalBlur': s.minimalBlur,
+        'minimalDim': s.minimalDim,
         'minimalBackgroundColor': s.minimalBackgroundColor,
         'showDock': s.showDock,
         'dockSize': s.dockSize,
@@ -202,7 +208,11 @@ class BackupService {
       wallpaperBlur: d['wallpaperBlur'] as bool? ?? false,
       wallpaperBlurIntensity:
           (d['wallpaperBlurIntensity'] as num?)?.toDouble() ?? 0.3,
-      customWallpaperPath: d['customWallpaperPath'] as String? ?? '',
+      iosBackground: enumAt(
+          HomeBackground.values, 'iosBackground', HomeBackground.wallpaper),
+      iosPhotoPath: d['iosPhotoPath'] as String? ?? '',
+      iosBlur: (d['iosBlur'] as num?)?.toDouble() ?? 0,
+      iosDim: (d['iosDim'] as num?)?.toDouble() ?? 0,
       iosGridColumns: d['iosGridColumns'] as int? ?? 4,
       iosLibraryViewMode: enumAt(IosLibraryViewMode.values,
           'iosLibraryViewMode', IosLibraryViewMode.grid),
@@ -213,7 +223,23 @@ class BackupService {
       minimalUse24HourClock: d['minimalUse24HourClock'] as bool? ?? false,
       minimalDayStartMinutes: d['minimalDayStartMinutes'] as int? ?? 8 * 60,
       minimalDayEndMinutes: d['minimalDayEndMinutes'] as int? ?? 22 * 60,
-      minimalUseWallpaper: d['minimalUseWallpaper'] as bool? ?? false,
+      // Older builds stored a wallpaper/colour bool.
+      minimalBackground: enumAt(
+        HomeBackground.values,
+        'minimalBackground',
+        d['minimalUseWallpaper'] == true
+            ? HomeBackground.wallpaper
+            : HomeBackground.color,
+      ),
+      minimalPhotoPath: d['minimalPhotoPath'] as String? ?? '',
+      // Older builds blurred Minimal with the shared wallpaperBlur setting.
+      minimalBlur: (d['minimalBlur'] as num?)?.toDouble() ??
+          (d['wallpaperBlur'] == true
+              ? ((4 + ((d['wallpaperBlurIntensity'] as num?) ?? 0.3) * 18) /
+                      homeBlurMaxSigma)
+                  .clamp(0.0, 1.0)
+              : 0.0),
+      minimalDim: (d['minimalDim'] as num?)?.toDouble() ?? 0.28,
       minimalBackgroundColor: d['minimalBackgroundColor'] as int? ?? 0xFF000000,
       showDock: d['showDock'] as bool? ?? true,
       dockSize: d['dockSize'] as int? ?? 5,

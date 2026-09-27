@@ -39,6 +39,64 @@ const _categoryTabs = <_CategoryTab>[
   _CategoryTab.search('Gaming', 'gaming'),
 ];
 
+/// Asks where a new wallpaper goes; null when the user dismisses the sheet.
+Future<WallpaperTarget?> _askWallpaperTarget(BuildContext context) {
+  return showModalBottomSheet<WallpaperTarget>(
+    context: context,
+    showDragHandle: true,
+    builder: (context) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+            child: Text(
+              'Set wallpaper on',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+          for (final (target, icon, label) in const [
+            (WallpaperTarget.home, Icons.home_outlined, 'Home screen'),
+            (WallpaperTarget.lock, Icons.lock_outline, 'Lock screen'),
+            (WallpaperTarget.both, Icons.phone_android, 'Home and lock screens'),
+          ])
+            ListTile(
+              leading: Icon(icon),
+              title: Text(label),
+              onTap: () => Navigator.pop(context, target),
+            ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    ),
+  );
+}
+
+String _appliedMessage(WallpaperTarget target) => switch (target) {
+  WallpaperTarget.home => 'Home screen wallpaper set.',
+  WallpaperTarget.lock => 'Lock screen wallpaper set.',
+  WallpaperTarget.both => 'Home and lock screen wallpaper set.',
+};
+
+/// A newly set phone wallpaper should show on every home style, so iOS and
+/// Minimal switch back from their own photo (kept for later) to follow it.
+Future<void> _followPhoneWallpaper(SettingsCubit cubit) {
+  final s = cubit.state;
+  return cubit.update(
+    s.copyWith(
+      iosBackground:
+          s.iosBackground == HomeBackground.photo
+              ? HomeBackground.wallpaper
+              : null,
+      minimalBackground:
+          s.minimalBackground == HomeBackground.photo
+              ? HomeBackground.wallpaper
+              : null,
+    ),
+  );
+}
+
 class WallpaperScreen extends StatefulWidget {
   const WallpaperScreen({super.key});
 
@@ -137,14 +195,21 @@ class _WallpaperScreenState extends State<WallpaperScreen> {
     try {
       final path = await WallpaperService.pickFromGallery();
       if (!mounted || path == null) return;
-      final applied = await WallpaperService.applyFile(path);
-      if (!applied) throw StateError('Could not apply the selected image');
-      if (!mounted) return;
       final settings = context.read<SettingsCubit>();
-      await settings.update(settings.state.copyWith(customWallpaperPath: path));
-      if (!mounted) return;
+      final target = await _askWallpaperTarget(context);
+      if (target != null) {
+        final applied = await WallpaperService.applyFile(path, target);
+        if (!applied) throw StateError('Could not apply the selected image');
+        if (target.includesHome) await _followPhoneWallpaper(settings);
+      }
+      // Applied or cancelled, the picked copy is no longer needed.
+      await WallpaperService.deleteUnusedGalleryCopies([
+        settings.state.iosPhotoPath,
+        settings.state.minimalPhotoPath,
+      ]);
+      if (!mounted || target == null) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Gallery wallpaper applied.')),
+        SnackBar(content: Text(_appliedMessage(target))),
       );
     } catch (error) {
       if (!mounted) return;
@@ -177,17 +242,6 @@ class _WallpaperScreenState extends State<WallpaperScreen> {
                           label: const Text('Choose from gallery'),
                         ),
                       ),
-                      if (settings.customWallpaperPath.isNotEmpty) ...[
-                        const SizedBox(width: 8),
-                        IconButton(
-                          tooltip: 'Reset launcher wallpaper',
-                          onPressed:
-                              () => context.read<SettingsCubit>().update(
-                                settings.copyWith(customWallpaperPath: ''),
-                              ),
-                          icon: const Icon(Icons.restart_alt_rounded),
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -426,36 +480,28 @@ class _WallpaperPreviewScreenState extends State<_WallpaperPreviewScreen>
     super.dispose();
   }
 
-  Future<void> _save({required bool deviceWallpaper}) async {
+  Future<void> _save() async {
     if (_expired) {
       setState(() {});
       return;
     }
+    final target = await _askWallpaperTarget(context);
+    if (target == null || !mounted || _expired) return;
     setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
       final path = await WallpaperService.download(widget.item);
       if (!mounted || _expired) return;
-      if (deviceWallpaper) {
-        final ok = await WallpaperService.applyFile(path);
-        if (!ok) throw Exception('Could not apply wallpaper');
-      }
+      final ok = await WallpaperService.applyFile(path, target);
+      if (!ok) throw Exception('Could not apply wallpaper');
       if (!mounted || _expired) return;
-      await context.read<SettingsCubit>().update(
-        context.read<SettingsCubit>().state.copyWith(customWallpaperPath: path),
-      );
+      if (target.includesHome) {
+        await _followPhoneWallpaper(context.read<SettingsCubit>());
+      }
       if (!mounted) return;
       messenger
         ..removeCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(
-              deviceWallpaper
-                  ? 'Device wallpaper applied.'
-                  : 'Theme wallpaper saved.',
-            ),
-          ),
-        );
+        ..showSnackBar(SnackBar(content: Text(_appliedMessage(target))));
       if (mounted) Navigator.pop(context);
     } catch (error) {
       if (!mounted) return;
@@ -531,26 +577,9 @@ class _WallpaperPreviewScreenState extends State<_WallpaperPreviewScreen>
                     child: Row(
                       children: [
                         Expanded(
-                          child: OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.white,
-                              side: const BorderSide(color: Colors.white70),
-                            ),
-                            onPressed:
-                                _busy
-                                    ? null
-                                    : () => _save(deviceWallpaper: false),
-                            icon: const Icon(Icons.download_rounded),
-                            label: const Text('Use in launcher'),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
                           child: FilledButton.icon(
                             onPressed:
-                                _busy || widget.item.isLive
-                                    ? null
-                                    : () => _save(deviceWallpaper: true),
+                                _busy || widget.item.isLive ? null : _save,
                             icon:
                                 _busy
                                     ? const SizedBox(

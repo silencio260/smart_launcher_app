@@ -147,7 +147,10 @@ class SettingsCubit extends Cubit<LauncherSettings> {
         'wallpaperDepthEffect': s.wallpaperDepthEffect,
         'wallpaperBlur': s.wallpaperBlur,
         'wallpaperBlurIntensity': s.wallpaperBlurIntensity,
-        'customWallpaperPath': s.customWallpaperPath,
+        'iosBackground': s.iosBackground.index,
+        'iosPhotoPath': s.iosPhotoPath,
+        'iosBlur': s.iosBlur,
+        'iosDim': s.iosDim,
         'iosGridColumns': s.iosGridColumns,
         'iosLibraryViewMode': s.iosLibraryViewMode.index,
         'iosDockPackages': s.iosDockPackages,
@@ -156,7 +159,10 @@ class SettingsCubit extends Cubit<LauncherSettings> {
         'minimalUse24HourClock': s.minimalUse24HourClock,
         'minimalDayStartMinutes': s.minimalDayStartMinutes,
         'minimalDayEndMinutes': s.minimalDayEndMinutes,
-        'minimalUseWallpaper': s.minimalUseWallpaper,
+        'minimalBackground': s.minimalBackground.index,
+        'minimalPhotoPath': s.minimalPhotoPath,
+        'minimalBlur': s.minimalBlur,
+        'minimalDim': s.minimalDim,
         'minimalBackgroundColor': s.minimalBackgroundColor,
         'showDock': s.showDock,
         'dockSize': s.dockSize,
@@ -236,7 +242,11 @@ class SettingsCubit extends Cubit<LauncherSettings> {
       wallpaperBlur: j['wallpaperBlur'] as bool? ?? false,
       wallpaperBlurIntensity:
           (j['wallpaperBlurIntensity'] as num?)?.toDouble() ?? 0.3,
-      customWallpaperPath: j['customWallpaperPath'] as String? ?? '',
+      iosBackground: enumAt(
+          HomeBackground.values, 'iosBackground', HomeBackground.wallpaper),
+      iosPhotoPath: j['iosPhotoPath'] as String? ?? '',
+      iosBlur: (j['iosBlur'] as num?)?.toDouble() ?? 0,
+      iosDim: (j['iosDim'] as num?)?.toDouble() ?? 0,
       iosGridColumns: j['iosGridColumns'] as int? ?? 4,
       iosLibraryViewMode: enumAt(IosLibraryViewMode.values,
           'iosLibraryViewMode', IosLibraryViewMode.grid),
@@ -247,7 +257,23 @@ class SettingsCubit extends Cubit<LauncherSettings> {
       minimalUse24HourClock: j['minimalUse24HourClock'] as bool? ?? false,
       minimalDayStartMinutes: j['minimalDayStartMinutes'] as int? ?? 8 * 60,
       minimalDayEndMinutes: j['minimalDayEndMinutes'] as int? ?? 22 * 60,
-      minimalUseWallpaper: j['minimalUseWallpaper'] as bool? ?? false,
+      // Older builds stored a wallpaper/colour bool.
+      minimalBackground: enumAt(
+        HomeBackground.values,
+        'minimalBackground',
+        j['minimalUseWallpaper'] == true
+            ? HomeBackground.wallpaper
+            : HomeBackground.color,
+      ),
+      minimalPhotoPath: j['minimalPhotoPath'] as String? ?? '',
+      // Older builds blurred Minimal with the shared wallpaperBlur setting.
+      minimalBlur: (j['minimalBlur'] as num?)?.toDouble() ??
+          (j['wallpaperBlur'] == true
+              ? ((4 + ((j['wallpaperBlurIntensity'] as num?) ?? 0.3) * 18) /
+                      homeBlurMaxSigma)
+                  .clamp(0.0, 1.0)
+              : 0.0),
+      minimalDim: (j['minimalDim'] as num?)?.toDouble() ?? 0.28,
       minimalBackgroundColor: j['minimalBackgroundColor'] as int? ?? 0xFF000000,
       showDock: j['showDock'] as bool? ?? true,
       dockSize: j['dockSize'] as int? ?? 4,

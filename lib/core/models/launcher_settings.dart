@@ -15,6 +15,14 @@ enum DrawerLayout { standard, caddy }
 
 enum IosLibraryViewMode { grid, list }
 
+/// What the iOS / Minimal home paints behind its content. [wallpaper] follows
+/// the phone's wallpaper; [photo] is an image picked for that style only;
+/// [color] is a flat colour (Minimal only).
+enum HomeBackground { wallpaper, photo, color }
+
+/// Blur sigma at 100% on the iOS / Minimal blur slider.
+const double homeBlurMaxSigma = 24;
+
 enum GestureAction {
   none,
   openDrawer,
@@ -67,7 +75,12 @@ class LauncherSettings extends Equatable {
   final bool wallpaperDepthEffect;
   final bool wallpaperBlur;
   final double wallpaperBlurIntensity;
-  final String customWallpaperPath;
+  final HomeBackground iosBackground;
+  final String iosPhotoPath;
+  // Blur (0 = off, 1 = strongest) and dim (scrim opacity) over the iOS /
+  // Minimal wallpaper or photo; unused in Minimal's colour mode.
+  final double iosBlur;
+  final double iosDim;
   final int iosGridColumns;
   final IosLibraryViewMode iosLibraryViewMode;
   final List<String> iosDockPackages;
@@ -76,11 +89,19 @@ class LauncherSettings extends Equatable {
   final bool minimalUse24HourClock;
   final int minimalDayStartMinutes;
   final int minimalDayEndMinutes;
-  // Minimal background: when true the home + drawer show the device wallpaper
-  // (same as the Smart launcher); when false they paint [minimalBackgroundColor]
-  // as a flat solid colour.
-  final bool minimalUseWallpaper;
+  // Minimal background for the home + drawer; [minimalBackgroundColor] is used
+  // in [HomeBackground.color] mode.
+  final HomeBackground minimalBackground;
+  final String minimalPhotoPath;
+  final double minimalBlur;
+  final double minimalDim;
   final int minimalBackgroundColor;
+
+  /// The photo each style paints, or '' to follow the phone's wallpaper.
+  String get iosActivePhotoPath =>
+      iosBackground == HomeBackground.photo ? iosPhotoPath : '';
+  String get minimalActivePhotoPath =>
+      minimalBackground == HomeBackground.photo ? minimalPhotoPath : '';
 
   // Dock
   final bool showDock;
@@ -157,7 +178,10 @@ class LauncherSettings extends Equatable {
     this.wallpaperDepthEffect = false,
     this.wallpaperBlur = false,
     this.wallpaperBlurIntensity = 0.3,
-    this.customWallpaperPath = '',
+    this.iosBackground = HomeBackground.wallpaper,
+    this.iosPhotoPath = '',
+    this.iosBlur = 0,
+    this.iosDim = 0,
     this.iosGridColumns = 4,
     this.iosLibraryViewMode = IosLibraryViewMode.grid,
     this.iosDockPackages = const [],
@@ -166,7 +190,10 @@ class LauncherSettings extends Equatable {
     this.minimalUse24HourClock = false,
     this.minimalDayStartMinutes = 8 * 60,
     this.minimalDayEndMinutes = 22 * 60,
-    this.minimalUseWallpaper = false,
+    this.minimalBackground = HomeBackground.color,
+    this.minimalPhotoPath = '',
+    this.minimalBlur = 0,
+    this.minimalDim = 0.28,
     this.minimalBackgroundColor = 0xFF000000,
     this.showDock = true,
     this.dockSize = 4,
@@ -238,7 +265,10 @@ class LauncherSettings extends Equatable {
     bool? wallpaperDepthEffect,
     bool? wallpaperBlur,
     double? wallpaperBlurIntensity,
-    String? customWallpaperPath,
+    HomeBackground? iosBackground,
+    String? iosPhotoPath,
+    double? iosBlur,
+    double? iosDim,
     int? iosGridColumns,
     IosLibraryViewMode? iosLibraryViewMode,
     List<String>? iosDockPackages,
@@ -247,7 +277,10 @@ class LauncherSettings extends Equatable {
     bool? minimalUse24HourClock,
     int? minimalDayStartMinutes,
     int? minimalDayEndMinutes,
-    bool? minimalUseWallpaper,
+    HomeBackground? minimalBackground,
+    String? minimalPhotoPath,
+    double? minimalBlur,
+    double? minimalDim,
     int? minimalBackgroundColor,
     bool? showDock,
     int? dockSize,
@@ -322,7 +355,10 @@ class LauncherSettings extends Equatable {
       wallpaperBlur: wallpaperBlur ?? this.wallpaperBlur,
       wallpaperBlurIntensity:
           wallpaperBlurIntensity ?? this.wallpaperBlurIntensity,
-      customWallpaperPath: customWallpaperPath ?? this.customWallpaperPath,
+      iosBackground: iosBackground ?? this.iosBackground,
+      iosPhotoPath: iosPhotoPath ?? this.iosPhotoPath,
+      iosBlur: iosBlur ?? this.iosBlur,
+      iosDim: iosDim ?? this.iosDim,
       iosGridColumns: iosGridColumns ?? this.iosGridColumns,
       iosLibraryViewMode: iosLibraryViewMode ?? this.iosLibraryViewMode,
       iosDockPackages: iosDockPackages ?? this.iosDockPackages,
@@ -334,7 +370,10 @@ class LauncherSettings extends Equatable {
       minimalDayStartMinutes:
           minimalDayStartMinutes ?? this.minimalDayStartMinutes,
       minimalDayEndMinutes: minimalDayEndMinutes ?? this.minimalDayEndMinutes,
-      minimalUseWallpaper: minimalUseWallpaper ?? this.minimalUseWallpaper,
+      minimalBackground: minimalBackground ?? this.minimalBackground,
+      minimalPhotoPath: minimalPhotoPath ?? this.minimalPhotoPath,
+      minimalBlur: minimalBlur ?? this.minimalBlur,
+      minimalDim: minimalDim ?? this.minimalDim,
       minimalBackgroundColor:
           minimalBackgroundColor ?? this.minimalBackgroundColor,
       showDock: showDock ?? this.showDock,
@@ -411,7 +450,10 @@ class LauncherSettings extends Equatable {
         wallpaperDepthEffect,
         wallpaperBlur,
         wallpaperBlurIntensity,
-        customWallpaperPath,
+        iosBackground,
+        iosPhotoPath,
+        iosBlur,
+        iosDim,
         iosGridColumns,
         iosLibraryViewMode,
         iosDockPackages,
@@ -420,7 +462,10 @@ class LauncherSettings extends Equatable {
         minimalUse24HourClock,
         minimalDayStartMinutes,
         minimalDayEndMinutes,
-        minimalUseWallpaper,
+        minimalBackground,
+        minimalPhotoPath,
+        minimalBlur,
+        minimalDim,
         minimalBackgroundColor,
         showDock,
         dockSize,

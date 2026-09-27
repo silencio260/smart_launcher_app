@@ -19,6 +19,7 @@ import 'package:smart_launcher_app/core/widgets/icons/shaped_icon.dart';
 import 'package:smart_launcher_app/core/widgets/wallpaper/themed_wallpaper_background.dart';
 import 'package:smart_launcher_app/features/app_library/presentation/screens/app_library_page.dart';
 import 'package:smart_launcher_app/features/discover/presentation/screens/discover_page.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/home_background_sheet.dart';
 import 'package:smart_launcher_app/features/home/presentation/widgets/workspace/home_sections.dart';
 
 class IosHomeView extends StatefulWidget {
@@ -84,11 +85,15 @@ class _IosHomeViewState extends State<IosHomeView>
       fit: StackFit.expand,
       children: [
         ThemedWallpaperBackground(
-          path: settings.customWallpaperPath,
+          path: settings.iosActivePhotoPath,
           useSystemWallpaper: true,
           transparentSystemFallback: true,
+          blur: settings.iosBlur > 0,
+          blurSigma: settings.iosBlur * homeBlurMaxSigma,
           fallbackColors: const [Color(0xFF1A2440), Color(0xFF9C6F72)],
         ),
+        if (settings.iosDim > 0)
+          ColoredBox(color: Colors.black.withValues(alpha: settings.iosDim)),
         BlocBuilder<AppsCubit, AppsState>(
           buildWhen: (prev, next) => prev.apps != next.apps,
           builder: (context, appsState) {
@@ -320,7 +325,7 @@ class _IosHomeViewState extends State<IosHomeView>
       fit: StackFit.expand,
       children: [
         ThemedWallpaperBackground(
-          path: settings.customWallpaperPath,
+          path: settings.iosActivePhotoPath,
           useSystemWallpaper: true,
           transparentSystemFallback: true,
           blur: true,
@@ -512,9 +517,13 @@ class _IosHomeViewState extends State<IosHomeView>
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) => _HomeOptionsSheet(
-        onChangeWallpaper: () {
+        onBackground: () {
           Navigator.pop(context);
-          widget.onOpenWallpaper();
+          showHomeBackgroundSheet(
+            this.context,
+            style: HomeMode.ios,
+            onOpenWallpaperBrowser: widget.onOpenWallpaper,
+          );
         },
         onEditHome: () {
           Navigator.pop(context);
@@ -1247,12 +1256,12 @@ class _Dock extends StatelessWidget {
 }
 
 class _HomeOptionsSheet extends StatelessWidget {
-  final VoidCallback onChangeWallpaper;
+  final VoidCallback onBackground;
   final VoidCallback onEditHome;
   final VoidCallback onSettings;
 
   const _HomeOptionsSheet({
-    required this.onChangeWallpaper,
+    required this.onBackground,
     required this.onEditHome,
     required this.onSettings,
   });
@@ -1283,8 +1292,8 @@ class _HomeOptionsSheet extends StatelessWidget {
                   ),
                   _SheetTile(
                     icon: Icons.wallpaper,
-                    label: 'Change Wallpaper',
-                    onTap: onChangeWallpaper,
+                    label: 'Background',
+                    onTap: onBackground,
                   ),
                   _SheetTile(
                     icon: Icons.grid_view_rounded,
@@ -1947,7 +1956,7 @@ class _IosSpotlightState extends State<_IosSpotlight> {
       fit: StackFit.expand,
       children: [
         ThemedWallpaperBackground(
-          path: settings.customWallpaperPath,
+          path: settings.iosActivePhotoPath,
           useSystemWallpaper: true,
           transparentSystemFallback: true,
           blur: true,

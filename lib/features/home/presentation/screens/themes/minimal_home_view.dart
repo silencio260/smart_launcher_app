@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
 
@@ -10,12 +11,14 @@ import 'package:smart_launcher_app/features/apps/presentation/bloc/apps_cubit.da
 import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
 import 'package:smart_launcher_app/core/widgets/app_menu/launcher_app_context_menu.dart';
 import 'package:smart_launcher_app/core/widgets/wallpaper/themed_wallpaper_background.dart';
+import 'package:smart_launcher_app/features/home/presentation/widgets/home_background_sheet.dart';
 
 class MinimalHomeView extends StatefulWidget {
   final LauncherSettings settings;
   final ValueChanged<AppInfo> onLaunchApp;
   final VoidCallback onOpenSearch;
   final VoidCallback onOpenSettings;
+  final VoidCallback onOpenWallpaper;
 
   const MinimalHomeView({
     super.key,
@@ -23,6 +26,7 @@ class MinimalHomeView extends StatefulWidget {
     required this.onLaunchApp,
     required this.onOpenSearch,
     required this.onOpenSettings,
+    required this.onOpenWallpaper,
   });
 
   @override
@@ -55,93 +59,108 @@ class _MinimalHomeViewState extends State<MinimalHomeView> {
   @override
   Widget build(BuildContext context) {
     final settings = widget.settings;
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Background: the device wallpaper (same as the Smart launcher) or a
-        // flat solid colour, depending on the Minimal setting.
-        if (settings.minimalUseWallpaper) ...[
-          ThemedWallpaperBackground(
-            path: settings.customWallpaperPath,
-            useSystemWallpaper: true,
-            transparentSystemFallback: true,
-            blur: settings.wallpaperBlur,
-            blurSigma: 4 + settings.wallpaperBlurIntensity * 18,
-            fallbackColors: const [Colors.black, Colors.black],
-          ),
-          ColoredBox(color: Colors.black.withValues(alpha: 0.28)),
-        ] else
-          ColoredBox(color: Color(settings.minimalBackgroundColor)),
-        SafeArea(
-          child: BlocBuilder<AppsCubit, AppsState>(
-            buildWhen: (prev, next) => prev.apps != next.apps,
-            builder: (context, appsState) {
-              final apps = _visibleApps(appsState.apps, settings);
-              final favorites = _favoriteApps(apps, settings);
-              return PageView(
-                controller: _pageController,
-                physics: const BouncingScrollPhysics(),
-                children: [
-                  _MinimalDiscoverPage(
-                    now: _now,
-                    settings: settings,
-                    onSettings: widget.onOpenSettings,
-                  ),
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onVerticalDragEnd: (details) {
-                      final velocity = details.primaryVelocity ?? 0;
-                      if (velocity < -350) _openDrawerPage(apps, settings);
-                      if (velocity > 350) widget.onOpenSearch();
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(28, 22, 28, 16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Spacer(flex: 2),
-                          _Clock(now: _now, settings: settings),
-                          const SizedBox(height: 10),
-                          Text(
-                            _dateBatteryText,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.76),
-                              fontSize: settings.minimalFontSize,
-                              letterSpacing: 0,
+    final ink = _inkFor(settings);
+    return _MinimalInk(
+      color: ink,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Background: the phone wallpaper, a photo picked for Minimal, or a
+          // flat solid colour.
+          if (settings.minimalBackground != HomeBackground.color) ...[
+            ThemedWallpaperBackground(
+              path: settings.minimalActivePhotoPath,
+              useSystemWallpaper: true,
+              transparentSystemFallback: true,
+              blur: settings.minimalBlur > 0,
+              blurSigma: settings.minimalBlur * homeBlurMaxSigma,
+              fallbackColors: const [Colors.black, Colors.black],
+            ),
+            ColoredBox(
+              color: Colors.black.withValues(alpha: settings.minimalDim),
+            ),
+          ] else
+            ColoredBox(color: Color(settings.minimalBackgroundColor)),
+          SafeArea(
+            child: BlocBuilder<AppsCubit, AppsState>(
+              buildWhen: (prev, next) => prev.apps != next.apps,
+              builder: (context, appsState) {
+                final apps = _visibleApps(appsState.apps, settings);
+                final favorites = _favoriteApps(apps, settings);
+                return PageView(
+                  controller: _pageController,
+                  physics: const BouncingScrollPhysics(),
+                  children: [
+                    _MinimalDiscoverPage(
+                      now: _now,
+                      settings: settings,
+                      onSettings: widget.onOpenSettings,
+                    ),
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onLongPress: _openBackgroundSheet,
+                      onVerticalDragEnd: (details) {
+                        final velocity = details.primaryVelocity ?? 0;
+                        if (velocity < -350) _openDrawerPage(apps, settings);
+                        if (velocity > 350) widget.onOpenSearch();
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(28, 22, 28, 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Spacer(flex: 2),
+                            _Clock(now: _now, settings: settings),
+                            const SizedBox(height: 10),
+                            Text(
+                              _dateBatteryText,
+                              style: TextStyle(
+                                color: ink.withValues(alpha: 0.76),
+                                fontSize: settings.minimalFontSize,
+                                letterSpacing: 0,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 18),
-                          _DayProgress(settings: settings, now: _now),
-                          const Spacer(flex: 2),
-                          _FavoritesList(
-                            favorites: favorites,
-                            fontSize: settings.minimalFontSize,
-                            onLaunch: widget.onLaunchApp,
-                            onAdd: () => _showFavoritePicker(apps, settings),
-                            onLongPress: (app, position) =>
-                                _showFavoriteMenu(app, position, settings),
-                          ),
-                          const Spacer(flex: 4),
-                          _MinimalActions(
-                            onApps: () => _openDrawerPage(apps, settings),
-                            onSearch: widget.onOpenSearch,
-                            onSettings: widget.onOpenSettings,
-                          ),
-                        ],
+                            const SizedBox(height: 18),
+                            _DayProgress(settings: settings, now: _now),
+                            const Spacer(flex: 2),
+                            _FavoritesList(
+                              favorites: favorites,
+                              fontSize: settings.minimalFontSize,
+                              onLaunch: widget.onLaunchApp,
+                              onAdd: () => _showFavoritePicker(apps, settings),
+                              onLongPress: (app, position) =>
+                                  _showFavoriteMenu(app, position, settings),
+                            ),
+                            const Spacer(flex: 4),
+                            _MinimalActions(
+                              onApps: () => _openDrawerPage(apps, settings),
+                              onSearch: widget.onOpenSearch,
+                              onSettings: widget.onOpenSettings,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  _MinimalLibraryPage(
-                    apps: apps,
-                    fontSize: settings.minimalFontSize,
-                    onLaunch: widget.onLaunchApp,
-                  ),
-                ],
-              );
-            },
+                    _MinimalLibraryPage(
+                      apps: apps,
+                      fontSize: settings.minimalFontSize,
+                      onLaunch: widget.onLaunchApp,
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
+    );
+  }
+
+  void _openBackgroundSheet() {
+    showHomeBackgroundSheet(
+      context,
+      style: HomeMode.minimal,
+      onOpenWallpaperBrowser: widget.onOpenWallpaper,
     );
   }
 
@@ -302,6 +321,7 @@ class _MinimalDiscoverPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ink = _MinimalInk.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(28, 28, 28, 22),
       child: Column(
@@ -312,7 +332,7 @@ class _MinimalDiscoverPage extends StatelessWidget {
               Text(
                 'Discover',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: ink,
                   fontSize: settings.minimalFontSize * 1.6,
                   fontWeight: FontWeight.w300,
                 ),
@@ -320,8 +340,8 @@ class _MinimalDiscoverPage extends StatelessWidget {
               const Spacer(),
               IconButton(
                 onPressed: onSettings,
-                color: Colors.white70,
-                icon: const Icon(Icons.settings_outlined),
+                color: ink.withValues(alpha: 0.7),
+                icon: Icon(Icons.settings_outlined),
               ),
             ],
           ),
@@ -329,7 +349,7 @@ class _MinimalDiscoverPage extends StatelessWidget {
           Text(
             DateFormat('EEEE').format(now),
             style: TextStyle(
-              color: Colors.white,
+              color: ink,
               fontSize: settings.minimalFontSize * 2.4,
               fontWeight: FontWeight.w200,
             ),
@@ -338,7 +358,7 @@ class _MinimalDiscoverPage extends StatelessWidget {
           Text(
             DateFormat('MMMM d, y').format(now),
             style: TextStyle(
-              color: Colors.white70,
+              color: ink.withValues(alpha: 0.7),
               fontSize: settings.minimalFontSize,
             ),
           ),
@@ -374,14 +394,15 @@ class _MinimalInfoLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ink = _MinimalInk.of(context);
     return Row(
       children: [
-        Icon(icon, color: Colors.white60, size: fontSize + 4),
+        Icon(icon, color: ink.withValues(alpha: 0.6), size: fontSize + 4),
         const SizedBox(width: 12),
         Expanded(
           child: Text(
             text,
-            style: TextStyle(color: Colors.white70, fontSize: fontSize),
+            style: TextStyle(color: ink.withValues(alpha: 0.7), fontSize: fontSize),
           ),
         ),
       ],
@@ -409,6 +430,7 @@ class _MinimalLibraryPageState extends State<_MinimalLibraryPage> {
 
   @override
   Widget build(BuildContext context) {
+    final ink = _MinimalInk.of(context);
     final apps = _filtered;
     return Padding(
       padding: const EdgeInsets.fromLTRB(28, 28, 28, 16),
@@ -418,7 +440,7 @@ class _MinimalLibraryPageState extends State<_MinimalLibraryPage> {
           Text(
             'Library',
             style: TextStyle(
-              color: Colors.white,
+              color: ink,
               fontSize: widget.fontSize * 1.6,
               fontWeight: FontWeight.w300,
             ),
@@ -490,77 +512,81 @@ class _MinimalDrawerPageState extends State<_MinimalDrawerPage> {
     // The drawer gets its own background: the device wallpaper (blurred, with a
     // dark scrim for legibility) when wallpaper mode is on, otherwise the flat
     // solid colour — matching the home background choice.
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        if (settings.minimalUseWallpaper) ...[
-          ThemedWallpaperBackground(
-            path: settings.customWallpaperPath,
-            useSystemWallpaper: true,
-            transparentSystemFallback: true,
-            blur: true,
-            blurSigma: 26,
-            fallbackColors: const [Colors.black, Colors.black],
-          ),
-          ColoredBox(color: Colors.black.withValues(alpha: 0.55)),
-        ] else
-          ColoredBox(color: Color(settings.minimalBackgroundColor)),
-        Material(
-          type: MaterialType.transparency,
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(26, 18, 26, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        'Apps',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: widget.fontSize * 1.7,
-                          fontWeight: FontWeight.w300,
-                        ),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        onPressed: widget.onDismiss,
-                        color: Colors.white70,
-                        icon: const Icon(Icons.close),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _MinimalSearchField(
-                    hint: 'Search',
-                    onChanged: (value) => setState(() => _query = value),
-                  ),
-                  const SizedBox(height: 16),
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: apps.length,
-                      itemBuilder: (context, index) {
-                        final app = apps[index];
-                        return _MinimalAppTextTile(
-                          app: app,
-                          fontSize: widget.fontSize,
-                          onTap: () => widget.onLaunch(app),
-                          onLongPress: (position) => showLauncherAppContextMenu(
-                            context,
-                            app: app,
-                            globalPosition: position,
+    final ink = _inkFor(settings);
+    return _MinimalInk(
+      color: ink,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (settings.minimalBackground != HomeBackground.color) ...[
+            ThemedWallpaperBackground(
+              path: settings.minimalActivePhotoPath,
+              useSystemWallpaper: true,
+              transparentSystemFallback: true,
+              blur: true,
+              blurSigma: 26,
+              fallbackColors: const [Colors.black, Colors.black],
+            ),
+            ColoredBox(color: Colors.black.withValues(alpha: 0.55)),
+          ] else
+            ColoredBox(color: Color(settings.minimalBackgroundColor)),
+          Material(
+            type: MaterialType.transparency,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(26, 18, 26, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          'Apps',
+                          style: TextStyle(
+                            color: ink,
+                            fontSize: widget.fontSize * 1.7,
+                            fontWeight: FontWeight.w300,
                           ),
-                        );
-                      },
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          onPressed: widget.onDismiss,
+                          color: ink.withValues(alpha: 0.7),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    _MinimalSearchField(
+                      hint: 'Search',
+                      onChanged: (value) => setState(() => _query = value),
+                    ),
+                    const SizedBox(height: 16),
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: apps.length,
+                        itemBuilder: (context, index) {
+                          final app = apps[index];
+                          return _MinimalAppTextTile(
+                            app: app,
+                            fontSize: widget.fontSize,
+                            onTap: () => widget.onLaunch(app),
+                            onLongPress: (position) => showLauncherAppContextMenu(
+                              context,
+                              app: app,
+                              globalPosition: position,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -581,15 +607,16 @@ class _MinimalSearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ink = _MinimalInk.of(context);
     return TextField(
       onChanged: onChanged,
-      style: const TextStyle(color: Colors.white),
+      style: TextStyle(color: ink),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Colors.white38),
-        prefixIcon: const Icon(Icons.search, color: Colors.white54),
+        hintStyle: TextStyle(color: ink.withValues(alpha: 0.38)),
+        prefixIcon: Icon(Icons.search, color: ink.withValues(alpha: 0.54)),
         filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.08),
+        fillColor: ink.withValues(alpha: 0.08),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide.none,
@@ -614,6 +641,7 @@ class _MinimalAppTextTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ink = _MinimalInk.of(context);
     return GestureDetector(
       onTap: onTap,
       onLongPressStart: onLongPress == null
@@ -627,7 +655,7 @@ class _MinimalAppTextTile extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            color: Colors.white,
+            color: ink,
             fontSize: fontSize * 1.18,
             fontWeight: FontWeight.w300,
           ),
@@ -645,11 +673,12 @@ class _Clock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ink = _MinimalInk.of(context);
     final pattern = settings.minimalUse24HourClock ? 'HH:mm' : 'h:mm';
     return Text(
       DateFormat(pattern).format(now),
       style: TextStyle(
-        color: Colors.white,
+        color: ink,
         fontSize: settings.minimalFontSize * 4.0,
         fontWeight: FontWeight.w200,
         height: 0.95,
@@ -667,6 +696,7 @@ class _DayProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ink = _MinimalInk.of(context);
     final minutes = now.hour * 60 + now.minute;
     final start = settings.minimalDayStartMinutes;
     final end = settings.minimalDayEndMinutes;
@@ -677,8 +707,8 @@ class _DayProgress extends StatelessWidget {
       child: LinearProgressIndicator(
         minHeight: 4,
         value: progress,
-        color: Colors.white,
-        backgroundColor: Colors.white.withValues(alpha: 0.18),
+        color: ink,
+        backgroundColor: ink.withValues(alpha: 0.18),
       ),
     );
   }
@@ -701,6 +731,7 @@ class _FavoritesList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ink = _MinimalInk.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -717,7 +748,7 @@ class _FavoritesList extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: Colors.white,
+                  color: ink,
                   fontSize: fontSize * 1.35,
                   fontWeight: FontWeight.w300,
                   letterSpacing: 0,
@@ -728,9 +759,9 @@ class _FavoritesList extends StatelessWidget {
         const SizedBox(height: 14),
         TextButton.icon(
           onPressed: onAdd,
-          icon: const Icon(Icons.add_rounded, size: 18),
+          icon: Icon(Icons.add_rounded, size: 18),
           label: const Text('Apps'),
-          style: TextButton.styleFrom(foregroundColor: Colors.white70),
+          style: TextButton.styleFrom(foregroundColor: ink.withValues(alpha: 0.7)),
         ),
       ],
     );
@@ -769,13 +800,48 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ink = _MinimalInk.of(context);
     return IconButton.filledTonal(
       onPressed: onTap,
-      color: Colors.white,
+      color: ink,
       style: IconButton.styleFrom(
-        backgroundColor: Colors.white.withValues(alpha: 0.12),
+        backgroundColor: ink.withValues(alpha: 0.12),
       ),
       icon: Icon(icon),
     );
   }
+}
+
+/// Text/icon colour for Minimal: dark on a light solid colour, otherwise white
+/// (wallpaper and photo modes sit under a dark scrim).
+Color _inkFor(LauncherSettings settings) {
+  final light = settings.minimalBackground == HomeBackground.color &&
+      Color(settings.minimalBackgroundColor).computeLuminance() > 0.5;
+  return light ? const Color(0xFF111111) : Colors.white;
+}
+
+/// Provides [_inkFor] to Minimal's widgets and matches the status-bar icons.
+class _MinimalInk extends InheritedWidget {
+  final Color color;
+
+  _MinimalInk({required this.color, required Widget child})
+      : super(
+          child: AnnotatedRegion<SystemUiOverlayStyle>(
+            value: (color == Colors.white
+                    ? SystemUiOverlayStyle.light
+                    : SystemUiOverlayStyle.dark)
+                .copyWith(
+              statusBarColor: Colors.transparent,
+              systemNavigationBarColor: Colors.transparent,
+            ),
+            child: child,
+          ),
+        );
+
+  static Color of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_MinimalInk>()?.color ??
+      Colors.white;
+
+  @override
+  bool updateShouldNotify(_MinimalInk oldWidget) => color != oldWidget.color;
 }
