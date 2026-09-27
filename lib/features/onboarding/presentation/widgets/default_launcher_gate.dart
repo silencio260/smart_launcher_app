@@ -86,11 +86,37 @@ class _ForcedDefaultView extends StatefulWidget {
   State<_ForcedDefaultView> createState() => _ForcedDefaultViewState();
 }
 
-class _ForcedDefaultViewState extends State<_ForcedDefaultView> {
+class _ForcedDefaultViewState extends State<_ForcedDefaultView>
+    with WidgetsBindingObserver {
   bool _requestInFlight = false;
+  bool _asked = false;
+  bool _showError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Granting the role lifts the gate and removes this view; still being
+    // here a moment after coming back means the user didn't grant it.
+    if (state != AppLifecycleState.resumed || !_asked) return;
+    Future<void>.delayed(const Duration(milliseconds: 1200), () {
+      if (mounted) setState(() => _showError = true);
+    });
+  }
 
   Future<void> _request() async {
     if (_requestInFlight) return;
+    _asked = true;
     setState(() => _requestInFlight = true);
     AppAnalytics.onboardingDefaultRequested();
     await LauncherService.requestHomeRole();
@@ -105,6 +131,7 @@ class _ForcedDefaultViewState extends State<_ForcedDefaultView> {
         child: SetDefaultPage(
           requestInFlight: _requestInFlight,
           onSetDefault: _request,
+          showNotDefaultError: _showError && !_requestInFlight,
         ),
       ),
     );

@@ -23,6 +23,7 @@ import 'package:genrevibes_feedbacknest/genrevibes_feedbacknest.dart';
 import 'package:genrevibes_permissions/genrevibes_permissions.dart';
 import 'package:genrevibes_permissions_handler/genrevibes_permissions_handler.dart';
 import 'package:genrevibes_engagement/genrevibes_engagement.dart';
+import 'package:genrevibes_onboarding/genrevibes_onboarding.dart';
 import 'package:genrevibes_remote_config/genrevibes_remote_config.dart';
 import 'package:genrevibes_remote_config_firebase/genrevibes_remote_config_firebase.dart';
 import 'package:genrevibes_remote_config_shared_preferences/genrevibes_remote_config_shared_preferences.dart';
@@ -32,6 +33,7 @@ import 'package:genrevibes_storage/genrevibes_storage.dart';
 import 'package:genrevibes_storage_shared_preferences/genrevibes_storage_shared_preferences.dart';
 import 'package:smart_launcher_app/bootstrap/debug_kit_logger.dart';
 import 'package:smart_launcher_app/core/ads/launcher_ads.dart';
+import 'package:smart_launcher_app/features/onboarding/data/onboarding_store.dart';
 import 'package:smart_launcher_app/core/analytics/analytics_config.dart';
 import 'package:smart_launcher_app/core/config/app_env.dart';
 import 'package:smart_launcher_app/core/config/launcher_policy_keys.dart';
@@ -94,8 +96,13 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
     );
     store = MigratingKeyValueStore(
       delegate: _preferences,
-      legacyKeys: EngagementKeys.legacyKeys,
+      legacyKeys: {
+        ...EngagementKeys.legacyKeys,
+        // The launcher's own completion flag from before the kit controller.
+        OnboardingKeys.completed: OnboardingStore.legacyCompletedKey,
+      },
     );
+    onboarding = OnboardingController(store: store, logger: logger);
     retention = RetentionTracker(
       store: store,
       observer: _LauncherEngagementObserver(this),
@@ -238,6 +245,12 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
           create: () => retention,
           isRequired: false,
         ),
+        // Initialized before the first frame: the home gate routes on it.
+        StarterModuleRegistration.enabled(
+          moduleId: onboarding.moduleId,
+          create: () => onboarding,
+          isRequired: false,
+        ),
         // Ads start after the first frame: the launcher has to be usable
         // before any network SDK gets a turn.
         if (adProvider case final provider?)
@@ -305,6 +318,7 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
       analytics,
       if (analyticsSwitches case final binder?) binder,
       retention,
+      onboarding,
       if (feedback != null) feedback!,
       permissions,
       rating,
@@ -389,6 +403,10 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
   late final SessionReplayRemotePolicyBinder replayPolicyBinder;
 
   late final RetentionTracker retention;
+
+  /// Whether the three onboarding screens were completed. Read by the home
+  /// gate, the onboarding flow and Kit Lab.
+  late final OnboardingController onboarding;
   late final GenRevibesStarterKit coordinator;
   /// Yodo1 MAS, or null when no app key is configured for this build.
   Yodo1MasAdProvider? adProvider;

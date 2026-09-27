@@ -7,13 +7,13 @@ import 'package:smart_launcher_app/core/platform/launcher_service.dart';
 import 'package:smart_launcher_app/features/home/presentation/screens/home_screen.dart';
 import 'package:smart_launcher_app/features/onboarding/data/default_launcher_policy.dart';
 import 'package:smart_launcher_app/features/onboarding/data/onboarding_store.dart';
-import 'package:smart_launcher_app/features/onboarding/presentation/widgets/onboarding_done_page.dart';
 import 'package:smart_launcher_app/features/onboarding/presentation/widgets/set_default_page.dart';
 import 'package:smart_launcher_app/features/onboarding/presentation/widgets/wallpaper_page.dart';
 
-/// Set-as-default step that follows onboarding. Granting the role, or closing
-/// the screen after coming back without granting it, moves on to
-/// [WallpaperSetupScreen]. When the role is forced remotely there is no close.
+/// Set-as-default step that follows onboarding. Granting the role moves on to
+/// [WallpaperSetupScreen] at once. Coming back without it shows an error under
+/// the button and, unless the role is forced remotely, a close button that
+/// also moves on.
 class SetDefaultScreen extends StatefulWidget {
   const SetDefaultScreen({super.key, this.previewMode = false});
 
@@ -31,7 +31,6 @@ class _SetDefaultScreenState extends State<SetDefaultScreen>
   bool _asked = false;
   bool _requestInFlight = false;
   bool _returnedWithoutRole = false;
-  bool _granted = false;
   bool _left = false;
 
   @override
@@ -57,21 +56,23 @@ class _SetDefaultScreenState extends State<SetDefaultScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // The grant happens in Android's own dialog; re-check on the way back.
+    // The grant happens in Android's own dialog or settings; re-check on the
+    // way back, once more a moment later in case the change lands late.
     if (state != AppLifecycleState.resumed || !_asked) return;
-    _checkRole().then((granted) {
-      if (!granted && mounted) setState(() => _returnedWithoutRole = true);
-    });
+    unawaited(() async {
+      if (await _checkRole()) return;
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+      if (!mounted || await _checkRole()) return;
+      if (mounted) setState(() => _returnedWithoutRole = true);
+    }());
   }
 
+  /// Moves on as soon as this app holds the home role.
   Future<bool> _checkRole() async {
     final isDefault = await LauncherService.isDefaultLauncher();
-    if (!mounted || !isDefault || _granted) return isDefault;
+    if (!mounted || !isDefault || _left) return isDefault;
     AppAnalytics.launcherSetDefault(true);
-    setState(() => _granted = true);
-    Future.delayed(const Duration(milliseconds: 1100), () {
-      _goToWallpaper(declinedDefault: false);
-    });
+    _goToWallpaper(declinedDefault: false);
     return true;
   }
 
@@ -107,15 +108,14 @@ class _SetDefaultScreenState extends State<SetDefaultScreen>
       child: Scaffold(
         backgroundColor: Theme.of(context).colorScheme.surface,
         body: SafeArea(
-          child: _granted
-              ? const OnboardingDonePage()
-              : SetDefaultPage(
-                  requestInFlight: _requestInFlight,
-                  onSetDefault: _requestRole,
-                  onClose: canClose
-                      ? () => _goToWallpaper(declinedDefault: true)
-                      : null,
-                ),
+          child: SetDefaultPage(
+            requestInFlight: _requestInFlight,
+            onSetDefault: _requestRole,
+            showNotDefaultError: _returnedWithoutRole && !_requestInFlight,
+            onClose: canClose
+                ? () => _goToWallpaper(declinedDefault: true)
+                : null,
+          ),
         ),
       ),
     );

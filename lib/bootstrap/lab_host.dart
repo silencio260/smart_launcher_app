@@ -2,9 +2,11 @@ import 'package:genrevibes_app_rating/genrevibes_app_rating.dart';
 import 'package:genrevibes_device_identity_platform/genrevibes_device_identity_platform.dart';
 import 'package:genrevibes_devtools/genrevibes_devtools.dart';
 import 'package:genrevibes_engagement/genrevibes_engagement.dart';
+import 'package:genrevibes_onboarding/genrevibes_onboarding.dart';
 import 'package:smart_launcher_app/bootstrap/app_runtime.dart';
 import 'package:smart_launcher_app/core/ads/launcher_ads.dart';
 import 'package:smart_launcher_app/core/analytics/dev_event_catalogue.dart';
+import 'package:smart_launcher_app/features/onboarding/data/onboarding_store.dart';
 
 /// Describes the running launcher to Kit Lab.
 ///
@@ -29,6 +31,7 @@ DevToolsHost buildLabHost(AppRuntime runtime) {
     advertisingId: const PlatformAdvertisingIdSource(),
     developerAccess: runtime.developerAccess,
     retention: runtime.retention,
+    onboarding: runtime.onboarding,
     crash: runtime.crash,
     ads: runtime.adProvider,
     adPolicy: runtime.adPolicy,
@@ -44,6 +47,16 @@ DevToolsHost buildLabHost(AppRuntime runtime) {
 /// Keys worth showing in the storage inspector, with the app-owned keys they
 /// replaced so an upgraded install can be checked for carried-over history.
 const _storageGroups = <DevStorageGroup>[
+  DevStorageGroup(
+    title: 'Onboarding',
+    entries: <DevStorageEntry>[
+      DevStorageEntry(
+        key: OnboardingKeys.completed,
+        legacyKey: OnboardingStore.legacyCompletedKey,
+        label: 'Completed',
+      ),
+    ],
+  ),
   DevStorageGroup(
     title: 'Retention',
     entries: <DevStorageEntry>[

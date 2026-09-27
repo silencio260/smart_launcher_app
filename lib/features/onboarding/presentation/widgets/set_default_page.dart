@@ -10,11 +10,15 @@ class SetDefaultPage extends StatelessWidget {
     super.key,
     required this.requestInFlight,
     required this.onSetDefault,
+    this.showNotDefaultError = false,
     this.onClose,
   });
 
   final bool requestInFlight;
   final VoidCallback onSetDefault;
+
+  /// Shown under the button after the user came back without granting it.
+  final bool showNotDefaultError;
   final VoidCallback? onClose;
 
   @override
@@ -120,6 +124,15 @@ class SetDefaultPage extends StatelessWidget {
                   )
                 : const Text(AppStrings.onboardingSetDefault),
           ),
+          if (showNotDefaultError)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(
+                AppStrings.onboardingDefaultRequired,
+                textAlign: TextAlign.center,
+                style: text.bodyMedium?.copyWith(color: scheme.error),
+              ),
+            ),
           const SizedBox(height: 16),
         ],
       ),

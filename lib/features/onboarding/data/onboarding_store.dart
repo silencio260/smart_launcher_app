@@ -1,4 +1,7 @@
+import 'package:genrevibes_onboarding/genrevibes_onboarding.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:smart_launcher_app/bootstrap/app_runtime.dart';
+import 'package:smart_launcher_app/container_injector.dart';
 
 /// Launcher-feature ids that show a one-time first-open intro (Layer 2). Each
 /// maps to a `LauncherFeatureCatalog` id and a bespoke onboarding screen.
@@ -9,16 +12,18 @@ const kMiniAppOnboardingIds = <String>[
   'alarm_clock',
 ];
 
-/// Persists one-shot onboarding flags.
+/// Persists the launcher's one-shot flags around onboarding.
 ///
-/// The completion flag is preloaded once in `main()` (via [preload]) so the
-/// home gate in `MyApp` can read it synchronously and route to either the
-/// onboarding flow or the launcher without a first-frame flash.
+/// Completion of the three onboarding screens belongs to the kit's
+/// `OnboardingController` (`AppRuntime.onboarding`); this reads it for the
+/// synchronous home gate. The set-as-default + wallpaper setup flag and the
+/// mini-app intro flags are app-owned and preloaded in `main()` ([preload]).
 class OnboardingStore {
   OnboardingStore._();
 
-  /// First-run launcher onboarding finished (completed OR explicitly skipped).
-  static const _completedKey = 'onboarding_completed_v1';
+  /// Where the launcher recorded onboarding completion before the kit
+  /// controller. The runtime's migrating store adopts it.
+  static const legacyCompletedKey = 'onboarding_completed_v1';
 
   /// The set-as-default and wallpaper steps that follow onboarding finished.
   static const _setupCompletedKey = 'setup_completed_v1';
@@ -26,7 +31,6 @@ class OnboardingStore {
   /// User dismissed the persistent "set as default" home-screen nudge.
   static const _nudgeDismissedKey = 'default_nudge_dismissed_v1';
 
-  static bool? _completedCache;
   static bool? _setupCompletedCache;
 
   /// Ids of mini-apps whose first-open intro has been seen, cached for the
@@ -38,27 +42,31 @@ class OnboardingStore {
   /// Warm the synchronous caches. Call once during startup before `runApp`.
   static Future<void> preload() async {
     final prefs = await SharedPreferences.getInstance();
-    _completedCache = prefs.getBool(_completedKey) ?? false;
     // Installs from before these steps existed finished onboarding without
-    // them, so a missing flag follows onboarding.
-    _setupCompletedCache =
-        prefs.getBool(_setupCompletedKey) ?? _completedCache;
+    // them, so a missing flag follows onboarding completion.
+    _setupCompletedCache = prefs.getBool(_setupCompletedKey) ??
+        prefs.getBool(OnboardingKeys.completed) ??
+        prefs.getBool(legacyCompletedKey) ??
+        false;
     _miniAppOnboarded.clear();
     for (final id in kMiniAppOnboardingIds) {
       if (prefs.getBool(_miniAppKey(id)) ?? false) _miniAppOnboarded.add(id);
     }
   }
 
-  /// Synchronous read for the home gate. Falls back to `false` (show
-  /// onboarding) until [preload] has run.
-  static bool get isCompletedSync => _completedCache ?? false;
+  static OnboardingController? get _controller =>
+      sl.isRegistered<AppRuntime>() ? sl<AppRuntime>().onboarding : null;
 
-  static Future<void> markCompleted() async {
-    _completedCache = true;
+  /// Synchronous read for the home gate. False (show onboarding) until the
+  /// runtime's controller has initialized.
+  static bool get isCompletedSync => _controller?.isCompleted ?? false;
+
+  /// Records that setup still has to run, right as onboarding completes, so
+  /// a restart mid-setup resumes it instead of following [preload]'s
+  /// fallback for older installs.
+  static Future<void> markSetupPending() async {
     _setupCompletedCache ??= false;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_completedKey, true);
-    // Written explicitly so a restart mid-setup resumes it (see [preload]).
     if (!prefs.containsKey(_setupCompletedKey)) {
       await prefs.setBool(_setupCompletedKey, false);
     }
@@ -111,19 +119,17 @@ class OnboardingStore {
 
   // --- Dev / debug helpers (Settings > Dev View > Onboarding) ---
 
-  /// Async read of completion for the debug screen (mirrors the sync cache).
-  static Future<bool> isCompleted() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_completedKey) ?? false;
-  }
+  /// Completion for the debug screen.
+  static Future<bool> isCompleted() async => isCompletedSync;
 
-  /// Clears the completion flag so the launcher onboarding shows again on the
-  /// next cold start (and the sync gate routes to it).
+  /// Clears completion and setup so the launcher onboarding shows again on
+  /// the next cold start (and the sync gate routes to it).
   static Future<void> resetCompleted() async {
-    _completedCache = false;
+    await _controller?.reset();
     _setupCompletedCache = false;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_completedKey);
+    // The migrating store would otherwise adopt the old flag again.
+    await prefs.remove(legacyCompletedKey);
     await prefs.remove(_setupCompletedKey);
   }
 

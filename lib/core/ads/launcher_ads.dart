@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:genrevibes_ads/genrevibes_ads.dart';
+import 'package:genrevibes_remote_policy/genrevibes_remote_policy.dart';
 import 'package:smart_launcher_app/bootstrap/app_runtime.dart';
 import 'package:smart_launcher_app/container_injector.dart';
 import 'package:smart_launcher_app/core/analytics/app_events.dart';
@@ -46,6 +48,12 @@ abstract final class LauncherAdPlacements {
     format: AdFormat.native,
   );
 
+  /// Native ad on the onboarding screen(s) that have an ad slot.
+  static const onboardingNative = AdPlacement(
+    id: 'onboarding',
+    format: AdFormat.native,
+  );
+
   /// Every placement the app declares, for remote policy and Kit Lab.
   static const all = <AdPlacement>[
     miniAppOpen,
@@ -55,6 +63,7 @@ abstract final class LauncherAdPlacements {
     drawerNative,
     libraryNative,
     searchNative,
+    onboardingNative,
   ];
 }
 
@@ -80,6 +89,31 @@ abstract final class LauncherAds {
     return runtime!.adProvider?.health.isOperational ?? false
         ? coordinator
         : null;
+  }
+
+  /// Whether onboarding should lay out its native ad slot.
+  ///
+  /// Requires a configured provider, the remote `onboarding_ads_enabled`
+  /// switch and a placement the policy does not rule out. Waits that pass on
+  /// their own (initial delay, pacing) still keep the slot: the ad view shows
+  /// once they do. Checked when onboarding opens, so no empty space is
+  /// reserved in a build or state that can never fill it.
+  static bool get onboardingAdAllowed {
+    final runtime = _runtime;
+    final policy = runtime?.adPolicy;
+    if (defaultTargetPlatform != TargetPlatform.android ||
+        runtime?.adProvider == null ||
+        policy == null) {
+      return false;
+    }
+    if (!runtime!.remoteConfig.current.read(OnboardingPolicyKeys.adsEnabled)) {
+      return false;
+    }
+    final reason =
+        policy.evaluate(LauncherAdPlacements.onboardingNative).blockReason;
+    return reason == null ||
+        reason == AdPolicyBlockReason.initialDelay ||
+        reason == AdPolicyBlockReason.frequencyCap;
   }
 
   /// Whether a mini-app is currently in front. Nothing may show otherwise.

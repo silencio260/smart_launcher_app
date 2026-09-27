@@ -15,7 +15,6 @@ class AppStrings {
   static const String onboardingWelcomeBody =
       'A faster, cleaner home screen with search, widgets, and private tools '
       'right where you need them.';
-  static const String onboardingGetStarted = 'Get started';
 
   // --- Onboarding: search / organization ---
   static const String onboardingSearchTitle = 'Find everything fast';
@@ -50,12 +49,10 @@ class AppStrings {
   static const String onboardingDefaultHint =
       'You can change this anytime in Settings.';
   static const String onboardingSetDefault = 'Set as default';
+  static const String onboardingDefaultRequired =
+      'You cannot continue if you do not set Smart Launcher as the default '
+      'launcher.';
   static const String onboardingNotNow = 'Not now';
-
-  // --- Onboarding: confirmation ---
-  static const String onboardingDoneTitle = "You're all set";
-  static const String onboardingDoneBody =
-      'Smart Launcher is now your home screen.';
 
   // --- Home-screen "set as default" nudge ---
   static const String defaultNudgeLabel = 'Set as default home app';
