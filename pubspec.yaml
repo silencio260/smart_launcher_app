@@ -159,6 +159,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - config/remote_config.json
     # Reuse the shipped app icon; don't maintain a separate splash logo.
     - android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
     - assets/feature_icons/

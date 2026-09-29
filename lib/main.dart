@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:smart_launcher_app/bloc_observer.dart';
 import 'package:smart_launcher_app/bootstrap/app_runtime.dart';
+import 'package:smart_launcher_app/core/config/launcher_remote_config.dart';
 import 'package:smart_launcher_app/core/analytics/install_id.dart';
 import 'package:smart_launcher_app/firebase_options.dart';
 import 'package:smart_launcher_app/container_injector.dart';
@@ -97,7 +98,12 @@ class _LauncherBootstrapState extends State<_LauncherBootstrap> {
       if (!mounted) return;
       final installId = InstallId.getOrCreate();
       if (!mounted) return;
-      final runtime = AppRuntime(installId: installId);
+      final remoteConfigSchema = await LauncherRemoteConfig.loadSchema();
+      if (!mounted) return;
+      final runtime = AppRuntime(
+        installId: installId,
+        remoteConfigSchema: remoteConfigSchema,
+      );
       _runtime = runtime;
       await runtime.initialize();
       if (!mounted) return;

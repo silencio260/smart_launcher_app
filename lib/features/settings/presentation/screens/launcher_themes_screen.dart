@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:smart_launcher_app/features/settings/presentation/screens/settings_section.dart';
 import 'package:smart_launcher_app/core/ads/launcher_ads.dart';
+import 'package:smart_launcher_app/core/ads/launcher_ad_wait_overlay.dart';
 import 'package:smart_launcher_app/core/ads/launcher_banner_ad.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -19,6 +21,11 @@ class LauncherThemesScreen extends StatefulWidget {
 
 class _LauncherThemesScreenState extends State<LauncherThemesScreen> {
   bool _applying = false;
+  bool _waitingForAd = false;
+
+  void _showAdWait(bool waiting) {
+    if (mounted) setState(() => _waitingForAd = waiting);
+  }
 
   @override
   void initState() {
@@ -39,6 +46,7 @@ class _LauncherThemesScreenState extends State<LauncherThemesScreen> {
       await LauncherAds.onActionCompleted(
         context,
         LauncherAdPlacements.themeApplied,
+        onWaiting: _showAdWait,
       );
     } catch (_) {
       if (mounted) {
@@ -57,50 +65,56 @@ class _LauncherThemesScreenState extends State<LauncherThemesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Themes')),
-      bottomNavigationBar: const LauncherBannerAd(
-        placement: LauncherAdPlacements.themesBanner,
-        showLabel: true,
-      ),
-      body: BlocBuilder<SettingsCubit, LauncherSettings>(
-        builder: (context, settings) {
-          final cubit = context.read<SettingsCubit>();
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-            children: [
-              _ThemeCard(
-                title: 'Smart',
-                subtitle: 'Classic workspace, widgets, dock, drawer',
-                icon: Icons.grid_view_rounded,
-                selected: settings.homeMode == HomeMode.smart,
-                onTap: _applying ? null : () => _apply(HomeMode.smart),
-              ),
-              const SizedBox(height: 12),
-              _ThemeCard(
-                title: 'iOS',
-                subtitle: 'Paged icon grid, dock, library, Spotlight',
-                icon: Icons.phone_iphone_rounded,
-                selected: settings.homeMode == HomeMode.ios,
-                onTap: _applying ? null : () => _apply(HomeMode.ios),
-              ),
-              const SizedBox(height: 12),
-              _ThemeCard(
-                title: 'Minimal',
-                subtitle: 'Clock, date, day progress, favorite apps',
-                icon: Icons.format_align_left_rounded,
-                selected: settings.homeMode == HomeMode.minimal,
-                onTap: _applying ? null : () => _apply(HomeMode.minimal),
-              ),
-              if (settings.homeMode == HomeMode.ios) ...[
-                const SizedBox(height: 24),
-                _IosOptions(settings: settings, cubit: cubit),
-              ],
-              if (settings.homeMode == HomeMode.minimal) ...[
-                const SizedBox(height: 24),
-                _MinimalOptions(settings: settings, cubit: cubit),
-              ],
-            ],
-          );
-        },
+      bottomNavigationBar: LauncherSettingsSection.contains(context)
+          ? null
+          : const LauncherBannerAd(
+              placement: LauncherAdPlacements.themesBanner,
+            ),
+      body: Stack(
+        children: [
+          BlocBuilder<SettingsCubit, LauncherSettings>(
+            builder: (context, settings) {
+              final cubit = context.read<SettingsCubit>();
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                children: [
+                  _ThemeCard(
+                    title: 'Smart',
+                    subtitle: 'Classic workspace, widgets, dock, drawer',
+                    icon: Icons.grid_view_rounded,
+                    selected: settings.homeMode == HomeMode.smart,
+                    onTap: _applying ? null : () => _apply(HomeMode.smart),
+                  ),
+                  const SizedBox(height: 12),
+                  _ThemeCard(
+                    title: 'iOS',
+                    subtitle: 'Paged icon grid, dock, library, Spotlight',
+                    icon: Icons.phone_iphone_rounded,
+                    selected: settings.homeMode == HomeMode.ios,
+                    onTap: _applying ? null : () => _apply(HomeMode.ios),
+                  ),
+                  const SizedBox(height: 12),
+                  _ThemeCard(
+                    title: 'Minimal',
+                    subtitle: 'Clock, date, day progress, favorite apps',
+                    icon: Icons.format_align_left_rounded,
+                    selected: settings.homeMode == HomeMode.minimal,
+                    onTap: _applying ? null : () => _apply(HomeMode.minimal),
+                  ),
+                  if (settings.homeMode == HomeMode.ios) ...[
+                    const SizedBox(height: 24),
+                    _IosOptions(settings: settings, cubit: cubit),
+                  ],
+                  if (settings.homeMode == HomeMode.minimal) ...[
+                    const SizedBox(height: 24),
+                    _MinimalOptions(settings: settings, cubit: cubit),
+                  ],
+                ],
+              );
+            },
+          ),
+          if (_waitingForAd) const LauncherAdWaitOverlay(),
+        ],
       ),
     );
   }

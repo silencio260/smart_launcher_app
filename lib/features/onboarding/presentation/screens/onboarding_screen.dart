@@ -71,11 +71,6 @@ class _OnboardingViewState extends State<_OnboardingView> {
     OnboardingAction(_openSetup, name: 'open_setup'),
   ];
 
-  /// The native ad's own height (see [LauncherNativeAd]), so the ad screen is
-  /// laid out with it from the first frame and nothing moves when it loads.
-  double _adHeight(BuildContext context) =>
-      LauncherNativeAd.reservedHeight(context);
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -130,8 +125,10 @@ class _OnboardingViewState extends State<_OnboardingView> {
         ),
         adSlot: _adAllowed
             ? OnboardingAdSlot(
-                reservedHeight: _adHeight(context),
-                builder: (_, __) => const _OnboardingAd(),
+                sizeAnimation: Duration.zero,
+                builder: (_, __) => const LauncherNativeAd(
+                  placement: LauncherAdPlacements.onboardingNative,
+                ),
               )
             : null,
         finishActions: _finishActions,
@@ -162,47 +159,6 @@ class _OnboardingViewState extends State<_OnboardingView> {
           pagePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
           artworkFadeHeight: 48,
         ),
-      ),
-    );
-  }
-}
-
-/// The ad screen's slot: a placeholder card the size of the native ad, with
-/// the ad drawn over it once one loads.
-class _OnboardingAd extends StatelessWidget {
-  const _OnboardingAd();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF5F5F5),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Align(
-                  alignment: Alignment.topLeft,
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(12, 6, 12, 2),
-                    child: Text(
-                      'Ad',
-                      style: TextStyle(color: Colors.black54, fontSize: 12),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const LauncherNativeAd(
-            placement: LauncherAdPlacements.onboardingNative,
-          ),
-        ],
       ),
     );
   }

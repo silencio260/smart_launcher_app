@@ -10,7 +10,7 @@ import 'package:smart_launcher_app/container_injector.dart';
 import 'package:smart_launcher_app/core/analytics/app_events.dart';
 
 /// An in-layout MAS native ad. The Android view owns and destroys its creative.
-/// The reserved height prevents an arriving ad from moving an app icon or link.
+/// Collapses until detached inventory is ready, then fits the creative exactly.
 class LauncherNativeAd extends StatefulWidget {
   const LauncherNativeAd({
     super.key,
@@ -20,12 +20,6 @@ class LauncherNativeAd extends StatefulWidget {
 
   final AdPlacement placement;
   final bool enabled;
-
-  static double reservedHeight(BuildContext context) =>
-      24 +
-      LauncherAds.nativeHeight +
-      16 +
-      MediaQuery.textScalerOf(context).scale(12);
 
   @override
   State<LauncherNativeAd> createState() => _LauncherNativeAdState();
@@ -148,60 +142,46 @@ class _LauncherNativeAdState extends State<LauncherNativeAd>
                         _foreground &&
                         provider.health.isOperational &&
                         policy.evaluate(widget.placement).isAllowed,
+                    prepare: () => Yodo1InlinePreloads.load(
+                      widget.placement,
+                      backgroundColor: LauncherAds.nativeBackgroundColor,
+                      widthPx:
+                          (LauncherAds.nativeWidth *
+                                  View.of(context).devicePixelRatio)
+                              .round(),
+                      heightPx:
+                          (LauncherAds.nativeHeight *
+                                  View.of(context).devicePixelRatio)
+                              .round(),
+                    ),
                     builder: (attempt, onEvent, onFailure) => Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        child: SizedBox(
-                          width: LauncherAds.nativeWidth,
-                          height:
-                              LauncherAds.nativeHeight +
-                              16 +
-                              MediaQuery.textScalerOf(context).scale(12),
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF5F5F5),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                const Padding(
-                                  padding: EdgeInsets.fromLTRB(12, 6, 12, 2),
-                                  child: Text(
-                                    'Ad',
-                                    style: TextStyle(
-                                      color: Colors.black87,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ),
-                                Yodo1NativeView(
-                                  key: ValueKey(attempt),
-                                  placement: widget.placement,
-                                  height: LauncherAds.nativeHeight,
-                                  backgroundColor: '#F5F5F5',
-                                  onLoadFailed: onFailure,
-                                  onEvent: (event) {
-                                    if (!onEvent(event)) return;
-                                    // MAS's paid callback accompanies an impression. Loading
-                                    // alone is not evidence that an off-screen ad was seen.
-                                    if (event.type == AdEventType.paid &&
-                                        !_recordedImpression) {
-                                      _recordedImpression = true;
-                                      policy.recordShown(widget.placement);
-                                    }
-                                    AppAnalytics.adLifecycle(
-                                      adType: 'native',
-                                      action: event.type.name,
-                                      result: 'success',
-                                      source: widget.placement.id,
-                                      testAds: false,
-                                    );
-                                  },
-                                ),
-                              ],
-                            ),
-                          ),
+                      heightFactor: 1,
+                      child: SizedBox(
+                        width: LauncherAds.nativeWidth,
+                        height: LauncherAds.nativeHeight,
+                        child: Yodo1NativeView(
+                          key: ValueKey(attempt),
+                          placement: widget.placement,
+                          height: LauncherAds.nativeHeight,
+                          backgroundColor: LauncherAds.nativeBackgroundColor,
+                          onLoadFailed: onFailure,
+                          onEvent: (event) {
+                            if (!onEvent(event)) return;
+                            // MAS's paid callback accompanies an impression. Loading
+                            // alone is not evidence that an off-screen ad was seen.
+                            if (event.type == AdEventType.paid &&
+                                !_recordedImpression) {
+                              _recordedImpression = true;
+                              policy.recordShown(widget.placement);
+                            }
+                            AppAnalytics.adLifecycle(
+                              adType: 'native',
+                              action: event.type.name,
+                              result: 'success',
+                              source: widget.placement.id,
+                              testAds: false,
+                            );
+                          },
                         ),
                       ),
                     ),

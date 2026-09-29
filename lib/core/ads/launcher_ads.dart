@@ -80,7 +80,17 @@ abstract final class LauncherAdPlacements {
     wallpaperApplied,
     themeApplied,
     settingsChanged,
+    wallpaperBrowse,
+    settingsBrowse,
   ];
+  static const wallpaperBrowse = AdPlacement(
+    id: 'wallpaper_browse',
+    format: AdFormat.interstitial,
+  );
+  static const settingsBrowse = AdPlacement(
+    id: 'settings_browse',
+    format: AdFormat.interstitial,
+  );
   static const libraryNative = AdPlacement(
     id: 'app_library',
     format: AdFormat.native,
@@ -125,11 +135,12 @@ abstract final class LauncherAdPlacements {
 /// considered.
 abstract final class LauncherAds {
   static const nativeWidth = 300.0;
-  static const nativeHeight = 100.0;
+  static const nativeHeight = 320.0;
+  static const nativeBackgroundColor = '#FFFFFF';
   static bool _insideMiniApp = false;
   static bool Function()? _actionGuard;
   static AdPlacement? _actionPlacement;
-  static int _settingsCompletions = 0;
+  static bool _actionPending = false;
 
   /// Checked by the provider again after its asynchronous readiness check.
   static bool canShowPlacement(AdPlacement placement) {
@@ -146,28 +157,45 @@ abstract final class LauncherAds {
     await _runtime?.warmInterstitial();
   }
 
-  /// A completed action may consume ready inventory, never wait for a load.
+  /// Decide before opening a destination whether it needs an ad loading state.
+  /// The actual show rechecks these conditions and the destination's route.
+  static bool canPrepareAction(AdPlacement placement) =>
+      LauncherAdPlacements.actionInterstitials.contains(placement) &&
+      !_actionPending &&
+      _ads != null &&
+      (_runtime?.adPolicy?.evaluate(placement).isAllowed ?? false) &&
+      !launchPreparing &&
+      !defaultPromptVisible &&
+      WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+
+  /// A completed action or screen transition may consume ready inventory.
   /// Route, foreground and a short presentation window prevent late ads on Home.
   static Future<void> onActionCompleted(
     BuildContext context,
-    AdPlacement placement,
-  ) async {
+    AdPlacement placement, {
+    void Function(bool waiting)? onWaiting,
+    DateTime? actionStartedAt,
+  }) async {
     if (!context.mounted ||
         !LauncherAdPlacements.actionInterstitials.contains(placement)) {
       return;
     }
     final route = ModalRoute.of(context);
     if (route?.isCurrent != true) return;
-    if (placement == LauncherAdPlacements.settingsChanged &&
-        ++_settingsCompletions % 3 != 0) {
-      unawaited(preloadAction(placement));
-      return;
-    }
-    final now = DateTime.now();
-    if (_actionGuard != null) return;
+    final sectionRoute = ModalRoute.of(Navigator.of(context).context);
+    final waitForInventory =
+        placement == LauncherAdPlacements.wallpaperBrowse ||
+        placement == LauncherAdPlacements.wallpaperApplied;
+    final window = waitForInventory
+        ? const Duration(seconds: 5)
+        : const Duration(milliseconds: 1500);
+    final deadline = (actionStartedAt ?? DateTime.now()).add(window);
+    if (_actionPending) return;
     final ads = _ads;
-    if (ads == null || !ads.provider.isReady(placement)) {
-      unawaited(preloadAction(placement));
+    if (ads == null) return;
+    if (!waitForInventory && !ads.provider.isReady(placement)) {
+      unawaited(_runtime?.warmInterstitial(immediate: true));
+      debugPrint('LauncherActionAd [${placement.id}] no preload; continuing');
       return;
     }
     bool policyStillAllows() {
@@ -182,44 +210,101 @@ abstract final class LauncherAds {
     bool allowed() =>
         context.mounted &&
         route!.isCurrent &&
+        sectionRoute?.isCurrent != false &&
         policyStillAllows() &&
         !launchPreparing &&
         !defaultPromptVisible &&
-        DateTime.now().difference(now) < const Duration(milliseconds: 800) &&
+        DateTime.now().isBefore(deadline) &&
         WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
-    if (!allowed()) return;
-    _actionPlacement = placement;
-    _actionGuard = allowed;
-    try {
-      final result = await ads.show(placement);
-      result.fold(
-        onSuccess: (outcome) {
-          AppAnalytics.adLifecycle(
-            adType: 'interstitial',
-            action: 'show',
-            result: outcome.status.name,
-            source: placement.id,
-            testAds: false,
-          );
-        },
-        onFailure: (error) {
-          AppAnalytics.adLifecycle(
-            adType: 'interstitial',
-            action: 'show',
-            result: 'failure',
-            source: placement.id,
-            testAds: false,
-            error: error.message,
-          );
-        },
+    if (!allowed()) {
+      debugPrint(
+        'LauncherActionAd [${placement.id}] skipped: '
+        '${_runtime?.adPolicy?.evaluate(placement).blockReason?.name ?? "route/lifecycle"}',
       );
+      return;
+    }
+    _actionPending = true;
+    Timer? openingDeadline;
+    StreamSubscription<AdEvent>? openingEvents;
+    try {
+      if (waitForInventory) onWaiting?.call(true);
+      debugPrint(
+        'LauncherActionAd [${placement.id}] window=${window.inMilliseconds}ms',
+      );
+      if (!ads.provider.isReady(placement)) {
+        unawaited(_runtime?.warmInterstitial(immediate: true));
+      }
+      while (!ads.provider.isReady(placement) && allowed()) {
+        final remaining = deadline.difference(DateTime.now());
+        if (remaining <= Duration.zero) return;
+        await Future<void>.delayed(
+          remaining < const Duration(milliseconds: 100)
+              ? remaining
+              : const Duration(milliseconds: 100),
+        );
+      }
+      if (!allowed() || !ads.provider.isReady(placement)) {
+        debugPrint(
+          'LauncherActionAd [${placement.id}] wait ended without show',
+        );
+        return;
+      }
+      _actionPlacement = placement;
+      _actionGuard = allowed;
+      final released = Completer<void>();
+      openingEvents = ads.provider.events.listen((event) {
+        if (event.placement == placement &&
+            event.type == AdEventType.impression) {
+          // The opening deadline bounds loading, not the ad's viewing time.
+          openingDeadline?.cancel();
+        }
+      });
+      openingDeadline = Timer(deadline.difference(DateTime.now()), () {
+        debugPrint(
+          'LauncherActionAd [${placement.id}] opening deadline; continuing',
+        );
+        released.complete();
+      });
+      final presentation = ads
+          .show(placement)
+          .then(
+            (result) => result.fold<void>(
+              onSuccess: (outcome) {
+                debugPrint(
+                  'LauncherActionAd [${placement.id}] ${outcome.status.name}',
+                );
+                AppAnalytics.adLifecycle(
+                  adType: 'interstitial',
+                  action: 'show',
+                  result: outcome.status.name,
+                  source: placement.id,
+                  testAds: false,
+                );
+              },
+              onFailure: (error) {
+                AppAnalytics.adLifecycle(
+                  adType: 'interstitial',
+                  action: 'show',
+                  result: 'failure',
+                  source: placement.id,
+                  testAds: false,
+                  error: error.message,
+                );
+              },
+            ),
+          );
+      await Future.any<void>([presentation, released.future]);
     } catch (error) {
       // An optional ad failure must not turn a successful saved action into an
       // error or prevent the wallpaper preview from closing normally.
       debugPrint('LauncherActionAd [${placement.id}] show failed: $error');
     } finally {
+      openingDeadline?.cancel();
+      await openingEvents?.cancel();
       _actionGuard = null;
       _actionPlacement = null;
+      _actionPending = false;
+      if (waitForInventory) onWaiting?.call(false);
       unawaited(preloadAction(placement));
     }
   }
@@ -319,7 +404,9 @@ abstract final class LauncherAds {
     final widthPx = (nativeWidth * view.devicePixelRatio).round();
     final request = Yodo1InlinePreloads.load(
       placement,
-      backgroundColor: placement.format == AdFormat.native ? '#F5F5F5' : null,
+      backgroundColor: placement.format == AdFormat.native
+          ? nativeBackgroundColor
+          : null,
       widthPx: widthPx,
       heightPx: (nativeHeight * view.devicePixelRatio).round(),
     );

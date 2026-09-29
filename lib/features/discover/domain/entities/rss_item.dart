@@ -7,6 +7,15 @@ class RssItem {
   final DateTime? published;
   final String? imageUrl;
 
+  bool get hasImage {
+    final url = imageUrl?.trim();
+    if (url == null || url.isEmpty) return false;
+    final uri = Uri.tryParse(url);
+    return uri != null &&
+        (uri.isScheme('https') || uri.isScheme('http')) &&
+        uri.host.isNotEmpty;
+  }
+
   const RssItem({
     required this.title,
     required this.link,

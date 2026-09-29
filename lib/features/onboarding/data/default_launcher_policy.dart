@@ -9,6 +9,8 @@ import 'package:smart_launcher_app/core/config/app_env.dart';
 /// Reads the remote `launcher_force_default` switch (see `LauncherPolicyKeys`).
 abstract final class DefaultLauncherPolicy {
   static const _pageZeroKey = 'dev.page_zero_default_prompt';
+  static const _appEntryKey = 'dev.app_entry_default_prompt';
+  static final appEntryPrompts = ValueNotifier<bool>(true);
   static final pageZeroPrompts = ValueNotifier<bool>(true);
   static final _requests = StreamController<void>.broadcast();
   static Stream<void> get promptRequests => _requests.stream;
@@ -18,12 +20,18 @@ abstract final class DefaultLauncherPolicy {
       (kDebugMode || AppEnv.developmentMode) &&
       (_runtime?.developerAccess.allows(DeveloperAction.diagnostics) ?? false);
 
+  static bool get shouldPromptOnAppEntry =>
+      !canConfigurePageZero || appEntryPrompts.value;
+
   static Future<void> loadDeveloperPreference() => _loaded ??= _load();
   static Future<void> _load() async {
-    if (!canConfigurePageZero) return;
+    // Read before access initialization if necessary; the getters and setters
+    // still require current developer authorization before applying overrides.
+    if (!kDebugMode && !AppEnv.developmentMode) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       pageZeroPrompts.value = prefs.getBool(_pageZeroKey) ?? true;
+      appEntryPrompts.value = prefs.getBool(_appEntryKey) ?? true;
     } catch (error) {
       debugPrint('Default launcher prompt preference: $error');
     }
@@ -37,6 +45,21 @@ abstract final class DefaultLauncherPolicy {
     if (!await prefs.setBool(_pageZeroKey, enabled)) return false;
     pageZeroPrompts.value = enabled;
     return true;
+  }
+
+  static Future<bool> setAppEntryPrompts(bool enabled) async {
+    if (!canConfigurePageZero) return false;
+    await loadDeveloperPreference();
+    final prefs = await SharedPreferences.getInstance();
+    if (!canConfigurePageZero) return false;
+    if (!await prefs.setBool(_appEntryKey, enabled)) return false;
+    appEntryPrompts.value = enabled;
+    return true;
+  }
+
+  static Future<void> enteredApp() async {
+    await loadDeveloperPreference();
+    if (shouldPromptOnAppEntry) requestReturnPrompt();
   }
 
   /// The gate coalesces events; this never pushes another onboarding route.

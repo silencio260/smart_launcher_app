@@ -22,7 +22,6 @@ class LauncherBannerAd extends StatefulWidget {
     super.key,
     required this.placement,
     this.size = Yodo1BannerSize.standard,
-    this.showLabel = false,
   });
 
   /// Placement this banner is reported under.
@@ -30,7 +29,6 @@ class LauncherBannerAd extends StatefulWidget {
 
   /// Banner shape to request.
   final Yodo1BannerSize size;
-  final bool showLabel;
 
   @override
   State<LauncherBannerAd> createState() => _LauncherBannerAdState();
@@ -108,10 +106,7 @@ class _LauncherBannerAdState extends State<LauncherBannerAd>
   }
 
   Widget _buildSlot(AppRuntime runtime) {
-    // Pushed settings/preview routes must not leave ads refreshing underneath.
-    if (ModalRoute.isCurrentOf(context) == false) {
-      return const SizedBox.shrink();
-    }
+    final visible = _foreground && ModalRoute.isCurrentOf(context) != false;
     final provider = runtime.adProvider;
     final policy = runtime.adPolicy;
     // Skipping is normal — no ad key, provider still starting, policy off —
@@ -142,47 +137,40 @@ class _LauncherBannerAdState extends State<LauncherBannerAd>
     _policyWakeup?.cancel();
 
     return Offstage(
-      offstage: !_foreground,
+      offstage: !visible,
       child: LauncherAdLoadBoundary(
         key: ValueKey(placement.id),
         placement: placement,
-        active: _foreground,
+        active: visible,
         canRetry: () =>
-            _foreground &&
+            visible &&
             provider.health.isOperational &&
             policy.evaluate(placement).isAllowed,
+        prepare: () => Yodo1InlinePreloads.load(placement, size: size),
         builder: (attempt, onEvent, onFailure) => SafeArea(
           top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (widget.showLabel) ...[
-                const SizedBox(height: 12),
-                Text('Ad', style: Theme.of(context).textTheme.labelSmall),
-                const SizedBox(height: 4),
-              ],
-              Yodo1BannerView(
-                key: ValueKey(attempt),
-                placement: placement,
-                size: size,
-                onLoadFailed: onFailure,
-                onEvent: (event) {
-                  if (!onEvent(event)) return;
-                  if (event.type == AdEventType.paid && !_recordedImpression) {
-                    _recordedImpression = true;
-                    policy.recordShown(placement);
-                  }
-                  AppAnalytics.adLifecycle(
-                    adType: 'banner',
-                    action: event.type.name,
-                    result: 'success',
-                    source: placement.id,
-                    testAds: false,
-                  );
-                },
-              ),
-              if (widget.showLabel) const SizedBox(height: 8),
-            ],
+          child: Center(
+            heightFactor: 1,
+            child: Yodo1BannerView(
+              key: ValueKey(attempt),
+              placement: placement,
+              size: size,
+              onLoadFailed: onFailure,
+              onEvent: (event) {
+                if (!onEvent(event)) return;
+                if (event.type == AdEventType.paid && !_recordedImpression) {
+                  _recordedImpression = true;
+                  policy.recordShown(placement);
+                }
+                AppAnalytics.adLifecycle(
+                  adType: 'banner',
+                  action: event.type.name,
+                  result: 'success',
+                  source: placement.id,
+                  testAds: false,
+                );
+              },
+            ),
           ),
         ),
       ),

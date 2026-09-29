@@ -40,7 +40,7 @@ class _DefaultLauncherGateState extends State<DefaultLauncherGate>
       (_) => _evaluate(remind: true),
     );
     unawaited(DefaultLauncherPolicy.loadDeveloperPreference());
-    _evaluate(remind: true);
+    unawaited(_evaluateEntry());
   }
 
   @override
@@ -59,8 +59,18 @@ class _DefaultLauncherGateState extends State<DefaultLauncherGate>
     if (state == AppLifecycleState.resumed) {
       final remind = _backgrounded && !_blocked;
       _backgrounded = false;
-      _evaluate(remind: remind);
+      if (remind) {
+        unawaited(_evaluateEntry());
+      } else {
+        unawaited(_evaluate());
+      }
     }
+  }
+
+  Future<void> _evaluateEntry() async {
+    await DefaultLauncherPolicy.loadDeveloperPreference();
+    if (!mounted) return;
+    await _evaluate(remind: DefaultLauncherPolicy.shouldPromptOnAppEntry);
   }
 
   Future<void> _evaluate({bool remind = false}) async {

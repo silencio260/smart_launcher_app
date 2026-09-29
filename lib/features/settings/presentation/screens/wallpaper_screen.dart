@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'package:smart_launcher_app/features/settings/presentation/screens/settings_section.dart';
 import 'package:smart_launcher_app/core/ads/launcher_ads.dart';
 import 'package:smart_launcher_app/core/ads/launcher_banner_ad.dart';
+import 'package:smart_launcher_app/core/ads/launcher_ad_wait_overlay.dart';
 import 'package:smart_launcher_app/features/settings/presentation/bloc/wallpaper_feed_controller.dart';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -112,8 +114,16 @@ class WallpaperScreen extends StatefulWidget {
 }
 
 class _WallpaperScreenState extends State<WallpaperScreen> {
+  // Remember previews only while this wallpaper section remains open.
+  final _visitedPreviews = <String>{};
   late final WallpaperFeedController _feed;
   bool _pickingGalleryImage = false;
+  bool _openingPreview = false;
+  bool _waitingForAd = false;
+
+  void _showAdWait(bool waiting) {
+    if (mounted) setState(() => _waitingForAd = waiting);
+  }
 
   @override
   void initState() {
@@ -180,28 +190,51 @@ class _WallpaperScreenState extends State<WallpaperScreen> {
 
   @override
   void dispose() {
+    _visitedPreviews.clear();
     _feed.removeListener(_onFeedChanged);
     _feed.dispose();
     super.dispose();
   }
 
-  void _openPreview(WallpaperItem item) {
+  Future<void> _openPreview(WallpaperItem item) async {
+    final actionStartedAt = DateTime.now();
+    if (_openingPreview) return;
     final expiresAt = _feed.expiresAt;
     if (expiresAt == null || !DateTime.now().isBefore(expiresAt)) return;
-    final settings = context.read<SettingsCubit>();
-    Navigator.push(
-      context,
-      MaterialPageRoute<void>(
-        builder: (_) => BlocProvider.value(
-          value: settings,
-          child: _WallpaperPreviewScreen(
-            item: item,
-            expiresAt: expiresAt,
-            adsEnabled: !widget.embedded,
+    _openingPreview = true;
+    try {
+      if (!mounted ||
+          ModalRoute.of(context)?.isCurrent != true ||
+          !DateTime.now().isBefore(expiresAt)) {
+        return;
+      }
+      final settings = context.read<SettingsCubit>();
+      final firstVisit = !widget.embedded && _visitedPreviews.add(item.id);
+      final prepareBrowseAd =
+          firstVisit &&
+          LauncherAds.canPrepareAction(LauncherAdPlacements.wallpaperBrowse);
+      debugPrint(
+        'WallpaperPreview [${item.id}] firstVisit=$firstVisit '
+        'waitForAd=$prepareBrowseAd',
+      );
+      // Cover the Settings shell too: its shared banner must not appear on
+      // the single-wallpaper preview, but stays mounted for the return trip.
+      await Navigator.of(context, rootNavigator: true).push(
+        MaterialPageRoute<void>(
+          builder: (_) => BlocProvider.value(
+            value: settings,
+            child: _WallpaperPreviewScreen(
+              item: item,
+              expiresAt: expiresAt,
+              prepareBrowseAd: prepareBrowseAd,
+              adActionStartedAt: actionStartedAt,
+            ),
           ),
         ),
-      ),
-    );
+      );
+    } finally {
+      _openingPreview = false;
+    }
   }
 
   Future<void> _chooseFromGallery() async {
@@ -230,6 +263,7 @@ class _WallpaperScreenState extends State<WallpaperScreen> {
         await LauncherAds.onActionCompleted(
           context,
           LauncherAdPlacements.wallpaperApplied,
+          onWaiting: _showAdWait,
         );
       }
     } catch (error) {
@@ -247,130 +281,136 @@ class _WallpaperScreenState extends State<WallpaperScreen> {
     return Scaffold(
       backgroundColor: widget.embedded ? Colors.transparent : null,
       appBar: widget.embedded ? null : AppBar(title: const Text('Wallpaper')),
-      bottomNavigationBar: widget.embedded
+      bottomNavigationBar:
+          widget.embedded || LauncherSettingsSection.contains(context)
           ? null
           : const LauncherBannerAd(
               placement: LauncherAdPlacements.wallpaperBanner,
-              showLabel: true,
             ),
-      body: BlocBuilder<SettingsCubit, LauncherSettings>(
-        builder: (context, settings) {
-          return CustomScrollView(
-            slivers: [
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                sliver: SliverToBoxAdapter(
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _pickingGalleryImage
-                              ? null
-                              : _chooseFromGallery,
-                          icon: const Icon(Icons.photo_library_outlined),
-                          label: const Text('Choose from gallery'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              if (wallpaperNoticeText(_feed.notices).isNotEmpty)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                    child: Text(wallpaperNoticeText(_feed.notices)),
-                  ),
-                ),
-              SliverToBoxAdapter(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: Row(
-                    children: [
-                      ChoiceChip(
-                        label: const Text('Trending'),
-                        selected:
-                            _feed.selectedCategoryId == null &&
-                            _feed.selectedSearch == null,
-                        onSelected: _feed.loading
-                            ? null
-                            : (_) => _feed.selectCategory(null),
-                      ),
-                      for (final tab in _availableTabs) ...[
-                        const SizedBox(width: 8),
-                        ChoiceChip(
-                          label: Text(tab.label),
-                          selected: _isSelectedCategory(tab),
-                          onSelected: _feed.loading
-                              ? null
-                              : (_) => _selectTab(tab),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                sliver: SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 0.62,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) => _WallpaperTile(
-                      item: _feed.items[index],
-                      onTap: () => _openPreview(_feed.items[index]),
-                    ),
-                    childCount: _feed.items.length,
-                  ),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Center(
-                      child: _feed.loading
-                          ? const CircularProgressIndicator()
-                          : _feed.error != null
-                          ? Column(
-                              children: [
-                                Text(
-                                  _feed.error!.message,
-                                  textAlign: TextAlign.center,
-                                ),
-                                TextButton(
-                                  onPressed: _feed.loadMore,
-                                  child: Text(
-                                    _feed.needsReload
-                                        ? 'Reload wallpapers'
-                                        : 'Retry',
-                                  ),
-                                ),
-                              ],
-                            )
-                          : _feed.nextPage != null
-                          ? OutlinedButton(
-                              onPressed: _feed.loadMore,
-                              child: const Text('Load more'),
-                            )
-                          : Text(
-                              _feed.items.isEmpty
-                                  ? 'No wallpapers available'
-                                  : 'All wallpapers loaded',
+      body: Stack(
+        children: [
+          BlocBuilder<SettingsCubit, LauncherSettings>(
+            builder: (context, settings) {
+              return CustomScrollView(
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    sliver: SliverToBoxAdapter(
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _pickingGalleryImage
+                                  ? null
+                                  : _chooseFromGallery,
+                              icon: const Icon(Icons.photo_library_outlined),
+                              label: const Text('Choose from gallery'),
                             ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ),
-            ],
-          );
-        },
+                  if (wallpaperNoticeText(_feed.notices).isNotEmpty)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                        child: Text(wallpaperNoticeText(_feed.notices)),
+                      ),
+                    ),
+                  SliverToBoxAdapter(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      child: Row(
+                        children: [
+                          ChoiceChip(
+                            label: const Text('Trending'),
+                            selected:
+                                _feed.selectedCategoryId == null &&
+                                _feed.selectedSearch == null,
+                            onSelected: _feed.loading
+                                ? null
+                                : (_) => _feed.selectCategory(null),
+                          ),
+                          for (final tab in _availableTabs) ...[
+                            const SizedBox(width: 8),
+                            ChoiceChip(
+                              label: Text(tab.label),
+                              selected: _isSelectedCategory(tab),
+                              onSelected: _feed.loading
+                                  ? null
+                                  : (_) => _selectTab(tab),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    sliver: SliverGrid(
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            mainAxisSpacing: 12,
+                            crossAxisSpacing: 12,
+                            childAspectRatio: 0.62,
+                          ),
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) => _WallpaperTile(
+                          item: _feed.items[index],
+                          onTap: () => _openPreview(_feed.items[index]),
+                        ),
+                        childCount: _feed.items.length,
+                      ),
+                    ),
+                  ),
+                  SliverToBoxAdapter(
+                    child: SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Center(
+                          child: _feed.loading
+                              ? const CircularProgressIndicator()
+                              : _feed.error != null
+                              ? Column(
+                                  children: [
+                                    Text(
+                                      _feed.error!.message,
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    TextButton(
+                                      onPressed: _feed.loadMore,
+                                      child: Text(
+                                        _feed.needsReload
+                                            ? 'Reload wallpapers'
+                                            : 'Retry',
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : _feed.nextPage != null
+                              ? OutlinedButton(
+                                  onPressed: _feed.loadMore,
+                                  child: const Text('Load more'),
+                                )
+                              : Text(
+                                  _feed.items.isEmpty
+                                      ? 'No wallpapers available'
+                                      : 'All wallpapers loaded',
+                                ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+          if (_waitingForAd) const LauncherAdWaitOverlay(),
+        ],
       ),
     );
   }
@@ -463,12 +503,14 @@ class _WallpaperPreviewScreen extends StatefulWidget {
   final WallpaperItem item;
 
   final DateTime expiresAt;
-  final bool adsEnabled;
+  final bool prepareBrowseAd;
+  final DateTime adActionStartedAt;
 
   const _WallpaperPreviewScreen({
     required this.item,
     required this.expiresAt,
-    required this.adsEnabled,
+    required this.prepareBrowseAd,
+    required this.adActionStartedAt,
   });
 
   @override
@@ -479,6 +521,7 @@ class _WallpaperPreviewScreen extends StatefulWidget {
 class _WallpaperPreviewScreenState extends State<_WallpaperPreviewScreen>
     with WidgetsBindingObserver {
   bool _busy = false;
+  bool _waitingForBrowseAd = false;
   Timer? _expiryTimer;
   bool get _expired => !DateTime.now().isBefore(widget.expiresAt);
 
@@ -486,9 +529,27 @@ class _WallpaperPreviewScreenState extends State<_WallpaperPreviewScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (widget.prepareBrowseAd) {
+      _waitingForBrowseAd = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_prepareBrowseAd());
+      });
+    }
     _expiryTimer = Timer(widget.expiresAt.difference(DateTime.now()), () {
       if (mounted) setState(() {});
     });
+  }
+
+  Future<void> _prepareBrowseAd() async {
+    try {
+      await LauncherAds.onActionCompleted(
+        context,
+        LauncherAdPlacements.wallpaperBrowse,
+        actionStartedAt: widget.adActionStartedAt,
+      );
+    } finally {
+      if (mounted) setState(() => _waitingForBrowseAd = false);
+    }
   }
 
   @override
@@ -525,12 +586,6 @@ class _WallpaperPreviewScreenState extends State<_WallpaperPreviewScreen>
       messenger
         ..removeCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text(_appliedMessage(target))));
-      if (widget.adsEnabled) {
-        await LauncherAds.onActionCompleted(
-          context,
-          LauncherAdPlacements.wallpaperApplied,
-        );
-      }
       if (mounted && ModalRoute.of(context)?.isCurrent == true) {
         Navigator.pop(context);
       }
@@ -576,11 +631,14 @@ class _WallpaperPreviewScreenState extends State<_WallpaperPreviewScreen>
           : Stack(
               fit: StackFit.expand,
               children: [
-                _WallpaperImage(
-                  item: widget.item,
-                  fullResolution: true,
-                  loadingColor: Colors.white,
-                  brokenColor: Colors.white70,
+                Offstage(
+                  offstage: _waitingForBrowseAd,
+                  child: _WallpaperImage(
+                    item: widget.item,
+                    fullResolution: true,
+                    loadingColor: Colors.white,
+                    brokenColor: Colors.white70,
+                  ),
                 ),
                 // Keeps the back button and title legible on bright images.
                 Positioned(
@@ -608,7 +666,10 @@ class _WallpaperPreviewScreenState extends State<_WallpaperPreviewScreen>
                     children: [
                       Expanded(
                         child: FilledButton.icon(
-                          onPressed: _busy || widget.item.isLive ? null : _save,
+                          onPressed:
+                              _busy || _waitingForBrowseAd || widget.item.isLive
+                              ? null
+                              : _save,
                           icon: _busy
                               ? const SizedBox(
                                   width: 18,
@@ -624,6 +685,22 @@ class _WallpaperPreviewScreenState extends State<_WallpaperPreviewScreen>
                     ],
                   ),
                 ),
+                if (_waitingForBrowseAd)
+                  const Positioned.fill(
+                    child: ColoredBox(
+                      color: Colors.black,
+                      child: Center(
+                        child: SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
     );

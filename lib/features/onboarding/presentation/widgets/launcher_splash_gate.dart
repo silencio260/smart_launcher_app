@@ -98,7 +98,7 @@ class _LauncherSplashGateState extends State<LauncherSplashGate> {
             onFinished: (_) {
               if (!mounted) return;
               LauncherAds.launchPreparing = false;
-              DefaultLauncherPolicy.requestReturnPrompt();
+              unawaited(DefaultLauncherPolicy.enteredApp());
               debugPrint(
                 'LauncherSplash: preparation window ended; opening app',
               );
@@ -107,21 +107,19 @@ class _LauncherSplashGateState extends State<LauncherSplashGate> {
                 _released = true;
               });
             },
-            builder:
-                (context, progress) => SplashLoadingView(
-                  progress: progress,
-                  title: AppStrings.appName,
-                  logo: const LauncherBrandMark(),
-                  labels: const SplashLabels(loading: 'Getting ready'),
-                  style: SplashLoadingStyle(
-                    backgroundColor: theme.colorScheme.surface,
-                    progressColor: theme.colorScheme.primary,
-                    progressTrackColor:
-                        theme.colorScheme.surfaceContainerHighest,
-                    titleStyle: theme.textTheme.headlineMedium,
-                    progressLabelStyle: theme.textTheme.titleMedium,
-                  ),
-                ),
+            builder: (context, progress) => SplashLoadingView(
+              progress: progress,
+              title: AppStrings.appName,
+              logo: const LauncherBrandMark(),
+              labels: const SplashLabels(loading: 'Getting ready'),
+              style: SplashLoadingStyle(
+                backgroundColor: theme.colorScheme.surface,
+                progressColor: theme.colorScheme.primary,
+                progressTrackColor: theme.colorScheme.surfaceContainerHighest,
+                titleStyle: theme.textTheme.headlineMedium,
+                progressLabelStyle: theme.textTheme.titleMedium,
+              ),
+            ),
           ),
       ],
     );

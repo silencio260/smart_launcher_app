@@ -40,18 +40,12 @@ import 'package:smart_launcher_app/core/config/launcher_policy_keys.dart';
 
 /// Instances owned by one launcher startup attempt, shared by all consumers.
 class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
-  AppRuntime({required this.installId}) {
+  AppRuntime({required this.installId, required this.remoteConfigSchema}) {
     crash = CrashCoordinator(
       reporter: CrashlyticsReporter(logger: logger),
       // Local debug crashes would bury real release regressions.
       config: const CrashReportingConfig(collectionEnabled: !kDebugMode),
       logger: logger,
-    );
-    remoteConfigSchema = PortfolioRemoteConfigSchema.build(
-      appKeys: LauncherPolicyKeys.all,
-      // The launcher already records every release session; remote config
-      // lowers this, it does not have to raise it first.
-      replayDefaults: const SessionReplayPolicy(percentOfUsers: 100),
     );
     remoteConfig = RemoteConfigCoordinator(
       schema: remoteConfigSchema,
@@ -380,7 +374,7 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
   final _preferences = SharedPreferencesKeyValueStore();
   late final KeyValueStore store;
   late final CrashCoordinator crash;
-  late final RemoteConfigSchema remoteConfigSchema;
+  final RemoteConfigSchema remoteConfigSchema;
   late final RemoteConfigCoordinator remoteConfig;
 
   /// Remote switch: the launcher is unusable until it is the default home app.
@@ -443,7 +437,8 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
   /// One runtime-owned load loop. A failed load completes from the SDK callback
   /// (or its bounded deadline); only then does the two-second retry delay begin.
   /// Loaded inventory is retained until an eligible user action consumes it.
-  Future<void> warmInterstitial() async {
+  Future<void> warmInterstitial({bool immediate = false}) async {
+    if (immediate) _interstitialRetry?.cancel();
     if (scope.isClosed ||
         ads == null ||
         _warmingInterstitial ||
@@ -458,8 +453,14 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
         return;
       }
       for (final placement in LauncherAdPlacements.all) {
-        if (placement.format != AdFormat.interstitial ||
-            !(adPolicy?.evaluate(placement).isAllowed ?? false)) {
+        final decision = adPolicy?.evaluate(placement);
+        // Cooldowns limit display, not preparation of the next creative.
+        final mayPreload =
+            decision != null &&
+            (decision.isAllowed ||
+                decision.blockReason == AdPolicyBlockReason.frequencyCap ||
+                decision.blockReason == AdPolicyBlockReason.initialDelay);
+        if (placement.format != AdFormat.interstitial || !mayPreload) {
           continue;
         }
         if (!adProvider!.isReady(placement)) {

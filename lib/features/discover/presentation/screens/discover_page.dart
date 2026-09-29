@@ -76,12 +76,34 @@ class _DiscoverPageState extends State<DiscoverPage> {
   List<RssItem> _arrange(Iterable<RssItem> source) {
     final withImage = <RssItem>[];
     final withoutImage = <RssItem>[];
-    for (final item in source) {
-      (item.imageUrl != null ? withImage : withoutImage).add(item);
+    for (final item in _preferImageByLink(source)) {
+      (item.hasImage ? withImage : withoutImage).add(item);
     }
     withImage.shuffle();
     withoutImage.shuffle();
     return <RssItem>[...withImage, ...withoutImage];
+  }
+
+  /// Keep the current order within each tier while new feeds arrive. Shuffling
+  /// here would move stories under the reader every time a source completes.
+  List<RssItem> _imageFirst(Iterable<RssItem> source) {
+    final withImage = <RssItem>[];
+    final withoutImage = <RssItem>[];
+    for (final item in _preferImageByLink(source)) {
+      (item.hasImage ? withImage : withoutImage).add(item);
+    }
+    return <RssItem>[...withImage, ...withoutImage];
+  }
+
+  Iterable<RssItem> _preferImageByLink(Iterable<RssItem> source) {
+    final byLink = <String, RssItem>{};
+    for (final item in source) {
+      final previous = byLink[item.link];
+      if (previous == null || (!previous.hasImage && item.hasImage)) {
+        byLink[item.link] = item;
+      }
+    }
+    return byLink.values;
   }
 
   HomeSection? _lastSection;
@@ -118,24 +140,23 @@ class _DiscoverPageState extends State<DiscoverPage> {
         force: force,
         onPartial: (items) {
           if (!mounted || generation != _feedGeneration) return;
-          // Append new stories without moving the article the user is reading.
-          final known = _items.map((item) => item.link).toSet();
+          // New image stories must stay above text-only stories even when
+          // their source responds later. Preserve order within each group.
           setState(() {
-            _items = [
-              ..._items,
-              ..._arrange(items.where((item) => known.add(item.link))),
-            ];
+            _items = _imageFirst([..._items, ...items]);
             _loading = false;
           });
         },
       );
       if (!mounted || generation != _feedGeneration) return;
-      final byLink = {for (final item in items) item.link: item};
+      final byLink = {
+        for (final item in _preferImageByLink(items)) item.link: item,
+      };
       final retained = [
         for (final item in _items)
           if (byLink.remove(item.link) case final updated?) updated,
       ];
-      setState(() => _items = [...retained, ..._arrange(byLink.values)]);
+      setState(() => _items = _imageFirst([...retained, ...byLink.values]));
     } catch (error) {
       debugPrint('DiscoverFeed: could not load sources: $error');
     } finally {
@@ -519,7 +540,7 @@ class _ArticleCard extends StatelessWidget {
                   ],
                 ),
               ),
-              if (item.imageUrl != null) ...[
+              if (item.hasImage) ...[
                 const SizedBox(width: 12),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),

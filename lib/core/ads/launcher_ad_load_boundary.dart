@@ -9,11 +9,15 @@ class LauncherAdLoadBoundary extends StatefulWidget {
     required this.placement,
     required this.active,
     required this.canRetry,
+    required this.prepare,
     required this.builder,
   });
   final AdPlacement placement;
   final bool active;
   final bool Function() canRetry;
+
+  /// Loads detached inventory before allocating any visible layout space.
+  final Future<bool> Function() prepare;
   final Widget Function(
     int attempt,
     bool Function(AdEvent) onEvent,
@@ -31,6 +35,7 @@ class _LauncherAdLoadBoundaryState extends State<LauncherAdLoadBoundary> {
   bool _failed = false;
   bool _loaded = false;
   bool _requested = false;
+  bool _prepared = false;
   DateTime? _deadline;
   Duration _remaining = const Duration(seconds: 30);
 
@@ -67,6 +72,21 @@ class _LauncherAdLoadBoundaryState extends State<LauncherAdLoadBoundary> {
     _remaining = const Duration(seconds: 30);
     _log('loading');
     _schedule();
+    unawaited(_prepare(_attempt));
+  }
+
+  Future<void> _prepare(int attempt) async {
+    try {
+      final ready = await widget.prepare();
+      if (!mounted || attempt != _attempt || _failed) return;
+      if (!ready) {
+        _fail(attempt, 'preload_unavailable');
+        return;
+      }
+      setState(() => _prepared = true);
+    } catch (error) {
+      _fail(attempt, 'preload: $error');
+    }
   }
 
   void _schedule() {
@@ -82,6 +102,7 @@ class _LauncherAdLoadBoundaryState extends State<LauncherAdLoadBoundary> {
         setState(() {
           _attempt++;
           _failed = false;
+          _prepared = false;
         });
         _startDeadline();
       } else {
@@ -117,14 +138,12 @@ class _LauncherAdLoadBoundaryState extends State<LauncherAdLoadBoundary> {
     if (!_requested) return const SizedBox.shrink();
     // A failed view is removed immediately, cancelling stale callbacks, and
     // remains collapsed during the bounded backoff.
-    if (_failed) {
+    if (_failed || !_prepared) {
       return const SizedBox.shrink();
     }
     final attempt = _attempt;
-    // Android platform views must be painted to finish creating their surface.
-    // Offstage-until-loaded caused a circular wait. Reserve the full destination
-    // size: partially clipping the card distorts platform-view composition and
-    // moves nearby controls when loading completes.
+    // Mount only after the detached SDK creative is ready. The platform view
+    // still needs its full layout to attach and report that it rendered.
     return ClipRect(
       child: Align(
         alignment: Alignment.topCenter,
