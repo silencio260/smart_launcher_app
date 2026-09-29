@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:smart_launcher_app/core/ads/launcher_ads.dart';
 import 'package:smart_launcher_app/core/ads/launcher_native_ad.dart';
 import 'package:smart_launcher_app/core/models/app_info.dart';
@@ -89,7 +88,9 @@ class _AllAppsRecyclerState extends State<AllAppsRecycler> {
         measurePaint: true,
         child: CustomScrollView(
           controller: widget.scrollController,
-          scrollCacheExtent: const ScrollCacheExtent.pixels(1400),
+          // Supported by Shorebird's Flutter 3.38.4 release toolchain.
+          // ignore: deprecated_member_use
+          cacheExtent: 1400,
           slivers: [
             SliverList(
               delegate: SliverChildBuilderDelegate(
