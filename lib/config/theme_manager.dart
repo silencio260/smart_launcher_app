@@ -8,6 +8,8 @@ class AppTheme {
   const AppTheme._();
 
   static const _darkScheme = ColorScheme.dark(
+    error: Color(0xFFC62828),
+    onError: Colors.white,
     primary: Colors.white,
     onPrimary: Colors.black,
     secondary: Colors.white,
@@ -27,6 +29,8 @@ class AppTheme {
   );
 
   static const _lightScheme = ColorScheme.light(
+    error: Color(0xFFC62828),
+    onError: Colors.white,
     primary: Colors.black,
     onPrimary: Colors.white,
     secondary: Colors.black,

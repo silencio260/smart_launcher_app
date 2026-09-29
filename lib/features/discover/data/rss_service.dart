@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:smart_launcher_app/features/discover/domain/entities/rss_item.dart';
 
 /// Fetches and parses RSS/Atom feeds with the built-in [HttpClient] (no extra
@@ -21,6 +23,8 @@ class RssService {
   DateTime? _fetchedAt;
   List<String> _cachedSources = const [];
   Future<List<RssItem>>? _inFlight;
+  List<String> _inFlightSources = const [];
+  int _generation = 0;
 
   bool _isFresh(List<String> sources) =>
       _fetchedAt != null &&
@@ -31,37 +35,56 @@ class RssService {
 
   /// Returns aggregated, date-sorted items for [sources]. Uses the cache when
   /// fresh unless [force] is set (pull-to-refresh).
-  Future<List<RssItem>> fetch(List<String> sources, {bool force = false}) {
+  Future<List<RssItem>> fetch(
+    List<String> sources, {
+    bool force = false,
+    void Function(List<RssItem>)? onPartial,
+  }) {
     if (!force && _isFresh(sources)) return Future.value(_cache);
-    if (_inFlight != null && !force) return _inFlight!;
-    final future = _fetchAll(sources);
+    if (_inFlight != null && !force && _listEquals(_inFlightSources, sources)) {
+      return _inFlight!;
+    }
+    final generation = ++_generation;
+    _inFlightSources = List.of(sources);
+    final future = _fetchAll(sources, generation, onPartial);
     _inFlight = future;
-    future.whenComplete(() => _inFlight = null);
+    unawaited(
+      future.then((_) {
+        if (generation == _generation) _inFlight = null;
+      }),
+    );
     return future;
   }
 
-  Future<List<RssItem>> _fetchAll(List<String> sources) async {
+  Future<List<RssItem>> _fetchAll(
+    List<String> sources,
+    int generation,
+    void Function(List<RssItem>)? onPartial,
+  ) async {
     final client = HttpClient()..userAgent = 'Mozilla/5.0 (SmartLauncher)';
     client.connectionTimeout = _timeout;
     final all = <RssItem>[];
     try {
-      // Fetch every feed concurrently instead of one-after-another, so the
-      // merged list is ready in roughly the time of the slowest single feed
-      // rather than the sum of all of them — the difference between a snappy
-      // first load and waiting through eight sequential round-trips.
-      final results = await Future.wait(sources.map((url) async {
-        try {
-          final body = await _get(client, url);
-          if (body == null) return const <RssItem>[];
-          return _parse(body, url);
-        } catch (_) {
-          // Skip feeds that fail/time out; the rest still render.
-          return const <RssItem>[];
-        }
-      }));
-      for (final list in results) {
-        all.addAll(list);
-      }
+      // Publish each source immediately. A slow source never holds back stories
+      // from a fast one, and no part of this path depends on ad readiness.
+      await Future.wait(
+        sources.map((url) async {
+          try {
+            final body = await _get(client, url).timeout(_timeout);
+            if (body == null) return;
+            final items = _parse(body, url);
+            all.addAll(items);
+            debugPrint(
+              'DiscoverFeed: ${_host(url)} loaded ${items.length} stories',
+            );
+            if (items.isNotEmpty && generation == _generation) {
+              onPartial?.call(List.unmodifiable(all));
+            }
+          } catch (error) {
+            debugPrint('DiscoverFeed: ${_host(url)} failed: $error');
+          }
+        }),
+      );
     } finally {
       client.close(force: true);
     }
@@ -70,9 +93,13 @@ class RssService {
       final bd = b.published ?? DateTime.fromMillisecondsSinceEpoch(0);
       return bd.compareTo(ad);
     });
-    _cache = all;
-    _fetchedAt = DateTime.now();
-    _cachedSources = List<String>.from(sources);
+    if (generation == _generation) {
+      // Don't erase useful same-source stories or cache an outage for 24 hours.
+      if (all.isEmpty && _listEquals(_cachedSources, sources)) return _cache;
+      _cache = all;
+      _fetchedAt = all.isEmpty ? null : DateTime.now();
+      _cachedSources = List<String>.from(sources);
+    }
     return all;
   }
 
@@ -82,8 +109,10 @@ class RssService {
       return null;
     }
     final request = await client.getUrl(uri).timeout(_timeout);
-    request.headers.set(HttpHeaders.acceptHeader,
-        'application/rss+xml, application/atom+xml, application/xml, text/xml');
+    request.headers.set(
+      HttpHeaders.acceptHeader,
+      'application/rss+xml, application/atom+xml, application/xml, text/xml',
+    );
     final response = await request.close().timeout(_timeout);
     if (response.statusCode != 200) return null;
     return response.transform(utf8.decoder).join().timeout(_timeout);
@@ -101,23 +130,28 @@ class RssService {
       final title = _clean(_firstTag(block, 'title'));
       if (title == null || title.isEmpty) continue;
       final link = _resolveLink(block);
-      final published = _parseDate(_firstTag(block, 'pubDate') ??
-          _firstTag(block, 'published') ??
-          _firstTag(block, 'updated') ??
-          _firstTag(block, 'dc:date'));
+      final published = _parseDate(
+        _firstTag(block, 'pubDate') ??
+            _firstTag(block, 'published') ??
+            _firstTag(block, 'updated') ??
+            _firstTag(block, 'dc:date'),
+      );
       // Google News wraps each item with a per-article <source> (the original
       // publisher); prefer it so aggregated feeds credit the real outlet.
       final itemSource =
           _clean(_firstTag(block, 'source')) ?? _clean(feedTitle);
-      items.add(RssItem(
-        title: title,
-        link: link ?? feedUrl,
-        source: (itemSource != null && itemSource.isNotEmpty)
-            ? itemSource
-            : _host(feedUrl),
-        published: published,
-        imageUrl: _extractImage(block),
-      ));
+      items.add(
+        RssItem(
+          title: title,
+          link: link ?? feedUrl,
+          source:
+              (itemSource != null && itemSource.isNotEmpty)
+                  ? itemSource
+                  : _host(feedUrl),
+          published: published,
+          imageUrl: _extractImage(block),
+        ),
+      );
       if (items.length >= _perFeedLimit) break;
     }
     return items;
@@ -131,8 +165,10 @@ class RssService {
   }
 
   String? _firstTag(String xml, String tag) {
-    final re = RegExp('<$tag(?:\\s[^>]*)?>([\\s\\S]*?)</$tag>',
-        caseSensitive: false);
+    final re = RegExp(
+      '<$tag(?:\\s[^>]*)?>([\\s\\S]*?)</$tag>',
+      caseSensitive: false,
+    );
     return re.firstMatch(xml)?.group(1)?.trim();
   }
 
@@ -142,9 +178,10 @@ class RssService {
       return plain;
     }
     // Atom: <link href="..." />
-    final href = RegExp(r'<link[^>]*href="([^"]+)"', caseSensitive: false)
-        .firstMatch(block)
-        ?.group(1);
+    final href = RegExp(
+      r'<link[^>]*href="([^"]+)"',
+      caseSensitive: false,
+    ).firstMatch(block)?.group(1);
     return href;
   }
 
@@ -152,8 +189,10 @@ class RssService {
     for (final attr in [
       RegExp(r'<media:content[^>]*url="([^"]+)"', caseSensitive: false),
       RegExp(r'<media:thumbnail[^>]*url="([^"]+)"', caseSensitive: false),
-      RegExp(r'<enclosure[^>]*url="([^"]+\.(?:jpg|jpeg|png|webp)[^"]*)"',
-          caseSensitive: false),
+      RegExp(
+        r'<enclosure[^>]*url="([^"]+\.(?:jpg|jpeg|png|webp)[^"]*)"',
+        caseSensitive: false,
+      ),
       RegExp(r'''<img[^>]*src=["']([^"']+)["']''', caseSensitive: false),
     ]) {
       final m = attr.firstMatch(block)?.group(1);
@@ -173,12 +212,22 @@ class RssService {
   // RFC-822 dates like "Tue, 02 Jun 2026 19:33:25 GMT".
   DateTime? _parseRfc822(String s) {
     final m = RegExp(
-            r'(\d{1,2})\s+(\w{3})\s+(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?')
-        .firstMatch(s);
+      r'(\d{1,2})\s+(\w{3})\s+(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?',
+    ).firstMatch(s);
     if (m == null) return null;
     const months = {
-      'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
-      'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12,
+      'jan': 1,
+      'feb': 2,
+      'mar': 3,
+      'apr': 4,
+      'may': 5,
+      'jun': 6,
+      'jul': 7,
+      'aug': 8,
+      'sep': 9,
+      'oct': 10,
+      'nov': 11,
+      'dec': 12,
     };
     final month = months[m.group(2)!.toLowerCase()];
     if (month == null) return null;
@@ -199,7 +248,9 @@ class RssService {
     // replacement as a literal, so "$1" would be inserted verbatim instead of
     // the captured inner text.
     s = s.replaceAllMapped(
-        RegExp(r'<!\[CDATA\[([\s\S]*?)\]\]>'), (m) => m.group(1) ?? '');
+      RegExp(r'<!\[CDATA\[([\s\S]*?)\]\]>'),
+      (m) => m.group(1) ?? '',
+    );
     // Strip any leftover tags.
     s = s.replaceAll(RegExp(r'<[^>]+>'), '');
     // Decode the few common entities.

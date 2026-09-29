@@ -14,6 +14,7 @@ import 'package:smart_launcher_app/features/onboarding/data/onboarding_store.dar
 import 'package:smart_launcher_app/features/onboarding/presentation/screens/onboarding_screen.dart';
 import 'package:smart_launcher_app/features/onboarding/presentation/screens/setup_flow_screens.dart';
 import 'package:smart_launcher_app/features/onboarding/presentation/widgets/default_launcher_gate.dart';
+import 'package:smart_launcher_app/features/onboarding/presentation/widgets/launcher_splash_gate.dart';
 import 'package:smart_launcher_app/features/search/presentation/bloc/search_cubit.dart';
 import 'package:smart_launcher_app/features/settings/presentation/bloc/launcher_feature_cubit.dart';
 import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
@@ -55,13 +56,18 @@ class MyApp extends StatelessWidget {
             darkTheme: AppTheme.dark,
             // Onboarding, then set-as-default + wallpaper (resumed if the app
             // was closed part-way), then the launcher.
-            home: !OnboardingStore.isCompletedSync
-                ? const OnboardingScreen()
-                : !OnboardingStore.isSetupCompletedSync
+            home:
+                !OnboardingStore.isCompletedSync
+                    ? const OnboardingScreen()
+                    : !OnboardingStore.isSetupCompletedSync
                     ? const SetDefaultScreen()
                     : const HomeScreen(),
-            builder: (context, child) =>
-                DefaultLauncherGate(child: child ?? const SizedBox.shrink()),
+            builder:
+                (context, child) => LauncherSplashGate(
+                  child: DefaultLauncherGate(
+                    child: child ?? const SizedBox.shrink(),
+                  ),
+                ),
           );
         },
       ),

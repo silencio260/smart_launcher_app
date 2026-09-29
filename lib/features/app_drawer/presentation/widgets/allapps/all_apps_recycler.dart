@@ -68,12 +68,14 @@ class _AllAppsRecyclerState extends State<AllAppsRecycler> {
     final items = _items();
     final columns = widget.settings.drawerColumns;
     var rowCount = 0;
-    int? adIndex;
+    final adIndices = <int>[];
     if (widget.showNativeAd) {
       for (var i = 0; i < items.length; i++) {
-        if (items[i] is AppRow && ++rowCount == 3) {
-          adIndex = i + 1;
-          break;
+        if (items[i] is AppRow) {
+          rowCount++;
+          if (rowCount == 3 || rowCount == 9) {
+            adIndices.add(i + 1 + adIndices.length);
+          }
         }
       }
     }
@@ -92,17 +94,21 @@ class _AllAppsRecyclerState extends State<AllAppsRecycler> {
             SliverList(
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
-                  if (index == adIndex) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
+                  final adSlot = adIndices.indexOf(index);
+                  if (adSlot >= 0) {
+                    return Padding(
+                      key: ValueKey('drawer_ad_$adSlot'),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: LauncherNativeAd(
-                        placement: LauncherAdPlacements.drawerNative,
+                        placement: LauncherAdPlacements.drawerSlots[adSlot],
                       ),
                     );
                   }
                   final item =
                       items[index -
-                          (adIndex != null && index > adIndex ? 1 : 0)];
+                          adIndices
+                              .where((position) => position < index)
+                              .length];
                   if (item is SectionHeader) {
                     return Padding(
                       padding: const EdgeInsets.fromLTRB(20, 12, 0, 4),
@@ -136,9 +142,8 @@ class _AllAppsRecyclerState extends State<AllAppsRecycler> {
                                       settings: widget.settings,
                                       dragController: widget.dragController,
                                       onTap: () => widget.onAppTap(app),
-                                      onLongPress:
-                                          (pos) =>
-                                              widget.onAppLongPress(app, pos),
+                                      onLongPress: (pos) =>
+                                          widget.onAppLongPress(app, pos),
                                       onDragStarted: widget.onDragStarted,
                                       onDragEnded: widget.onDragEnded,
                                     ),
@@ -158,7 +163,7 @@ class _AllAppsRecyclerState extends State<AllAppsRecycler> {
                   }
                   return const SizedBox.shrink();
                 },
-                childCount: items.length + (adIndex == null ? 0 : 1),
+                childCount: items.length + adIndices.length,
                 addRepaintBoundaries: false,
               ),
             ),
@@ -221,14 +226,13 @@ class _DrawerAppIconState extends State<_DrawerAppIcon> {
 
     final iconView = BadgeListener(
       packageName: widget.app.packageName,
-      builder:
-          (_, badge) => BubbleTextView(
-            app: widget.app,
-            iconSize: widget.settings.drawerIconSize,
-            showLabel: widget.settings.showDrawerLabels,
-            iconShape: widget.settings.iconShape,
-            badgeCount: badge,
-          ),
+      builder: (_, badge) => BubbleTextView(
+        app: widget.app,
+        iconSize: widget.settings.drawerIconSize,
+        showLabel: widget.settings.showDrawerLabels,
+        iconShape: widget.settings.iconShape,
+        badgeCount: badge,
+      ),
     );
 
     return LongPressDraggable<DragPayload>(

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:genrevibes_onboarding/genrevibes_onboarding.dart';
@@ -48,6 +49,7 @@ class _OnboardingViewState extends State<_OnboardingView> {
   final bool _adAllowed = LauncherAds.onboardingAdAllowed;
 
   void _openSetup(BuildContext context) {
+    unawaited(LauncherAds.prepareInlineAds());
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
         builder: (_) => SetDefaultScreen(previewMode: widget.previewMode),
@@ -56,23 +58,23 @@ class _OnboardingViewState extends State<_OnboardingView> {
   }
 
   List<OnboardingAction> get _finishActions => [
-        if (!widget.previewMode) ...[
-          // Stops the sequence if the flag can't be written; the user can
-          // retry instead of being onboarded in memory only.
-          OnboardingAction.markCompleted(sl<AppRuntime>().onboarding),
-          OnboardingAction(
-            (_) => OnboardingStore.markSetupPending(),
-            name: 'mark_setup_pending',
-            continueOnError: true,
-          ),
-        ],
-        OnboardingAction(_openSetup, name: 'open_setup'),
-      ];
+    if (!widget.previewMode) ...[
+      // Stops the sequence if the flag can't be written; the user can
+      // retry instead of being onboarded in memory only.
+      OnboardingAction.markCompleted(sl<AppRuntime>().onboarding),
+      OnboardingAction(
+        (_) => OnboardingStore.markSetupPending(),
+        name: 'mark_setup_pending',
+        continueOnError: true,
+      ),
+    ],
+    OnboardingAction(_openSetup, name: 'open_setup'),
+  ];
 
   /// The native ad's own height (see [LauncherNativeAd]), so the ad screen is
   /// laid out with it from the first frame and nothing moves when it loads.
   double _adHeight(BuildContext context) =>
-      24 + 376 + MediaQuery.textScalerOf(context).scale(12);
+      LauncherNativeAd.reservedHeight(context);
 
   @override
   Widget build(BuildContext context) {
@@ -113,9 +115,9 @@ class _OnboardingViewState extends State<_OnboardingView> {
               buildWhen: (previous, next) => previous.homeMode != next.homeMode,
               builder: (context, settings) => StylePickerContent(
                 selected: settings.homeMode,
-                onSelected: (mode) => context
-                    .read<SettingsCubit>()
-                    .update(settings.copyWith(homeMode: mode)),
+                onSelected: (mode) => context.read<SettingsCubit>().update(
+                  settings.copyWith(homeMode: mode),
+                ),
               ),
             ),
           ),

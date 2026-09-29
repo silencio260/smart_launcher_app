@@ -8,6 +8,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.android.RenderMode
 import io.flutter.embedding.android.TransparencyMode
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.AfterCallChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.AlarmChannel
 import com.smartphonelauncherapp.smart.phone.device.launcher.smart_launcher_app.channels.AppInstallEventChannel
@@ -41,6 +42,7 @@ class MainActivity : FlutterActivity() {
     private var fileLockerChannel: FileLockerChannel? = null
     private var alarmChannel: AlarmChannel? = null
     private var wallpaperChannel: WallpaperChannel? = null
+    private var launchChannel: MethodChannel? = null
 
     override fun getRenderMode(): RenderMode = RenderMode.texture
     override fun getTransparencyMode(): TransparencyMode = TransparencyMode.transparent
@@ -60,6 +62,10 @@ class MainActivity : FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        // Only real app-icon re-entry, not Home, permission dialogs or ad clicks.
+        if (intent.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_LAUNCHER)) {
+            launchChannel?.invokeMethod("iconLaunch", null)
+        }
         handleAfterCallIntent(intent)
         handleFeatureIntent(intent)
     }
@@ -95,6 +101,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        launchChannel = null
         notificationChannel?.dispose()
         appWidgetHost.stopListening()
         // Pooled host views hold a reference to this activity context; drop
@@ -106,6 +113,7 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
+        launchChannel = MethodChannel(messenger, "com.genrevibes.smartlauncher/launches")
 
         AppsChannel(this).register(messenger)
         SystemChannel(this).register(messenger)
@@ -161,6 +169,9 @@ class MainActivity : FlutterActivity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        // Launchers swallow the back button
+        // Flutter handles nested navigation and checks the current Home role
+        // before showing the root exit confirmation. Swallowing Back here kept
+        // that logic (and normal nested-route Back) from running.
+        super.onBackPressed()
     }
 }

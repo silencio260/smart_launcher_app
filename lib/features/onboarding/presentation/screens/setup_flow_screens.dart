@@ -79,7 +79,10 @@ class _SetDefaultScreenState extends State<SetDefaultScreen>
   Future<void> _requestRole() async {
     if (_requestInFlight) return;
     _asked = true;
-    setState(() => _requestInFlight = true);
+    setState(() {
+      _requestInFlight = true;
+      _returnedWithoutRole = false;
+    });
     AppAnalytics.onboardingDefaultRequested();
     final launched = await LauncherService.requestHomeRole();
     if (!mounted) return;
@@ -156,9 +159,7 @@ class _WallpaperSetupScreenState extends State<WallpaperSetupScreen> {
     await OnboardingStore.markSetupCompleted();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute<void>(
-        builder: (_) => const HomeScreen(firstRun: true),
-      ),
+      MaterialPageRoute<void>(builder: (_) => const HomeScreen(firstRun: true)),
       (_) => false,
     );
   }
@@ -169,9 +170,7 @@ class _WallpaperSetupScreenState extends State<WallpaperSetupScreen> {
       canPop: widget.previewMode,
       child: Scaffold(
         backgroundColor: Theme.of(context).colorScheme.surface,
-        body: SafeArea(
-          child: WallpaperPage(onDone: _finish),
-        ),
+        body: SafeArea(child: WallpaperPage(onDone: _finish)),
       ),
     );
   }

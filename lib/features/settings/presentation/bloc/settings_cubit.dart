@@ -10,9 +10,28 @@ import 'package:smart_launcher_app/core/utils/debug_flags.dart';
 import 'package:smart_launcher_app/core/utils/drawer_perf.dart';
 
 class SettingsCubit extends Cubit<LauncherSettings> {
+  /// Only successful persisted changes advance this; used at completed flows.
+  int savedRevision = 0;
   static const _key = 'launcher_settings_v1';
 
   SettingsCubit() : super(const LauncherSettings());
+
+  /// Startup can restore the chosen appearance without firing settings
+  /// analytics or constructing a second settings controller.
+  static Future<ThemeMode> readStartupTheme() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString(_key);
+      if (saved == null) return ThemeMode.system;
+      final json = jsonDecode(saved) as Map<String, dynamic>;
+      final index = json['themeMode'];
+      if (index == ThemeMode2.light.index) return ThemeMode.light;
+      if (index == ThemeMode2.dark.index) return ThemeMode.dark;
+    } catch (error) {
+      debugPrint('Startup theme: $error');
+    }
+    return ThemeMode.system;
+  }
 
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -32,7 +51,9 @@ class SettingsCubit extends Cubit<LauncherSettings> {
     _applyDebugFlags(settings);
     _trackSettingsChange(prev, settings);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_key, jsonEncode(_toJson(settings)));
+    final saved = await prefs.setString(_key, jsonEncode(_toJson(settings)));
+    if (!saved) throw StateError('Settings could not be saved');
+    if (settings != prev) savedRevision++;
   }
 
   /// Mirror config into analytics user properties + crash keys (non-PII).
@@ -40,7 +61,9 @@ class SettingsCubit extends Cubit<LauncherSettings> {
     AppAnalytics.setUserProperty('theme', s.themeMode.name);
     AppAnalytics.setUserProperty('home_style', s.homeMode.name);
     AppAnalytics.setUserProperty(
-        'icon_pack', s.iconPackPackage.isEmpty ? 'default' : s.iconPackPackage);
+      'icon_pack',
+      s.iconPackPackage.isEmpty ? 'default' : s.iconPackPackage,
+    );
     AppAnalytics.setUserProperty('grid_size', '${s.gridColumns}x${s.gridRows}');
     CrashContext.setString('theme', s.themeMode.name);
     CrashContext.setString('grid_size', '${s.gridColumns}x${s.gridRows}');
@@ -55,47 +78,66 @@ class SettingsCubit extends Cubit<LauncherSettings> {
     }
     if (a.homeMode != b.homeMode) {
       AppAnalytics.appearanceChanged(
-          setting: 'home_style', value: b.homeMode.name);
+        setting: 'home_style',
+        value: b.homeMode.name,
+      );
     }
     if (a.iconShape != b.iconShape) {
       AppAnalytics.appearanceChanged(setting: 'icon_shape', value: b.iconShape);
     }
     if (a.iconPackPackage != b.iconPackPackage) {
       AppAnalytics.appearanceChanged(
-          setting: 'icon_pack',
-          value: b.iconPackPackage.isEmpty ? 'default' : 'custom');
+        setting: 'icon_pack',
+        value: b.iconPackPackage.isEmpty ? 'default' : 'custom',
+      );
     }
     if (a.gridColumns != b.gridColumns || a.gridRows != b.gridRows) {
       AppAnalytics.appearanceChanged(
-          setting: 'grid_size', value: '${b.gridColumns}x${b.gridRows}');
+        setting: 'grid_size',
+        value: '${b.gridColumns}x${b.gridRows}',
+      );
     }
     if (a.discoverPageEnabled != b.discoverPageEnabled) {
       AppAnalytics.featureToggled(
-          featureId: 'discover', enabled: b.discoverPageEnabled);
+        featureId: 'discover',
+        enabled: b.discoverPageEnabled,
+      );
     }
     if (a.appLibraryPageEnabled != b.appLibraryPageEnabled) {
       AppAnalytics.featureToggled(
-          featureId: 'app_library', enabled: b.appLibraryPageEnabled);
+        featureId: 'app_library',
+        enabled: b.appLibraryPageEnabled,
+      );
     }
     if (a.doubleTapAction != b.doubleTapAction) {
       AppAnalytics.gestureSet(
-          gesture: 'double_tap', action: b.doubleTapAction.name);
+        gesture: 'double_tap',
+        action: b.doubleTapAction.name,
+      );
     }
     if (a.swipeUpAction != b.swipeUpAction) {
       AppAnalytics.gestureSet(
-          gesture: 'swipe_up', action: b.swipeUpAction.name);
+        gesture: 'swipe_up',
+        action: b.swipeUpAction.name,
+      );
     }
     if (a.swipeDownAction != b.swipeDownAction) {
       AppAnalytics.gestureSet(
-          gesture: 'swipe_down', action: b.swipeDownAction.name);
+        gesture: 'swipe_down',
+        action: b.swipeDownAction.name,
+      );
     }
     if (a.homeBtnAction != b.homeBtnAction) {
       AppAnalytics.gestureSet(
-          gesture: 'home_button', action: b.homeBtnAction.name);
+        gesture: 'home_button',
+        action: b.homeBtnAction.name,
+      );
     }
     if (a.backBtnAction != b.backBtnAction) {
       AppAnalytics.gestureSet(
-          gesture: 'back_button', action: b.backBtnAction.name);
+        gesture: 'back_button',
+        action: b.backBtnAction.name,
+      );
     }
     _syncUserProperties(b);
   }
@@ -115,88 +157,88 @@ class SettingsCubit extends Cubit<LauncherSettings> {
   Future<void> reset() => update(const LauncherSettings());
 
   Map<String, dynamic> _toJson(LauncherSettings s) => {
-        'themeMode': s.themeMode.index,
-        'homeMode': s.homeMode.index,
-        'settingsBackgroundMode': s.settingsBackgroundMode.index,
-        'iconShape': s.iconShape,
-        'iconPackPackage': s.iconPackPackage,
-        'themedIconsEnabled': s.themedIconsEnabled,
-        'notificationBadgesEnabled': s.notificationBadgesEnabled,
-        'badgeShowCount': s.badgeShowCount,
-        'gridColumns': s.gridColumns,
-        'gridRows': s.gridRows,
-        'lockHomeScreen': s.lockHomeScreen,
-        'autoAddShortcuts': s.autoAddShortcuts,
-        'infiniteScrolling': s.infiniteScrolling,
-        'discoverPageEnabled': s.discoverPageEnabled,
-        'appLibraryPageEnabled': s.appLibraryPageEnabled,
-        'showGridDebugOverlay': s.showGridDebugOverlay,
-        'showWidgetDebugLogs': s.showWidgetDebugLogs,
-        'showWidgetDragDebugLogs': s.showWidgetDragDebugLogs,
-        'showWidgetPickerDebugInfo': s.showWidgetPickerDebugInfo,
-        'showDrawerPerfLogs': s.showDrawerPerfLogs,
-        'showRouteCoverageLogs': s.showRouteCoverageLogs,
-        'showSettingsLogs': s.showSettingsLogs,
-        'iconSize': s.iconSize,
-        'showLabels': s.showLabels,
-        'labelSize': s.labelSize,
-        'showStatusBar': s.showStatusBar,
-        'darkStatusBar': s.darkStatusBar,
-        'textColorMode': s.textColorMode.index,
-        'wallpaperScrolling': s.wallpaperScrolling,
-        'wallpaperDepthEffect': s.wallpaperDepthEffect,
-        'wallpaperBlur': s.wallpaperBlur,
-        'wallpaperBlurIntensity': s.wallpaperBlurIntensity,
-        'iosBackground': s.iosBackground.index,
-        'iosPhotoPath': s.iosPhotoPath,
-        'iosBlur': s.iosBlur,
-        'iosDim': s.iosDim,
-        'iosGridColumns': s.iosGridColumns,
-        'iosLibraryViewMode': s.iosLibraryViewMode.index,
-        'iosDockPackages': s.iosDockPackages,
-        'minimalFavoritePackages': s.minimalFavoritePackages,
-        'minimalFontSize': s.minimalFontSize,
-        'minimalUse24HourClock': s.minimalUse24HourClock,
-        'minimalDayStartMinutes': s.minimalDayStartMinutes,
-        'minimalDayEndMinutes': s.minimalDayEndMinutes,
-        'minimalBackground': s.minimalBackground.index,
-        'minimalPhotoPath': s.minimalPhotoPath,
-        'minimalBlur': s.minimalBlur,
-        'minimalDim': s.minimalDim,
-        'minimalBackgroundColor': s.minimalBackgroundColor,
-        'showDock': s.showDock,
-        'dockSize': s.dockSize,
-        'dockShowBackground': s.dockShowBackground,
-        'dockBackgroundColor': s.dockBackgroundColor.toARGB32(),
-        'dockBackgroundOpacity': s.dockBackgroundOpacity,
-        'showDockLabels': s.showDockLabels,
-        'dockIconSize': s.dockIconSize,
-        'dockPackages': s.dockPackages,
-        'drawerLayout': s.drawerLayout.index,
-        'drawerShowBackground': s.drawerShowBackground,
-        'drawerBackgroundColor': s.drawerBackgroundColor.toARGB32(),
-        'drawerBackgroundOpacity': s.drawerBackgroundOpacity,
-        'drawerColumns': s.drawerColumns,
-        'drawerIconSize': s.drawerIconSize,
-        'showDrawerLabels': s.showDrawerLabels,
-        'drawerRememberScroll': s.drawerRememberScroll,
-        'drawerShowScrollbar': s.drawerShowScrollbar,
-        'hiddenApps': s.hiddenApps,
-        'timeFormat': s.timeFormat.index,
-        'workspaceFont': s.workspaceFont,
-        'folderIconShape': s.folderIconShape,
-        'folderColor': s.folderColor.toARGB32(),
-        'folderMaxColumns': s.folderMaxColumns,
-        'folderMaxRows': s.folderMaxRows,
-        'showFolderLabels': s.showFolderLabels,
-        'doubleTapAction': s.doubleTapAction.index,
-        'swipeUpAction': s.swipeUpAction.index,
-        'swipeDownAction': s.swipeDownAction.index,
-        'twoFingerSwipeUpAction': s.twoFingerSwipeUpAction.index,
-        'twoFingerSwipeDownAction': s.twoFingerSwipeDownAction.index,
-        'homeBtnAction': s.homeBtnAction.index,
-        'backBtnAction': s.backBtnAction.index,
-      };
+    'themeMode': s.themeMode.index,
+    'homeMode': s.homeMode.index,
+    'settingsBackgroundMode': s.settingsBackgroundMode.index,
+    'iconShape': s.iconShape,
+    'iconPackPackage': s.iconPackPackage,
+    'themedIconsEnabled': s.themedIconsEnabled,
+    'notificationBadgesEnabled': s.notificationBadgesEnabled,
+    'badgeShowCount': s.badgeShowCount,
+    'gridColumns': s.gridColumns,
+    'gridRows': s.gridRows,
+    'lockHomeScreen': s.lockHomeScreen,
+    'autoAddShortcuts': s.autoAddShortcuts,
+    'infiniteScrolling': s.infiniteScrolling,
+    'discoverPageEnabled': s.discoverPageEnabled,
+    'appLibraryPageEnabled': s.appLibraryPageEnabled,
+    'showGridDebugOverlay': s.showGridDebugOverlay,
+    'showWidgetDebugLogs': s.showWidgetDebugLogs,
+    'showWidgetDragDebugLogs': s.showWidgetDragDebugLogs,
+    'showWidgetPickerDebugInfo': s.showWidgetPickerDebugInfo,
+    'showDrawerPerfLogs': s.showDrawerPerfLogs,
+    'showRouteCoverageLogs': s.showRouteCoverageLogs,
+    'showSettingsLogs': s.showSettingsLogs,
+    'iconSize': s.iconSize,
+    'showLabels': s.showLabels,
+    'labelSize': s.labelSize,
+    'showStatusBar': s.showStatusBar,
+    'darkStatusBar': s.darkStatusBar,
+    'textColorMode': s.textColorMode.index,
+    'wallpaperScrolling': s.wallpaperScrolling,
+    'wallpaperDepthEffect': s.wallpaperDepthEffect,
+    'wallpaperBlur': s.wallpaperBlur,
+    'wallpaperBlurIntensity': s.wallpaperBlurIntensity,
+    'iosBackground': s.iosBackground.index,
+    'iosPhotoPath': s.iosPhotoPath,
+    'iosBlur': s.iosBlur,
+    'iosDim': s.iosDim,
+    'iosGridColumns': s.iosGridColumns,
+    'iosLibraryViewMode': s.iosLibraryViewMode.index,
+    'iosDockPackages': s.iosDockPackages,
+    'minimalFavoritePackages': s.minimalFavoritePackages,
+    'minimalFontSize': s.minimalFontSize,
+    'minimalUse24HourClock': s.minimalUse24HourClock,
+    'minimalDayStartMinutes': s.minimalDayStartMinutes,
+    'minimalDayEndMinutes': s.minimalDayEndMinutes,
+    'minimalBackground': s.minimalBackground.index,
+    'minimalPhotoPath': s.minimalPhotoPath,
+    'minimalBlur': s.minimalBlur,
+    'minimalDim': s.minimalDim,
+    'minimalBackgroundColor': s.minimalBackgroundColor,
+    'showDock': s.showDock,
+    'dockSize': s.dockSize,
+    'dockShowBackground': s.dockShowBackground,
+    'dockBackgroundColor': s.dockBackgroundColor.toARGB32(),
+    'dockBackgroundOpacity': s.dockBackgroundOpacity,
+    'showDockLabels': s.showDockLabels,
+    'dockIconSize': s.dockIconSize,
+    'dockPackages': s.dockPackages,
+    'drawerLayout': s.drawerLayout.index,
+    'drawerShowBackground': s.drawerShowBackground,
+    'drawerBackgroundColor': s.drawerBackgroundColor.toARGB32(),
+    'drawerBackgroundOpacity': s.drawerBackgroundOpacity,
+    'drawerColumns': s.drawerColumns,
+    'drawerIconSize': s.drawerIconSize,
+    'showDrawerLabels': s.showDrawerLabels,
+    'drawerRememberScroll': s.drawerRememberScroll,
+    'drawerShowScrollbar': s.drawerShowScrollbar,
+    'hiddenApps': s.hiddenApps,
+    'timeFormat': s.timeFormat.index,
+    'workspaceFont': s.workspaceFont,
+    'folderIconShape': s.folderIconShape,
+    'folderColor': s.folderColor.toARGB32(),
+    'folderMaxColumns': s.folderMaxColumns,
+    'folderMaxRows': s.folderMaxRows,
+    'showFolderLabels': s.showFolderLabels,
+    'doubleTapAction': s.doubleTapAction.index,
+    'swipeUpAction': s.swipeUpAction.index,
+    'swipeDownAction': s.swipeDownAction.index,
+    'twoFingerSwipeUpAction': s.twoFingerSwipeUpAction.index,
+    'twoFingerSwipeDownAction': s.twoFingerSwipeDownAction.index,
+    'homeBtnAction': s.homeBtnAction.index,
+    'backBtnAction': s.backBtnAction.index,
+  };
 
   LauncherSettings _fromJson(Map<String, dynamic> j) {
     T enumAt<T>(List<T> values, String key, T def) {
@@ -207,8 +249,11 @@ class SettingsCubit extends Cubit<LauncherSettings> {
     return LauncherSettings(
       themeMode: enumAt(ThemeMode2.values, 'themeMode', ThemeMode2.system),
       homeMode: enumAt(HomeMode.values, 'homeMode', HomeMode.smart),
-      settingsBackgroundMode: enumAt(SettingsBackgroundMode.values,
-          'settingsBackgroundMode', SettingsBackgroundMode.black),
+      settingsBackgroundMode: enumAt(
+        SettingsBackgroundMode.values,
+        'settingsBackgroundMode',
+        SettingsBackgroundMode.black,
+      ),
       iconShape: j['iconShape'] as String? ?? 'squircle',
       iconPackPackage: j['iconPackPackage'] as String? ?? '',
       themedIconsEnabled: j['themedIconsEnabled'] as bool? ?? false,
@@ -235,21 +280,30 @@ class SettingsCubit extends Cubit<LauncherSettings> {
       labelSize: (j['labelSize'] as num?)?.toDouble() ?? 12,
       showStatusBar: j['showStatusBar'] as bool? ?? true,
       darkStatusBar: j['darkStatusBar'] as bool? ?? false,
-      textColorMode:
-          enumAt(TextColorMode.values, 'textColorMode', TextColorMode.auto),
+      textColorMode: enumAt(
+        TextColorMode.values,
+        'textColorMode',
+        TextColorMode.auto,
+      ),
       wallpaperScrolling: j['wallpaperScrolling'] as bool? ?? true,
       wallpaperDepthEffect: j['wallpaperDepthEffect'] as bool? ?? false,
       wallpaperBlur: j['wallpaperBlur'] as bool? ?? false,
       wallpaperBlurIntensity:
           (j['wallpaperBlurIntensity'] as num?)?.toDouble() ?? 0.3,
       iosBackground: enumAt(
-          HomeBackground.values, 'iosBackground', HomeBackground.wallpaper),
+        HomeBackground.values,
+        'iosBackground',
+        HomeBackground.wallpaper,
+      ),
       iosPhotoPath: j['iosPhotoPath'] as String? ?? '',
       iosBlur: (j['iosBlur'] as num?)?.toDouble() ?? 0,
       iosDim: (j['iosDim'] as num?)?.toDouble() ?? 0,
       iosGridColumns: j['iosGridColumns'] as int? ?? 4,
-      iosLibraryViewMode: enumAt(IosLibraryViewMode.values,
-          'iosLibraryViewMode', IosLibraryViewMode.grid),
+      iosLibraryViewMode: enumAt(
+        IosLibraryViewMode.values,
+        'iosLibraryViewMode',
+        IosLibraryViewMode.grid,
+      ),
       iosDockPackages: (j['iosDockPackages'] as List?)?.cast<String>() ?? [],
       minimalFavoritePackages:
           (j['minimalFavoritePackages'] as List?)?.cast<String>() ?? [],
@@ -267,11 +321,12 @@ class SettingsCubit extends Cubit<LauncherSettings> {
       ),
       minimalPhotoPath: j['minimalPhotoPath'] as String? ?? '',
       // Older builds blurred Minimal with the shared wallpaperBlur setting.
-      minimalBlur: (j['minimalBlur'] as num?)?.toDouble() ??
+      minimalBlur:
+          (j['minimalBlur'] as num?)?.toDouble() ??
           (j['wallpaperBlur'] == true
               ? ((4 + ((j['wallpaperBlurIntensity'] as num?) ?? 0.3) * 18) /
-                      homeBlurMaxSigma)
-                  .clamp(0.0, 1.0)
+                        homeBlurMaxSigma)
+                    .clamp(0.0, 1.0)
               : 0.0),
       minimalDim: (j['minimalDim'] as num?)?.toDouble() ?? 0.28,
       minimalBackgroundColor: j['minimalBackgroundColor'] as int? ?? 0xFF000000,
@@ -286,8 +341,11 @@ class SettingsCubit extends Cubit<LauncherSettings> {
       showDockLabels: j['showDockLabels'] as bool? ?? false,
       dockIconSize: (j['dockIconSize'] as num?)?.toDouble() ?? 48,
       dockPackages: (j['dockPackages'] as List?)?.cast<String>() ?? [],
-      drawerLayout:
-          enumAt(DrawerLayout.values, 'drawerLayout', DrawerLayout.standard),
+      drawerLayout: enumAt(
+        DrawerLayout.values,
+        'drawerLayout',
+        DrawerLayout.standard,
+      ),
       drawerShowBackground: j['drawerShowBackground'] as bool? ?? false,
       drawerBackgroundColor: j['drawerBackgroundColor'] != null
           ? Color(j['drawerBackgroundColor'] as int)
@@ -310,19 +368,40 @@ class SettingsCubit extends Cubit<LauncherSettings> {
       folderMaxRows: j['folderMaxRows'] as int? ?? 3,
       showFolderLabels: j['showFolderLabels'] as bool? ?? true,
       doubleTapAction: enumAt(
-          GestureAction.values, 'doubleTapAction', GestureAction.none),
+        GestureAction.values,
+        'doubleTapAction',
+        GestureAction.none,
+      ),
       swipeUpAction: enumAt(
-          GestureAction.values, 'swipeUpAction', GestureAction.openDrawer),
-      swipeDownAction: enumAt(GestureAction.values, 'swipeDownAction',
-          GestureAction.openNotifications),
+        GestureAction.values,
+        'swipeUpAction',
+        GestureAction.openDrawer,
+      ),
+      swipeDownAction: enumAt(
+        GestureAction.values,
+        'swipeDownAction',
+        GestureAction.openNotifications,
+      ),
       twoFingerSwipeUpAction: enumAt(
-          GestureAction.values, 'twoFingerSwipeUpAction', GestureAction.none),
-      twoFingerSwipeDownAction: enumAt(GestureAction.values,
-          'twoFingerSwipeDownAction', GestureAction.openQuickSettings),
-      homeBtnAction:
-          enumAt(GestureAction.values, 'homeBtnAction', GestureAction.none),
-      backBtnAction:
-          enumAt(GestureAction.values, 'backBtnAction', GestureAction.none),
+        GestureAction.values,
+        'twoFingerSwipeUpAction',
+        GestureAction.none,
+      ),
+      twoFingerSwipeDownAction: enumAt(
+        GestureAction.values,
+        'twoFingerSwipeDownAction',
+        GestureAction.openQuickSettings,
+      ),
+      homeBtnAction: enumAt(
+        GestureAction.values,
+        'homeBtnAction',
+        GestureAction.none,
+      ),
+      backBtnAction: enumAt(
+        GestureAction.values,
+        'backBtnAction',
+        GestureAction.none,
+      ),
     );
   }
 }

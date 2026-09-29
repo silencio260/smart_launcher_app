@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:smart_launcher_app/core/ads/launcher_ads.dart';
+import 'package:smart_launcher_app/core/ads/launcher_banner_ad.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:smart_launcher_app/core/models/launcher_settings.dart';
@@ -7,13 +10,57 @@ import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_
 import 'package:smart_launcher_app/features/settings/presentation/screens/settings_appearance.dart';
 import 'package:smart_launcher_app/features/settings/presentation/screens/wallpaper_screen.dart';
 
-class LauncherThemesScreen extends StatelessWidget {
+class LauncherThemesScreen extends StatefulWidget {
   const LauncherThemesScreen({super.key});
+
+  @override
+  State<LauncherThemesScreen> createState() => _LauncherThemesScreenState();
+}
+
+class _LauncherThemesScreenState extends State<LauncherThemesScreen> {
+  bool _applying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(LauncherAds.preloadAction(LauncherAdPlacements.themeApplied));
+  }
+
+  Future<void> _apply(HomeMode mode) async {
+    final cubit = context.read<SettingsCubit>();
+    if (_applying || cubit.state.homeMode == mode) return;
+    setState(() => _applying = true);
+    try {
+      await cubit.update(cubit.state.copyWith(homeMode: mode));
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Theme applied')));
+      await LauncherAds.onActionCompleted(
+        context,
+        LauncherAdPlacements.themeApplied,
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not save theme. Please try again.'),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _applying = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Themes')),
+      bottomNavigationBar: const LauncherBannerAd(
+        placement: LauncherAdPlacements.themesBanner,
+        showLabel: true,
+      ),
       body: BlocBuilder<SettingsCubit, LauncherSettings>(
         builder: (context, settings) {
           final cubit = context.read<SettingsCubit>();
@@ -25,9 +72,7 @@ class LauncherThemesScreen extends StatelessWidget {
                 subtitle: 'Classic workspace, widgets, dock, drawer',
                 icon: Icons.grid_view_rounded,
                 selected: settings.homeMode == HomeMode.smart,
-                onTap: () => cubit.update(
-                  settings.copyWith(homeMode: HomeMode.smart),
-                ),
+                onTap: _applying ? null : () => _apply(HomeMode.smart),
               ),
               const SizedBox(height: 12),
               _ThemeCard(
@@ -35,9 +80,7 @@ class LauncherThemesScreen extends StatelessWidget {
                 subtitle: 'Paged icon grid, dock, library, Spotlight',
                 icon: Icons.phone_iphone_rounded,
                 selected: settings.homeMode == HomeMode.ios,
-                onTap: () => cubit.update(
-                  settings.copyWith(homeMode: HomeMode.ios),
-                ),
+                onTap: _applying ? null : () => _apply(HomeMode.ios),
               ),
               const SizedBox(height: 12),
               _ThemeCard(
@@ -45,9 +88,7 @@ class LauncherThemesScreen extends StatelessWidget {
                 subtitle: 'Clock, date, day progress, favorite apps',
                 icon: Icons.format_align_left_rounded,
                 selected: settings.homeMode == HomeMode.minimal,
-                onTap: () => cubit.update(
-                  settings.copyWith(homeMode: HomeMode.minimal),
-                ),
+                onTap: _applying ? null : () => _apply(HomeMode.minimal),
               ),
               if (settings.homeMode == HomeMode.ios) ...[
                 const SizedBox(height: 24),
@@ -70,7 +111,7 @@ class _ThemeCard extends StatelessWidget {
   final String subtitle;
   final IconData icon;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   const _ThemeCard({
     required this.title,
@@ -193,9 +234,8 @@ class _MinimalOptions extends StatelessWidget {
           secondary: const Icon(Icons.schedule_outlined),
           title: const Text('24-hour clock'),
           value: settings.minimalUse24HourClock,
-          onChanged: (value) => cubit.update(
-            settings.copyWith(minimalUse24HourClock: value),
-          ),
+          onChanged: (value) =>
+              cubit.update(settings.copyWith(minimalUse24HourClock: value)),
         ),
         ListTile(
           leading: const Icon(Icons.format_size),
@@ -206,9 +246,8 @@ class _MinimalOptions extends StatelessWidget {
             max: 22,
             divisions: 9,
             label: settings.minimalFontSize.round().toString(),
-            onChanged: (value) => cubit.update(
-              settings.copyWith(minimalFontSize: value),
-            ),
+            onChanged: (value) =>
+                cubit.update(settings.copyWith(minimalFontSize: value)),
           ),
           trailing: Text('${settings.minimalFontSize.round()}'),
         ),
@@ -263,20 +302,16 @@ class _Section extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Theme.of(context)
-          .colorScheme
-          .surfaceContainerHighest
-          .withValues(alpha: 0.28),
+      color: Theme.of(
+        context,
+      ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.28),
       borderRadius: BorderRadius.circular(8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-            child: Text(
-              title,
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
+            child: Text(title, style: Theme.of(context).textTheme.titleSmall),
           ),
           ...children,
         ],

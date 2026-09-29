@@ -57,12 +57,11 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
       schema: remoteConfigSchema,
       provider: GenRevibesFirebaseRemoteConfigProvider(
         schema: remoteConfigSchema,
-        configuration:
-            const GenRevibesFirebaseRemoteConfigConfiguration(
-              fetchTimeout: PortfolioRemoteConfigSettings.fetchTimeout,
-              minimumFetchInterval:
-                  PortfolioRemoteConfigSettings.minimumFetchInterval,
-            ),
+        configuration: const GenRevibesFirebaseRemoteConfigConfiguration(
+          fetchTimeout: PortfolioRemoteConfigSettings.fetchTimeout,
+          minimumFetchInterval:
+              PortfolioRemoteConfigSettings.minimumFetchInterval,
+        ),
         logger: logger,
       ),
       // Last-known-good values, so a launch with no network still applies the
@@ -116,6 +115,7 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
           useMasPrivacyDialog: true,
         ),
         logger: logger,
+        canShowAd: LauncherAds.canShowPlacement,
       );
       adProvider = provider;
       adPolicy = AdPolicyController();
@@ -148,12 +148,11 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
       installMarker: installId,
       logger: logger,
     );
-    developerAccessBinder =
-        DeveloperAccessRemotePolicyBinder.forCoordinator(
-          remoteConfig,
-          controller: developerAccess,
-          logger: logger,
-        );
+    developerAccessBinder = DeveloperAccessRemotePolicyBinder.forCoordinator(
+      remoteConfig,
+      controller: developerAccess,
+      logger: logger,
+    );
     permissionProvider = PermissionHandlerProvider(logger: logger);
     permissions = PermissionCoordinator(
       provider: permissionProvider,
@@ -334,14 +333,36 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
       scope.addModule(module);
     }
     scope.addModule(coordinator);
-    // Warm inventory whenever initialization actually succeeds, including a
-    // late SDK callback after the bounded startup wait has already returned.
-    final adHealthChanges = adProvider?.healthChanges.listen((health) {
-      if (!scope.isClosed && health.isOperational && ads != null) {
-        unawaited(ads!.load(LauncherAdPlacements.miniAppOpen));
+    // MAS has one interstitial inventory slot. Keep it warm without competing
+    // per-screen requests or ever showing from a load/retry callback.
+    final adEvents = adProvider?.events.listen((event) {
+      if (!scope.isClosed &&
+          event.format == AdFormat.interstitial &&
+          event.type == AdEventType.dismissed) {
+        // The shared policy tracks placement IDs. Apply its configured interval
+        // across our interstitial destinations, not just the last-used screen.
+        for (final placement in LauncherAdPlacements.all) {
+          if (placement.format == AdFormat.interstitial) {
+            adPolicy?.recordShown(placement);
+          }
+        }
       }
     });
-    if (adHealthChanges != null) scope.add(adHealthChanges.cancel);
+    if (adEvents != null) scope.add(adEvents.cancel);
+    scope.add(() => _interstitialRetry?.cancel());
+    if (ads != null) unawaited(warmInterstitial());
+    scope.add(Yodo1InlinePreloads.clear);
+    // Continue preparation after the four-second splash. Never auto-show from
+    // this worker; only the destination widgets consume its detached cache.
+    final inlineWarmup = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (!scope.isClosed &&
+          (adProvider?.health.isOperational ?? false) &&
+          (adPolicyBinder?.health.isOperational ?? false) &&
+          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+        unawaited(LauncherAds.prepareInlineAds());
+      }
+    });
+    scope.add(inlineWarmup.cancel);
     final planChanges = replayPolicy.planChanges.listen((_) {
       if (!scope.isClosed) notifyListeners();
     });
@@ -408,12 +429,64 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
   /// gate, the onboarding flow and Kit Lab.
   late final OnboardingController onboarding;
   late final GenRevibesStarterKit coordinator;
+
   /// Yodo1 MAS, or null when no app key is configured for this build.
   Yodo1MasAdProvider? adProvider;
 
   /// Pacing, intervals and the remote master switch.
   AdPolicyController? adPolicy;
   AdsRemotePolicyBinder? adPolicyBinder;
+
+  Timer? _interstitialRetry;
+  bool _warmingInterstitial = false;
+
+  /// One runtime-owned load loop. A failed load completes from the SDK callback
+  /// (or its bounded deadline); only then does the two-second retry delay begin.
+  /// Loaded inventory is retained until an eligible user action consumes it.
+  Future<void> warmInterstitial() async {
+    if (scope.isClosed ||
+        ads == null ||
+        _warmingInterstitial ||
+        (_interstitialRetry?.isActive ?? false)) {
+      return;
+    }
+    _warmingInterstitial = true;
+    try {
+      if (!(adProvider?.health.isOperational ?? false) ||
+          !(adPolicyBinder?.health.isOperational ?? false) ||
+          WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+        return;
+      }
+      for (final placement in LauncherAdPlacements.all) {
+        if (placement.format != AdFormat.interstitial ||
+            !(adPolicy?.evaluate(placement).isAllowed ?? false)) {
+          continue;
+        }
+        if (!adProvider!.isReady(placement)) {
+          final result = await ads!.load(placement);
+          if (scope.isClosed) return;
+          result.fold(
+            onSuccess: (_) =>
+                debugPrint('LauncherInterstitial: inventory ready'),
+            onFailure: (error) => debugPrint(
+              'LauncherInterstitial: ${error.message}; retry in 2s when eligible',
+            ),
+          );
+        }
+        // All placements share inventory; never issue one request per screen.
+        break;
+      }
+    } catch (error) {
+      debugPrint('LauncherInterstitial: load failed: $error; retry in 2s');
+    } finally {
+      _warmingInterstitial = false;
+      if (!scope.isClosed) {
+        _interstitialRetry = Timer(const Duration(seconds: 2), () {
+          unawaited(warmInterstitial());
+        });
+      }
+    }
+  }
 
   /// Provider plus policy: what app code asks for an ad through.
   AdCoordinator? ads;
@@ -461,11 +534,9 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
       scope.ensureActive();
       resolved.fold(
         // The controller hashes this immediately; the raw value is not kept.
-        onSuccess: (value) => developerAccess.setDeviceId(
-          value.vendorId ?? value.installId,
-        ),
-        onFailure: (error) =>
-            debugPrint('Device identity: ${error.message}'),
+        onSuccess: (value) =>
+            developerAccess.setDeviceId(value.vendorId ?? value.installId),
+        onFailure: (error) => debugPrint('Device identity: ${error.message}'),
       );
     }
     scope.ensureActive();
@@ -523,7 +594,10 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
   /// Initialization only loaded bundled defaults and the last-known-good
   /// cache. This is the call that actually reaches the server, and its result
   /// flows to the policy binders, so nothing here blocks the first screen.
-  Future<void> startDeferredWork() async {
+  Future<void>? _deferredWork;
+  Future<void> startDeferredWork() => _deferredWork ??= _startDeferredWork();
+
+  Future<void> _startDeferredWork() async {
     if (scope.isClosed) return;
     await coordinator.startDeferred();
     if (scope.isClosed) return;
@@ -531,7 +605,8 @@ class AppRuntime extends ChangeNotifier with WidgetsBindingObserver {
       check(await remoteConfig.refresh());
     }
     if (scope.isClosed) return;
-    // Provider readiness owns preloading; do not race a duplicate request here.
+    // Also covers SDK startup finishing after the splash's short deadline.
+    unawaited(LauncherAds.prepareInlineAds());
   }
 
   /// Preflight migration so the kit cannot replace unreadable saved history.

@@ -15,6 +15,9 @@ import 'package:smart_launcher_app/core/storage/feature_hive_store.dart';
 import 'package:smart_launcher_app/features/clock/data/clock_service.dart';
 import 'package:smart_launcher_app/features/onboarding/data/onboarding_store.dart';
 import 'package:smart_launcher_app/my_app.dart';
+import 'package:smart_launcher_app/config/theme_manager.dart';
+import 'package:smart_launcher_app/core/widgets/launcher_brand_mark.dart';
+import 'package:smart_launcher_app/features/settings/presentation/bloc/settings_cubit.dart';
 
 void main() {
   runZonedGuarded(() {
@@ -58,13 +61,20 @@ class _LauncherBootstrapState extends State<_LauncherBootstrap> {
   Object? _error;
   bool _ready = false;
   bool _retrying = false;
+  ThemeMode _startupTheme = ThemeMode.system;
   final _previousFlutterError = FlutterError.onError;
   final _previousPlatformError = PlatformDispatcher.instance.onError;
 
   @override
   void initState() {
     super.initState();
+    unawaited(_restoreStartupTheme());
     unawaited(_prepare());
+  }
+
+  Future<void> _restoreStartupTheme() async {
+    final theme = await SettingsCubit.readStartupTheme();
+    if (mounted) setState(() => _startupTheme = theme);
   }
 
   Future<void> _prepare() async {
@@ -148,25 +158,39 @@ class _LauncherBootstrapState extends State<_LauncherBootstrap> {
     }
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: Scaffold(
-        body: Center(
-          child:
-              _error == null
-                  ? const CircularProgressIndicator()
-                  : Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text(
-                        'Could not prepare the launcher. Please retry.',
-                      ),
-                      const SizedBox(height: 12),
-                      FilledButton(
-                        onPressed: _retry,
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-        ),
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: _startupTheme,
+      home: Builder(
+        builder:
+            (context) => Scaffold(
+              backgroundColor: Theme.of(context).colorScheme.surface,
+              body: Center(
+                child:
+                    _error == null
+                        ? const Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            LauncherBrandMark(),
+                            SizedBox(height: 32),
+                            CircularProgressIndicator(),
+                          ],
+                        )
+                        : Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              'Could not prepare the launcher. Please retry.',
+                            ),
+                            const SizedBox(height: 12),
+                            FilledButton(
+                              onPressed: _retry,
+                              child: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+              ),
+            ),
       ),
     );
   }

@@ -5,8 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:genrevibes_exit_prompt/genrevibes_exit_prompt.dart';
+import 'package:smart_launcher_app/core/ads/launcher_ads.dart';
+import 'package:smart_launcher_app/core/utils/app_strings.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_launcher_app/core/rating/rating_prompt.dart';
+import 'package:smart_launcher_app/features/onboarding/data/default_launcher_policy.dart';
 import 'package:smart_launcher_app/core/models/app_info.dart';
 import 'package:smart_launcher_app/core/models/folder_info.dart';
 import 'package:smart_launcher_app/core/models/item_info.dart';
@@ -113,8 +117,28 @@ class _HomeScreenState extends State<HomeScreen>
   // Horizontal slide fraction (-1..1) for the chrome so it travels off-screen
   // with the home content as a special page slides in (no "floating" dissolve).
   final ValueNotifier<double> _chromeSlide = ValueNotifier<double>(0.0);
-  final ValueNotifier<HomeSection> _activeSection =
-      ValueNotifier<HomeSection>(HomeSection.home);
+  final ValueNotifier<HomeSection> _activeSection = ValueNotifier<HomeSection>(
+    HomeSection.home,
+  );
+  HomeSection _lastSection = HomeSection.home;
+
+  void _onHomeSectionChanged() {
+    final previous = _lastSection;
+    _lastSection = _activeSection.value;
+    if (previous != HomeSection.discover || _lastSection != HomeSection.home) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          _activeSection.value != HomeSection.home ||
+          ModalRoute.of(context)?.isCurrent != true ||
+          _drawerOpen) {
+        return;
+      }
+      unawaited(DefaultLauncherPolicy.returnedFromPageZero());
+    });
+  }
+
   // Measured height of the bottom chrome band (dock + pill + safe area). Fed
   // back as WorkspaceView.homeBottomInset so home pages reserve exactly that
   // much space and the bottom grid row isn't hidden behind the dock.
@@ -131,6 +155,7 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void initState() {
     super.initState();
+    _activeSection.addListener(_onHomeSectionChanged);
     WidgetsBinding.instance.addObserver(this);
     // Fresh install / simulate: cover the home with the setup screen until the
     // layout is seeded, with a hard failsafe so we never get stuck on it.
@@ -139,20 +164,20 @@ class _HomeScreenState extends State<HomeScreen>
       _initFailsafeTimer = Timer(_initFailsafe, _onInitTimeout);
     }
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      systemNavigationBarColor: Colors.transparent,
-    ));
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.transparent,
+      ),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Considers the store-rating prompt. It declines itself unless the user
       // has settled in: onboarding done, launcher set as default, active on
       // three days, and the kit's own install-age/snooze/opt-out rules pass.
       if (!widget.firstRun) unawaited(RatingPrompt.maybeShow(context));
-      context
-          .read<AppsCubit>()
-          .setBadgesEnabled(
-            context.read<SettingsCubit>().state.notificationBadgesEnabled,
-          );
+      context.read<AppsCubit>().setBadgesEnabled(
+        context.read<SettingsCubit>().state.notificationBadgesEnabled,
+      );
       context.read<AppsCubit>().startBadgeListening();
       context.read<AppsCubit>().startAppInstallListening();
       // Keep the native package detector's flag in lockstep with the Dart toggle,
@@ -253,6 +278,7 @@ class _HomeScreenState extends State<HomeScreen>
     _dragController.dispose();
     _chromeOpacity.dispose();
     _chromeSlide.dispose();
+    _activeSection.removeListener(_onHomeSectionChanged);
     _activeSection.dispose();
     _defaultNudge?.remove();
     _defaultNudge = null;
@@ -329,8 +355,9 @@ class _HomeScreenState extends State<HomeScreen>
         ? _pageController!.page ?? _pageController!.initialPage.toDouble()
         : workspace.state.currentPage.toDouble();
     // rawPage is in pager (controller) space; convert back to a home index.
-    final visiblePage =
-        (rawPage.round() - _leadingCount()).clamp(0, pageCount - 1).toInt();
+    final visiblePage = (rawPage.round() - _leadingCount())
+        .clamp(0, pageCount - 1)
+        .toInt();
     if (workspace.state.currentPage != visiblePage) {
       workspace.setCurrentPage(visiblePage);
     }
@@ -421,9 +448,9 @@ class _HomeScreenState extends State<HomeScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<WorkspaceCubit>().ensureDefaultClockWidget(
-            settings.gridColumns,
-            settings.gridRows,
-          );
+        settings.gridColumns,
+        settings.gridRows,
+      );
     });
   }
 
@@ -584,8 +611,9 @@ class _HomeScreenState extends State<HomeScreen>
       settings: context.read<SettingsCubit>(),
     );
     _defaultSeedResolved = true;
-    SharedPreferences.getInstance()
-        .then((prefs) => prefs.setBool(_seededFlagKey, true));
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.setBool(_seededFlagKey, true),
+    );
     setState(() => _seedTimedOut = false);
     _refreshDefaultNudge();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -612,26 +640,27 @@ class _HomeScreenState extends State<HomeScreen>
   // the native uninstall card (delivered as a pending `cleanup:<pkg>` action).
   void _cleanupRemovedPackage(String packageName) {
     if (!mounted) return;
-    final workspaceChanged =
-        context.read<WorkspaceCubit>().removePackageArtifacts(packageName);
+    final workspaceChanged = context
+        .read<WorkspaceCubit>()
+        .removePackageArtifacts(packageName);
     final settings = context.read<SettingsCubit>().state;
-    final nextDock =
-        settings.dockPackages.where((pkg) => pkg != packageName).toList();
-    final nextHidden =
-        settings.hiddenApps.where((pkg) => pkg != packageName).toList();
+    final nextDock = settings.dockPackages
+        .where((pkg) => pkg != packageName)
+        .toList();
+    final nextHidden = settings.hiddenApps
+        .where((pkg) => pkg != packageName)
+        .toList();
     if (nextDock.length != settings.dockPackages.length ||
         nextHidden.length != settings.hiddenApps.length) {
       context.read<SettingsCubit>().update(
-            settings.copyWith(
-              dockPackages: nextDock,
-              hiddenApps: nextHidden,
-            ),
-          );
+        settings.copyWith(dockPackages: nextDock, hiddenApps: nextHidden),
+      );
     }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-            workspaceChanged ? 'Removed stale launcher icons' : 'Cleaned up'),
+          workspaceChanged ? 'Removed stale launcher icons' : 'Cleaned up',
+        ),
       ),
     );
   }
@@ -672,7 +701,8 @@ class _HomeScreenState extends State<HomeScreen>
             BlocProvider.value(value: context.read<AppsCubit>()),
             BlocProvider.value(value: context.read<SettingsCubit>()),
             BlocProvider.value(
-                value: context.read<LauncherFeatureSettingsCubit>()),
+              value: context.read<LauncherFeatureSettingsCubit>(),
+            ),
           ],
           child: const GoodMorningScreen(),
         ),
@@ -688,7 +718,8 @@ class _HomeScreenState extends State<HomeScreen>
           providers: [
             BlocProvider.value(value: context.read<SettingsCubit>()),
             BlocProvider.value(
-                value: context.read<LauncherFeatureSettingsCubit>()),
+              value: context.read<LauncherFeatureSettingsCubit>(),
+            ),
           ],
           child: const SettingsAppearance(child: AfterCallSettingsScreen()),
         ),
@@ -726,8 +757,8 @@ class _HomeScreenState extends State<HomeScreen>
         final settings = context.read<SettingsCubit>().state;
         final hidden = settings.hiddenApps.toSet()..add(packageName);
         context.read<SettingsCubit>().update(
-              settings.copyWith(hiddenApps: hidden.toList()..sort()),
-            );
+          settings.copyWith(hiddenApps: hidden.toList()..sort()),
+        );
       case 'cleanup':
         _cleanupRemovedPackage(packageName);
     }
@@ -760,20 +791,25 @@ class _HomeScreenState extends State<HomeScreen>
       case GestureAction.openSearch:
         _openSearch();
       case GestureAction.openNotifications:
-        const MethodChannel('com.genrevibes.smartlauncher/system')
-            .invokeMethod('expandNotifications');
+        const MethodChannel(
+          'com.genrevibes.smartlauncher/system',
+        ).invokeMethod('expandNotifications');
       case GestureAction.openQuickSettings:
-        const MethodChannel('com.genrevibes.smartlauncher/system')
-            .invokeMethod('expandQuickSettings');
+        const MethodChannel(
+          'com.genrevibes.smartlauncher/system',
+        ).invokeMethod('expandQuickSettings');
       case GestureAction.sleepScreen:
-        const MethodChannel('com.genrevibes.smartlauncher/system')
-            .invokeMethod('sleepScreen', {'method': 'accessibility'});
+        const MethodChannel(
+          'com.genrevibes.smartlauncher/system',
+        ).invokeMethod('sleepScreen', {'method': 'accessibility'});
       case GestureAction.openRecents:
-        const MethodChannel('com.genrevibes.smartlauncher/system')
-            .invokeMethod('openRecents');
+        const MethodChannel(
+          'com.genrevibes.smartlauncher/system',
+        ).invokeMethod('openRecents');
       case GestureAction.openAssistant:
-        const MethodChannel('com.genrevibes.smartlauncher/system')
-            .invokeMethod('openAssistant');
+        const MethodChannel(
+          'com.genrevibes.smartlauncher/system',
+        ).invokeMethod('openAssistant');
       case GestureAction.openCamera:
         FeatureLaunchDispatcher.launchPackage(context, 'com.android.camera2');
       case GestureAction.openSettings:
@@ -793,7 +829,8 @@ class _HomeScreenState extends State<HomeScreen>
           providers: [
             BlocProvider.value(value: context.read<SearchCubit>()),
             BlocProvider.value(
-                value: context.read<LauncherFeatureSettingsCubit>()),
+              value: context.read<LauncherFeatureSettingsCubit>(),
+            ),
             BlocProvider.value(value: context.read<AppsCubit>()),
           ],
           child: SearchOverlayScreen(iconShape: settings.iconShape),
@@ -831,7 +868,8 @@ class _HomeScreenState extends State<HomeScreen>
           providers: [
             BlocProvider.value(value: context.read<SearchCubit>()),
             BlocProvider.value(
-                value: context.read<LauncherFeatureSettingsCubit>()),
+              value: context.read<LauncherFeatureSettingsCubit>(),
+            ),
             BlocProvider.value(value: context.read<AppsCubit>()),
             BlocProvider.value(value: context.read<SettingsCubit>()),
           ],
@@ -850,8 +888,9 @@ class _HomeScreenState extends State<HomeScreen>
       return;
     }
 
-    final homePage =
-        workspace.currentPage.clamp(0, workspace.pages.length - 1).toInt();
+    final homePage = workspace.currentPage
+        .clamp(0, workspace.pages.length - 1)
+        .toInt();
     final target = _toControllerPage(homePage);
     final rawPage =
         _pageController!.page ?? _pageController!.initialPage.toDouble();
@@ -871,7 +910,8 @@ class _HomeScreenState extends State<HomeScreen>
           providers: [
             BlocProvider.value(value: context.read<SettingsCubit>()),
             BlocProvider.value(
-                value: context.read<LauncherFeatureSettingsCubit>()),
+              value: context.read<LauncherFeatureSettingsCubit>(),
+            ),
             BlocProvider.value(value: context.read<AppsCubit>()),
             BlocProvider.value(value: context.read<WorkspaceCubit>()),
           ],
@@ -889,7 +929,8 @@ class _HomeScreenState extends State<HomeScreen>
           providers: [
             BlocProvider.value(value: context.read<SettingsCubit>()),
             BlocProvider.value(
-                value: context.read<LauncherFeatureSettingsCubit>()),
+              value: context.read<LauncherFeatureSettingsCubit>(),
+            ),
             BlocProvider.value(value: context.read<AppsCubit>()),
           ],
           child: const SettingsAppearance(child: LauncherThemesScreen()),
@@ -903,9 +944,7 @@ class _HomeScreenState extends State<HomeScreen>
       context,
       MaterialPageRoute(
         builder: (_) => MultiBlocProvider(
-          providers: [
-            BlocProvider.value(value: context.read<SettingsCubit>()),
-          ],
+          providers: [BlocProvider.value(value: context.read<SettingsCubit>())],
           child: const SettingsAppearance(child: WallpaperScreen()),
         ),
       ),
@@ -920,7 +959,8 @@ class _HomeScreenState extends State<HomeScreen>
           providers: [
             BlocProvider.value(value: context.read<SettingsCubit>()),
             BlocProvider.value(
-                value: context.read<LauncherFeatureSettingsCubit>()),
+              value: context.read<LauncherFeatureSettingsCubit>(),
+            ),
             BlocProvider.value(value: context.read<AppsCubit>()),
             BlocProvider.value(value: context.read<WorkspaceCubit>()),
           ],
@@ -962,8 +1002,12 @@ class _HomeScreenState extends State<HomeScreen>
     workspace.addWidgetToStackSlot(target.page, target.slot, picked);
   }
 
-  void _showAppInfoTooltip(AppInfo app, Offset iconCenter,
-      {int? page, int? slot}) {
+  void _showAppInfoTooltip(
+    AppInfo app,
+    Offset iconCenter, {
+    int? page,
+    int? slot,
+  }) {
     _dismissAppInfoTooltip();
     final overlay = Overlay.of(context);
 
@@ -998,9 +1042,10 @@ class _HomeScreenState extends State<HomeScreen>
           label: locked ? 'Unlock app' : 'Lock app',
           onTap: () {
             _dismissAppInfoTooltip();
-            context
-                .read<LauncherFeatureSettingsCubit>()
-                .setAppLocked(app.packageName, !locked);
+            context.read<LauncherFeatureSettingsCubit>().setAppLocked(
+              app.packageName,
+              !locked,
+            );
           },
         ),
       AppMenuAction(
@@ -1043,9 +1088,9 @@ class _HomeScreenState extends State<HomeScreen>
   void _hideApp(AppInfo app) {
     final settings = context.read<SettingsCubit>().state;
     final hidden = settings.hiddenApps.toSet()..add(app.launcherKey);
-    context
-        .read<SettingsCubit>()
-        .update(settings.copyWith(hiddenApps: hidden.toList()..sort()));
+    context.read<SettingsCubit>().update(
+      settings.copyWith(hiddenApps: hidden.toList()..sort()),
+    );
   }
 
   void _removeFromHome(AppInfo app, int? page, int? slot) {
@@ -1080,235 +1125,308 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    return MultiBlocListener(
-      listeners: [
-        BlocListener<LauncherCubit, ls.LauncherState>(
-          listener: (context, state) {
-            if (state == ls.LauncherState.allApps) _openDrawer();
-          },
-        ),
-        // One-shot default clock seed. Listen instead of watch so the entire
-        // HomeScreen subtree (workspace, dock, every AndroidView) doesn't
-        // rebuild on every WorkspaceCubit emit.
-        BlocListener<WorkspaceCubit, WorkspaceState>(
-          listenWhen: (_, curr) =>
-              (!_didEnsureDefaultClock || !_didSeedDefaultLayout) &&
-              curr.pages.isNotEmpty,
-          listener: (context, state) {
-            _ensureDefaultClockWidget(
-              state,
-              context.read<SettingsCubit>().state,
-            );
-            _maybeSeedDefaultLayout();
-            _maybeSeedFeatureApps();
-          },
-        ),
-        BlocListener<SettingsCubit, LauncherSettings>(
-          listenWhen: (prev, next) =>
-              prev.gridColumns != next.gridColumns ||
-              prev.gridRows != next.gridRows ||
-              prev.dockSize != next.dockSize,
-          listener: (context, settings) {
-            context
-                .read<WorkspaceCubit>()
-                .normalizeLayout(settings.gridColumns, settings.gridRows);
-            _normalizeDockForCurrentState();
-          },
-        ),
-        BlocListener<SettingsCubit, LauncherSettings>(
-          listenWhen: (prev, next) =>
-              prev.drawerIconSize != next.drawerIconSize,
-          listener: (context, settings) {
-            _scheduleDrawerIconPrewarm(
-              context.read<AppsCubit>().state.apps,
-              settings: settings,
-            );
-          },
-        ),
-        BlocListener<AppsCubit, AppsState>(
-          listenWhen: (prev, next) => prev.apps != next.apps,
-          listener: (_, state) {
-            _maybeSeedDefaultLayout();
-            _maybeSeedFeatureApps();
-            _normalizeDockForCurrentState();
-            _scheduleDrawerIconPrewarm(state.apps);
-          },
-        ),
-      ],
-      child: RouteCoverageScope(
-        notifier: _routeCovered,
-        child: BlocBuilder<SettingsCubit, LauncherSettings>(
-          builder: (context, settings) {
-            // BlocBuilder<AppsCubit> is intentionally NOT wrapping this Scaffold.
-            // AppsCubit emits on every notification badge push, so wrapping the
-            // whole tree would rebuild DragLayer, the touch listener, and every
-            // AndroidView host view subtree on each badge event. Instead, each
-            // leaf that actually consumes appsState subscribes locally.
-            _scheduleMeasureBottomChrome();
-            return Scaffold(
-              backgroundColor: Colors.transparent,
-              extendBody: true,
-              // The launcher never hosts a text field, so it should never reflow
-              // for the soft keyboard. Without this, popping back from Smart
-              // search while its keyboard is mid-dismiss makes the home body
-              // resize as the inset shrinks — read as a jarring transition.
-              resizeToAvoidBottomInset: false,
-              body: Stack(
-                children: [
-                  if (settings.homeMode == HomeMode.smart) ...[
-                    // Workspace subtree sits under EditModeScope so its
-                    // HomeWidgetSlot / HomeWidgetStackView short-circuit their
-                    // AndroidViews while edit mode is active, freeing each
-                    // appWidgetId for the overlay below to mount its own host
-                    // views. The overlay is NOT inside this scope.
-                    EditModeScope(
-                      active: _editMode,
-                      child: DragLayer(
-                        dragController: _dragController,
-                        iconShape: settings.iconShape,
-                        pageController: _pageController,
-                        child: WorkspaceTouchListener(
-                          settings: settings,
+    return ExitGuard(
+      enabled: Platform.isAndroid && !_drawerOpen,
+      beforePrompt: _beforeExitPrompt,
+      config: (context) {
+        final theme = Theme.of(context);
+        return ExitPromptConfig(
+          style: ExitPromptStyle.confirmSheet,
+          labels: const ExitPromptLabels(
+            title: AppStrings.exitTitle,
+            message: AppStrings.exitMessage,
+            exit: AppStrings.exitAction,
+            cancel: AppStrings.exitStay,
+          ),
+          theme: ExitPromptTheme(
+            accentColor: theme.colorScheme.primary,
+            surfaceColor: theme.colorScheme.surface,
+            cornerRadius: 32,
+            titleStyle: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+            messageStyle: theme.textTheme.bodyLarge?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+              height: 1.5,
+            ),
+            standardExitBackground: theme.colorScheme.surfaceContainerHighest,
+            standardExitForeground: theme.colorScheme.onSurface,
+          ),
+        );
+      },
+      onExit: () async {
+        // The role can change while the dialog is open.
+        if (!await LauncherService.isDefaultLauncher().timeout(
+          const Duration(seconds: 1),
+          onTimeout: () => true,
+        )) {
+          await SystemNavigator.pop();
+        }
+      },
+      child: MultiBlocListener(
+        listeners: [
+          BlocListener<LauncherCubit, ls.LauncherState>(
+            listener: (context, state) {
+              if (state == ls.LauncherState.allApps) _openDrawer();
+            },
+          ),
+          // One-shot default clock seed. Listen instead of watch so the entire
+          // HomeScreen subtree (workspace, dock, every AndroidView) doesn't
+          // rebuild on every WorkspaceCubit emit.
+          BlocListener<WorkspaceCubit, WorkspaceState>(
+            listenWhen: (_, curr) =>
+                (!_didEnsureDefaultClock || !_didSeedDefaultLayout) &&
+                curr.pages.isNotEmpty,
+            listener: (context, state) {
+              _ensureDefaultClockWidget(
+                state,
+                context.read<SettingsCubit>().state,
+              );
+              _maybeSeedDefaultLayout();
+              _maybeSeedFeatureApps();
+            },
+          ),
+          BlocListener<SettingsCubit, LauncherSettings>(
+            listenWhen: (prev, next) =>
+                prev.gridColumns != next.gridColumns ||
+                prev.gridRows != next.gridRows ||
+                prev.dockSize != next.dockSize,
+            listener: (context, settings) {
+              context.read<WorkspaceCubit>().normalizeLayout(
+                settings.gridColumns,
+                settings.gridRows,
+              );
+              _normalizeDockForCurrentState();
+            },
+          ),
+          BlocListener<SettingsCubit, LauncherSettings>(
+            listenWhen: (prev, next) =>
+                prev.drawerIconSize != next.drawerIconSize,
+            listener: (context, settings) {
+              _scheduleDrawerIconPrewarm(
+                context.read<AppsCubit>().state.apps,
+                settings: settings,
+              );
+            },
+          ),
+          BlocListener<AppsCubit, AppsState>(
+            listenWhen: (prev, next) => prev.apps != next.apps,
+            listener: (_, state) {
+              _maybeSeedDefaultLayout();
+              _maybeSeedFeatureApps();
+              _normalizeDockForCurrentState();
+              _scheduleDrawerIconPrewarm(state.apps);
+            },
+          ),
+        ],
+        child: RouteCoverageScope(
+          notifier: _routeCovered,
+          child: BlocBuilder<SettingsCubit, LauncherSettings>(
+            builder: (context, settings) {
+              // BlocBuilder<AppsCubit> is intentionally NOT wrapping this Scaffold.
+              // AppsCubit emits on every notification badge push, so wrapping the
+              // whole tree would rebuild DragLayer, the touch listener, and every
+              // AndroidView host view subtree on each badge event. Instead, each
+              // leaf that actually consumes appsState subscribes locally.
+              _scheduleMeasureBottomChrome();
+              return Scaffold(
+                backgroundColor: Colors.transparent,
+                extendBody: true,
+                // The launcher never hosts a text field, so it should never reflow
+                // for the soft keyboard. Without this, popping back from Smart
+                // search while its keyboard is mid-dismiss makes the home body
+                // resize as the inset shrinks — read as a jarring transition.
+                resizeToAvoidBottomInset: false,
+                body: Stack(
+                  children: [
+                    if (settings.homeMode == HomeMode.smart) ...[
+                      // Workspace subtree sits under EditModeScope so its
+                      // HomeWidgetSlot / HomeWidgetStackView short-circuit their
+                      // AndroidViews while edit mode is active, freeing each
+                      // appWidgetId for the overlay below to mount its own host
+                      // views. The overlay is NOT inside this scope.
+                      EditModeScope(
+                        active: _editMode,
+                        child: DragLayer(
                           dragController: _dragController,
-                          activeSection: _activeSection,
-                          onDoubleTap: () =>
-                              _handleGesture(settings.doubleTapAction),
-                          onSwipeUp: () =>
-                              _handleGesture(settings.swipeUpAction),
-                          onSwipeDown: () =>
-                              _handleGesture(settings.swipeDownAction),
-                          onLongPress: _enterEditMode,
-                          child: Visibility(
-                            visible: (!_drawerOpen || _drawerDraggingToHome) &&
-                                !_editMode,
-                            maintainState: true,
-                            maintainAnimation: true,
-                            maintainSize: true,
-                            child: WorkspaceView(
-                              dragController: _dragController,
-                              settings: settings,
-                              onAppTap: (app) =>
-                                  FeatureLaunchDispatcher.launch(context, app),
-                              onAppLongPress: (app, page, slot, center) =>
-                                  _showAppInfoTooltip(app, center,
-                                      page: page, slot: slot),
-                              onBackgroundLongPress: _enterEditMode,
-                              onPickWidgetForStack: _openWidgetPickerForStack,
-                              onPageChanged: (offset) {
-                                const MethodChannel(
-                                        'com.genrevibes.smartlauncher/wallpaper')
-                                    .invokeMethod('setWallpaperOffset',
-                                        {'xOffset': offset});
-                              },
-                              onControllerReady: (ctrl) =>
-                                  setState(() => _pageController = ctrl),
-                              homeTopInset:
-                                  MediaQuery.of(context).padding.top + 8,
-                              homeBottomInset: _bottomChromeHeight,
-                              discoverBuilder: settings.discoverPageEnabled
-                                  ? (ctx) => DiscoverPage(
+                          iconShape: settings.iconShape,
+                          pageController: _pageController,
+                          child: WorkspaceTouchListener(
+                            settings: settings,
+                            dragController: _dragController,
+                            activeSection: _activeSection,
+                            onDoubleTap: () =>
+                                _handleGesture(settings.doubleTapAction),
+                            onSwipeUp: () =>
+                                _handleGesture(settings.swipeUpAction),
+                            onSwipeDown: () =>
+                                _handleGesture(settings.swipeDownAction),
+                            onLongPress: _enterEditMode,
+                            child: Visibility(
+                              visible:
+                                  (!_drawerOpen || _drawerDraggingToHome) &&
+                                  !_editMode,
+                              maintainState: true,
+                              maintainAnimation: true,
+                              maintainSize: true,
+                              child: WorkspaceView(
+                                dragController: _dragController,
+                                settings: settings,
+                                onAppTap: (app) =>
+                                    FeatureLaunchDispatcher.launch(
+                                      context,
+                                      app,
+                                    ),
+                                onAppLongPress: (app, page, slot, center) =>
+                                    _showAppInfoTooltip(
+                                      app,
+                                      center,
+                                      page: page,
+                                      slot: slot,
+                                    ),
+                                onBackgroundLongPress: _enterEditMode,
+                                onPickWidgetForStack: _openWidgetPickerForStack,
+                                onPageChanged: (offset) {
+                                  const MethodChannel(
+                                    'com.genrevibes.smartlauncher/wallpaper',
+                                  ).invokeMethod('setWallpaperOffset', {
+                                    'xOffset': offset,
+                                  });
+                                },
+                                onControllerReady: (ctrl) =>
+                                    setState(() => _pageController = ctrl),
+                                homeTopInset:
+                                    MediaQuery.of(context).padding.top + 8,
+                                homeBottomInset: _bottomChromeHeight,
+                                discoverBuilder: settings.discoverPageEnabled
+                                    ? (ctx) => DiscoverPage(
                                         onOpenSearch: () =>
                                             _openSmartSearch(pinToHome: false),
                                         onLaunchApp: (app) =>
                                             FeatureLaunchDispatcher.launch(
-                                                ctx, app),
+                                              ctx,
+                                              app,
+                                            ),
                                         activeSection: _activeSection,
                                       )
-                                  : null,
-                              libraryBuilder: settings.appLibraryPageEnabled
-                                  ? (ctx) => AppLibraryPage(
+                                    : null,
+                                libraryBuilder: settings.appLibraryPageEnabled
+                                    ? (ctx) => AppLibraryPage(
                                         onLaunchApp: (app) =>
                                             FeatureLaunchDispatcher.launch(
-                                                ctx, app),
+                                              ctx,
+                                              app,
+                                            ),
                                         activeSection: _activeSection,
                                       )
-                                  : null,
-                              onSectionSettled: (s) => _activeSection.value = s,
-                              onChromeProgress: (v) => _chromeOpacity.value = v,
-                              onChromeSlide: (v) => _chromeSlide.value = v,
+                                    : null,
+                                onSectionSettled: (s) =>
+                                    _activeSection.value = s,
+                                onChromeProgress: (v) =>
+                                    _chromeOpacity.value = v,
+                                onChromeSlide: (v) => _chromeSlide.value = v,
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: _buildBottomChrome(context, settings),
-                    ),
-                  ] else if (settings.homeMode == HomeMode.ios)
-                    IosHomeView(
-                      settings: settings,
-                      onLaunchApp: (app) =>
-                          FeatureLaunchDispatcher.launch(context, app),
-                      onOpenSearch: () => _openSmartSearch(pinToHome: true),
-                      onOpenWallpaper: _openWallpaper,
-                      onOpenSettings: _openSettings,
-                    )
-                  else
-                    MinimalHomeView(
-                      settings: settings,
-                      onLaunchApp: (app) =>
-                          FeatureLaunchDispatcher.launch(context, app),
-                      onOpenSearch: () => _openSmartSearch(pinToHome: true),
-                      onOpenSettings: _openSettings,
-                      onOpenWallpaper: _openWallpaper,
-                    ),
-                  if (_drawerOpen)
-                    AllAppsContainer(
-                      settings: settings,
-                      dragController: _dragController,
-                      onDismiss: _closeDrawer,
-                      onAppTap: (app) {
-                        _closeDrawer();
-                        FeatureLaunchDispatcher.launch(context, app);
-                      },
-                      onAddToHome: _addAppToHomeScreen,
-                      onDragToHome: () {
-                        setState(() => _drawerDraggingToHome = true);
-                        _navigateToBestDragPage();
-                      },
-                      onDragCancelled: () =>
-                          setState(() => _drawerDraggingToHome = false),
-                    ),
-                  if (_editMode && settings.homeMode == HomeMode.smart)
-                    EditModeOverlay(
-                      settings: settings,
-                      onDismiss: _exitEditMode,
-                      onWallpaper: () {
-                        _exitEditMode();
-                        _openWallpaper();
-                      },
-                      onThemes: () {
-                        _exitEditMode();
-                        _openThemes();
-                      },
-                      onWidgets: () {
-                        _exitEditMode();
-                        _openWidgetPicker();
-                      },
-                      onSettings: () {
-                        _exitEditMode();
-                        _openSettings();
-                      },
-                      onPageSelected: (page) {
-                        context.read<WorkspaceCubit>().setCurrentPage(page);
-                        _pageController?.jumpToPage(_toControllerPage(page));
-                      },
-                    ),
-                  // First-run setup cover: top-most so it hides the home while
-                  // the default layout seeds. Driven by local state (lifted the
-                  // instant the seed resolves, or by the 10s failsafe), so it
-                  // only ever appears on the post-onboarding first run.
-                  if (_initializing) const LauncherInitializingView(),
-                ],
-              ),
-            );
-          },
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: _buildBottomChrome(context, settings),
+                      ),
+                    ] else if (settings.homeMode == HomeMode.ios)
+                      IosHomeView(
+                        settings: settings,
+                        onLaunchApp: (app) =>
+                            FeatureLaunchDispatcher.launch(context, app),
+                        onOpenSearch: () => _openSmartSearch(pinToHome: true),
+                        onOpenWallpaper: _openWallpaper,
+                        onOpenSettings: _openSettings,
+                      )
+                    else
+                      MinimalHomeView(
+                        settings: settings,
+                        onLaunchApp: (app) =>
+                            FeatureLaunchDispatcher.launch(context, app),
+                        onOpenSearch: () => _openSmartSearch(pinToHome: true),
+                        onOpenSettings: _openSettings,
+                        onOpenWallpaper: _openWallpaper,
+                      ),
+                    if (_drawerOpen)
+                      AllAppsContainer(
+                        settings: settings,
+                        dragController: _dragController,
+                        onDismiss: _closeDrawer,
+                        onAppTap: (app) {
+                          _closeDrawer();
+                          FeatureLaunchDispatcher.launch(context, app);
+                        },
+                        onAddToHome: _addAppToHomeScreen,
+                        onDragToHome: () {
+                          setState(() => _drawerDraggingToHome = true);
+                          _navigateToBestDragPage();
+                        },
+                        onDragCancelled: () =>
+                            setState(() => _drawerDraggingToHome = false),
+                      ),
+                    if (_editMode && settings.homeMode == HomeMode.smart)
+                      EditModeOverlay(
+                        settings: settings,
+                        onDismiss: _exitEditMode,
+                        onWallpaper: () {
+                          _exitEditMode();
+                          _openWallpaper();
+                        },
+                        onThemes: () {
+                          _exitEditMode();
+                          _openThemes();
+                        },
+                        onWidgets: () {
+                          _exitEditMode();
+                          _openWidgetPicker();
+                        },
+                        onSettings: () {
+                          _exitEditMode();
+                          _openSettings();
+                        },
+                        onPageSelected: (page) {
+                          context.read<WorkspaceCubit>().setCurrentPage(page);
+                          _pageController?.jumpToPage(_toControllerPage(page));
+                        },
+                      ),
+                    // First-run setup cover: top-most so it hides the home while
+                    // the default layout seeds. Driven by local state (lifted the
+                    // instant the seed resolves, or by the 10s failsafe), so it
+                    // only ever appears on the post-onboarding first run.
+                    if (_initializing) const LauncherInitializingView(),
+                  ],
+                ),
+              );
+            },
+          ),
         ),
       ),
     );
+  }
+
+  Future<bool> _beforeExitPrompt() async {
+    // The drawer has its own PopScope. Don't handle that same Back twice.
+    if (_drawerOpen ||
+        LauncherAds.defaultPromptVisible ||
+        LauncherAds.launchPreparing) {
+      return false;
+    }
+    if (_editMode) {
+      _exitEditMode();
+      return false;
+    }
+    final isDefault = await LauncherService.isDefaultLauncher().timeout(
+      const Duration(seconds: 1),
+      onTimeout: () => true,
+    );
+    return mounted && !isDefault;
   }
 
   // Number of flanking pages before home page 0 in the pager. The Discover page
@@ -1342,10 +1460,8 @@ class _HomeScreenState extends State<HomeScreen>
     final width = MediaQuery.of(context).size.width;
     return ValueListenableBuilder<double>(
       valueListenable: _chromeSlide,
-      builder: (context, slide, child) => Transform.translate(
-        offset: Offset(slide * width, 0),
-        child: child,
-      ),
+      builder: (context, slide, child) =>
+          Transform.translate(offset: Offset(slide * width, 0), child: child),
       child: ValueListenableBuilder<double>(
         valueListenable: _chromeOpacity,
         builder: (context, opacity, child) {
@@ -1359,7 +1475,8 @@ class _HomeScreenState extends State<HomeScreen>
         child: Container(
           key: _bottomChromeKey,
           padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).padding.bottom + 12),
+            bottom: MediaQuery.of(context).padding.bottom + 12,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1397,8 +1514,11 @@ class _HomeScreenState extends State<HomeScreen>
           selector: (s) => s.apps,
           builder: (context, _) {
             final appsState = context.read<AppsCubit>().state;
-            return BlocSelector<WorkspaceCubit, WorkspaceState,
-                Map<String, FolderInfo>>(
+            return BlocSelector<
+              WorkspaceCubit,
+              WorkspaceState,
+              Map<String, FolderInfo>
+            >(
               selector: (s) => s.folders,
               builder: (context, _) {
                 final workspaceState = context.read<WorkspaceCubit>().state;
@@ -1445,7 +1565,9 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   List<String> _resolveDockRefs(
-      AppsState appsState, LauncherSettings settings) {
+    AppsState appsState,
+    LauncherSettings settings,
+  ) {
     if (settings.dockPackages.isNotEmpty) {
       // Preserve slot positions: empty-string entries become null so the dock
       // displays an empty slot rather than shifting subsequent apps left.
@@ -1458,8 +1580,9 @@ class _HomeScreenState extends State<HomeScreen>
       'com.android.chrome',
       'com.android.camera2',
     ];
-    final pinned =
-        appsState.apps.where((a) => defaults.contains(a.packageName)).toList();
+    final pinned = appsState.apps
+        .where((a) => defaults.contains(a.packageName))
+        .toList();
     final resolved = pinned.isEmpty
         ? appsState.apps.take(settings.dockSize).toList()
         : pinned;
@@ -1475,10 +1598,7 @@ class _HomeScreenState extends State<HomeScreen>
   String _folderIdFromDockRef(String ref) =>
       ref.substring(kDockFolderPrefix.length);
 
-  WorkspaceItemInfo _dockRefToWorkspaceItem(
-    String ref,
-    AppsState appsState,
-  ) {
+  WorkspaceItemInfo _dockRefToWorkspaceItem(String ref, AppsState appsState) {
     final app = appsState.resolveRef(ref);
     return WorkspaceItemInfo(
       id: app?.id ?? ref.hashCode,
@@ -1488,7 +1608,8 @@ class _HomeScreenState extends State<HomeScreen>
       title: app?.name ?? ref,
       icon: app?.icon,
       iconPath: app?.iconPath,
-      launcherFeatureId: app?.launcherFeatureId ??
+      launcherFeatureId:
+          app?.launcherFeatureId ??
           LauncherFeatureCatalog.idForComponent(ref) ??
           LauncherFeatureCatalog.idForPackage(ref),
     );
@@ -1514,12 +1635,15 @@ class _HomeScreenState extends State<HomeScreen>
     final overflowRefs = refs.skip(capacity).where((ref) => ref.isNotEmpty);
     final workspace = context.read<WorkspaceCubit>();
     final dockFolderRef = refs
-        .where((ref) =>
-            _isDockFolderRef(ref) &&
-            workspace.state.folders.containsKey(_folderIdFromDockRef(ref)))
+        .where(
+          (ref) =>
+              _isDockFolderRef(ref) &&
+              workspace.state.folders.containsKey(_folderIdFromDockRef(ref)),
+        )
         .firstOrNull;
-    final overflowAppRefs =
-        overflowRefs.where((ref) => !_isDockFolderRef(ref)).toList();
+    final overflowAppRefs = overflowRefs
+        .where((ref) => !_isDockFolderRef(ref))
+        .toList();
 
     if (dockFolderRef != null && capacity > 0 && hasOverflow) {
       if (!visibleRefs.contains(dockFolderRef)) {
@@ -1556,14 +1680,12 @@ class _HomeScreenState extends State<HomeScreen>
     if (!shouldClampDockSize && !hasOverflow) return;
 
     _normalizingDock = true;
-    final nextPackages =
-        shouldTrimPackages ? visibleRefs : settings.dockPackages;
+    final nextPackages = shouldTrimPackages
+        ? visibleRefs
+        : settings.dockPackages;
     context.read<SettingsCubit>().update(
-          settings.copyWith(
-            dockSize: capacity,
-            dockPackages: nextPackages,
-          ),
-        );
+      settings.copyWith(dockSize: capacity, dockPackages: nextPackages),
+    );
     _normalizingDock = false;
   }
 
@@ -1574,16 +1696,20 @@ class _HomeScreenState extends State<HomeScreen>
     if (!mounted || apps.isEmpty) return;
     final effectiveSettings = settings ?? context.read<SettingsCubit>().state;
     final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
-    final targetPx =
-        (effectiveSettings.drawerIconSize * dpr).ceil().clamp(1, 512).toInt();
+    final targetPx = (effectiveSettings.drawerIconSize * dpr)
+        .ceil()
+        .clamp(1, 512)
+        .toInt();
     final hidden = effectiveSettings.hiddenApps.toSet();
     final visibleApps = hidden.isEmpty
         ? apps
         : apps
-            .where((app) =>
-                !hidden.contains(app.launcherKey) &&
-                !hidden.contains(app.packageName))
-            .toList(growable: false);
+              .where(
+                (app) =>
+                    !hidden.contains(app.launcherKey) &&
+                    !hidden.contains(app.packageName),
+              )
+              .toList(growable: false);
     if (visibleApps.isEmpty) return;
 
     final generation = ++_drawerPrewarmGeneration;
@@ -1615,17 +1741,22 @@ class _HomeScreenState extends State<HomeScreen>
     required int generation,
   }) async {
     final sw = Stopwatch()..start();
-    DrawerPerf.event('drawer.prewarm.start',
-        extra: {'apps': apps.length, 'targetPx': targetPx, 'gen': generation});
+    DrawerPerf.event(
+      'drawer.prewarm.start',
+      extra: {'apps': apps.length, 'targetPx': targetPx, 'gen': generation},
+    );
     var fileCount = 0;
     for (final app in apps) {
       if (!mounted) return;
       if (!_shouldContinueDrawerPrewarm(generation)) {
-        DrawerPerf.event('drawer.prewarm.cancelled', extra: {
-          'phase': 'precache',
-          'processed': fileCount,
-          'durationMs': sw.elapsedMilliseconds,
-        });
+        DrawerPerf.event(
+          'drawer.prewarm.cancelled',
+          extra: {
+            'phase': 'precache',
+            'processed': fileCount,
+            'durationMs': sw.elapsedMilliseconds,
+          },
+        );
         return;
       }
       final iconPath = app.iconPath;
@@ -1642,24 +1773,24 @@ class _HomeScreenState extends State<HomeScreen>
       }
       fileCount += 1;
       if (fileCount % 8 == 0) {
-        DrawerPerf.event('drawer.prewarm.batch', extra: {
-          'processed': fileCount,
-          'durationMs': sw.elapsedMilliseconds,
-        });
+        DrawerPerf.event(
+          'drawer.prewarm.batch',
+          extra: {'processed': fileCount, 'durationMs': sw.elapsedMilliseconds},
+        );
         await SchedulerBinding.instance.endOfFrame;
       }
       await Future<void>.delayed(const Duration(milliseconds: 3));
     }
-    DrawerPerf.event('drawer.prewarm.precacheDone', extra: {
-      'processed': fileCount,
-      'durationMs': sw.elapsedMilliseconds,
-    });
+    DrawerPerf.event(
+      'drawer.prewarm.precacheDone',
+      extra: {'processed': fileCount, 'durationMs': sw.elapsedMilliseconds},
+    );
 
     if (!_shouldContinueDrawerPrewarm(generation)) {
-      DrawerPerf.event('drawer.prewarm.cancelled', extra: {
-        'phase': 'beforeDecode',
-        'durationMs': sw.elapsedMilliseconds,
-      });
+      DrawerPerf.event(
+        'drawer.prewarm.cancelled',
+        extra: {'phase': 'beforeDecode', 'durationMs': sw.elapsedMilliseconds},
+      );
       return;
     }
     await DecodedIconCache.instance.prewarm(
@@ -1670,10 +1801,10 @@ class _HomeScreenState extends State<HomeScreen>
       pauseBetweenDecodes: const Duration(milliseconds: 6),
       shouldContinue: () => _shouldContinueDrawerPrewarm(generation),
     );
-    DrawerPerf.event('drawer.prewarm.end', extra: {
-      'apps': apps.length,
-      'durationMs': sw.elapsedMilliseconds,
-    });
+    DrawerPerf.event(
+      'drawer.prewarm.end',
+      extra: {'apps': apps.length, 'durationMs': sw.elapsedMilliseconds},
+    );
   }
 
   bool _shouldContinueDrawerPrewarm(int generation) =>
@@ -1736,13 +1867,17 @@ class _AppInfoTooltip extends StatelessWidget {
     // Title block + divider + one row per action (see AppContextMenu layout).
     final menuH = 60.0 + actions.length * 44.0;
 
-    final left =
-        (iconCenter.dx - menuW / 2).clamp(8.0, screenSize.width - menuW - 8);
+    final left = (iconCenter.dx - menuW / 2).clamp(
+      8.0,
+      screenSize.width - menuW - 8,
+    );
     // Prefer placing the menu above the icon; fall back below when it would run
     // off the top of the screen.
     final aboveTop = iconCenter.dy - menuH - gap;
-    final top = (aboveTop >= 8.0 ? aboveTop : iconCenter.dy + gap)
-        .clamp(8.0, screenSize.height - menuH - 8);
+    final top = (aboveTop >= 8.0 ? aboveTop : iconCenter.dy + gap).clamp(
+      8.0,
+      screenSize.height - menuH - 8,
+    );
 
     return Stack(
       children: [

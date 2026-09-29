@@ -502,7 +502,7 @@ packages:
     source: path
     version: "0.1.0-dev.1"
   genrevibes_exit_prompt:
-    dependency: "direct overridden"
+    dependency: "direct main"
     description:
       path: "packages/genrevibes_starter_kit/modules/exit_prompt/genrevibes_exit_prompt"
       relative: true
@@ -596,6 +596,13 @@ packages:
     dependency: "direct main"
     description:
       path: "packages/genrevibes_starter_kit/modules/settings/genrevibes_settings"
+      relative: true
+    source: path
+    version: "0.1.0-dev.1"
+  genrevibes_splash:
+    dependency: "direct main"
+    description:
+      path: "packages/genrevibes_starter_kit/modules/splash/genrevibes_splash"
       relative: true
     source: path
     version: "0.1.0-dev.1"

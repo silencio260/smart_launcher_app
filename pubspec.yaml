@@ -75,6 +75,10 @@ dependencies:
     path: packages/genrevibes_starter_kit/modules/settings/genrevibes_settings
   genrevibes_onboarding:
     path: packages/genrevibes_starter_kit/modules/onboarding/genrevibes_onboarding
+  genrevibes_splash:
+    path: packages/genrevibes_starter_kit/modules/splash/genrevibes_splash
+  genrevibes_exit_prompt:
+    path: packages/genrevibes_starter_kit/modules/exit_prompt/genrevibes_exit_prompt
   firebase_core: ^3.6.0
   firebase_crashlytics: ^4.1.3
   firebase_analytics: ^11.0.0 # aligned with genrevibes_starter_kit (must match its firebase_analytics constraint)
@@ -155,6 +159,8 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    # Reuse the shipped app icon; don't maintain a separate splash logo.
+    - android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
     - assets/feature_icons/
     - assets/onboarding/
     - assets/ios_theme/

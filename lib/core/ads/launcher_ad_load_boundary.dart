@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:genrevibes_ads/genrevibes_ads.dart';
 
-/// Owns the request deadline and a single delayed retry for a mounted slot.
+/// Retries unavailable inventory while the slot is active and eligible.
 class LauncherAdLoadBoundary extends StatefulWidget {
   const LauncherAdLoadBoundary({
     super.key,
@@ -29,7 +29,6 @@ class _LauncherAdLoadBoundaryState extends State<LauncherAdLoadBoundary> {
   Timer? _timer;
   int _attempt = 1;
   bool _failed = false;
-  bool _exhausted = false;
   bool _loaded = false;
   bool _requested = false;
   DateTime? _deadline;
@@ -44,7 +43,7 @@ class _LauncherAdLoadBoundaryState extends State<LauncherAdLoadBoundary> {
   @override
   void didUpdateWidget(LauncherAdLoadBoundary oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.active == widget.active || _loaded || _exhausted) return;
+    if (oldWidget.active == widget.active || _loaded) return;
     if (!widget.active) {
       if (_deadline != null) {
         final remaining = _deadline!.difference(DateTime.now());
@@ -71,7 +70,7 @@ class _LauncherAdLoadBoundaryState extends State<LauncherAdLoadBoundary> {
   }
 
   void _schedule() {
-    if (!widget.active || _loaded || _exhausted) return;
+    if (!widget.active || _loaded) return;
     _timer?.cancel();
     _deadline = DateTime.now().add(_remaining);
     _timer = Timer(_remaining, () {
@@ -87,25 +86,24 @@ class _LauncherAdLoadBoundaryState extends State<LauncherAdLoadBoundary> {
         _startDeadline();
       } else {
         _log('retry blocked by policy');
-        setState(() => _exhausted = true);
+        _remaining = const Duration(seconds: 2);
+        _schedule();
       }
     });
   }
 
   void _fail(int attempt, String message) {
-    if (!mounted || attempt != _attempt || _failed || _exhausted) return;
+    if (!mounted || attempt != _attempt || _failed) return;
     _timer?.cancel();
     _deadline = null;
     _log('failed: $message');
     setState(() {
       _failed = true;
       _loaded = false;
-      _exhausted = _attempt >= 2;
     });
-    if (!_exhausted) {
-      _remaining = const Duration(seconds: 30);
-      _schedule();
-    }
+    // Product-selected backoff; never spin synchronously or overlap loads.
+    _remaining = const Duration(seconds: 2);
+    _schedule();
   }
 
   @override
@@ -116,7 +114,7 @@ class _LauncherAdLoadBoundaryState extends State<LauncherAdLoadBoundary> {
 
   @override
   Widget build(BuildContext context) {
-    if (_exhausted || !_requested) return const SizedBox.shrink();
+    if (!_requested) return const SizedBox.shrink();
     // A failed view is removed immediately, cancelling stale callbacks, and
     // remains collapsed during the bounded backoff.
     if (_failed) {
@@ -124,16 +122,17 @@ class _LauncherAdLoadBoundaryState extends State<LauncherAdLoadBoundary> {
     }
     final attempt = _attempt;
     // Android platform views must be painted to finish creating their surface.
-    // Offstage-until-loaded caused a circular wait. Keep a small, clipped slot
-    // during loading, then reveal the full card when assets are ready.
+    // Offstage-until-loaded caused a circular wait. Reserve the full destination
+    // size: partially clipping the card distorts platform-view composition and
+    // moves nearby controls when loading completes.
     return ClipRect(
       child: Align(
         alignment: Alignment.topCenter,
-        heightFactor: _loaded ? 1 : 0.14,
+        heightFactor: 1,
         child: IgnorePointer(
           ignoring: !_loaded,
           child: widget.builder(attempt, (event) {
-            if (!mounted || attempt != _attempt || _failed || _exhausted) {
+            if (!mounted || attempt != _attempt || _failed) {
               return false;
             }
             if (event.type == AdEventType.loaded) {

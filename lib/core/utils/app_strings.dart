@@ -43,6 +43,13 @@ class AppStrings {
 
   // --- Onboarding: set as default ---
   static const String onboardingDefaultTitle = 'Make this your home screen';
+  static const String onboardingDefaultErrorTitle = 'Not set as default yet';
+  static const String onboardingDefaultClose = 'Close';
+  static const String exitTitle = 'Leave the launcher?';
+  static const String exitMessage =
+      'You’ll return to your default home screen. Your layout and settings will stay saved.';
+  static const String exitAction = 'Exit launcher';
+  static const String exitStay = 'Stay here';
   static const String onboardingDefaultBody =
       'Set Smart Launcher as your default so this experience opens when you '
       'press the home button.';

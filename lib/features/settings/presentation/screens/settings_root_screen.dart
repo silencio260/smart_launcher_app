@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:smart_launcher_app/core/ads/launcher_ads.dart';
+import 'package:smart_launcher_app/core/ads/launcher_banner_ad.dart';
 
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
@@ -23,6 +25,8 @@ import 'package:genrevibes_app_links/genrevibes_app_links.dart';
 import 'package:genrevibes_core/genrevibes_core.dart';
 import 'package:genrevibes_developer_access/genrevibes_developer_access.dart';
 import 'package:genrevibes_devtools/genrevibes_devtools.dart';
+import 'package:genrevibes_settings/genrevibes_settings.dart';
+import 'package:smart_launcher_app/features/onboarding/data/default_launcher_policy.dart';
 import 'package:smart_launcher_app/bootstrap/app_runtime.dart';
 import 'package:smart_launcher_app/bootstrap/lab_host.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -59,6 +63,49 @@ class SettingsRootScreen extends StatefulWidget {
 
 class _SettingsRootScreenState extends State<SettingsRootScreen> {
   StreamSubscription<DeveloperAccess>? _accessChanges;
+  bool _savingPageZeroPrompt = false;
+
+  Future<void> _openPreferences(BuildContext routeContext, Widget page) async {
+    final cubit = routeContext.read<SettingsCubit>();
+    final before = cubit.state;
+    final revision = cubit.savedRevision;
+    await Navigator.push<void>(routeContext, settingsRoute<void>(page));
+    if (!mounted ||
+        !routeContext.mounted ||
+        cubit.isClosed ||
+        cubit.savedRevision == revision ||
+        cubit.state == before) {
+      return;
+    }
+    // Returning from a completed preferences flow, not every switch or slider
+    // movement. Privacy, developer, support and permission flows are excluded.
+    await LauncherAds.onActionCompleted(
+      routeContext,
+      LauncherAdPlacements.settingsChanged,
+    );
+  }
+
+  Future<void> _setPageZeroPrompt(bool enabled) async {
+    if (_savingPageZeroPrompt || !DefaultLauncherPolicy.canConfigurePageZero) {
+      return;
+    }
+    setState(() => _savingPageZeroPrompt = true);
+    try {
+      if (!await DefaultLauncherPolicy.setPageZeroPrompts(enabled)) {
+        throw StateError('Preference not saved');
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Couldn't save the default-launcher prompt setting."),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingPageZeroPrompt = false);
+    }
+  }
 
   AppRuntime? get _runtime =>
       sl.isRegistered<AppRuntime>() ? sl<AppRuntime>() : null;
@@ -68,6 +115,8 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
   @override
   void initState() {
     super.initState();
+    unawaited(LauncherAds.preloadAction(LauncherAdPlacements.settingsChanged));
+    unawaited(DefaultLauncherPolicy.loadDeveloperPreference());
     // Access can be granted by the title gesture or revoked from Kit Lab
     // while this screen is open; both have to change what it shows.
     _accessChanges = _developerAccess?.changes.listen((_) {
@@ -246,6 +295,10 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
   Widget build(BuildContext context) {
     return SettingsAppearance(
       child: Scaffold(
+        bottomNavigationBar: const LauncherBannerAd(
+          placement: LauncherAdPlacements.settingsBanner,
+          showLabel: true,
+        ),
         appBar: AppBar(
           // Seven taps on the title open the developer passcode. On a
           // recognised phone the developer section is already visible and the
@@ -264,52 +317,45 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
           builder: (context) {
             final items = <WidgetBuilder>[
               (c) => _Tile(
-                    icon: Icons.tune,
-                    title: 'General',
-                    subtitle: 'Theme, icons, badges',
-                    onTap: () => Navigator.push(
-                      c,
-                      settingsRoute(const GeneralSettingsScreen()),
-                    ),
-                  ),
+                icon: Icons.tune,
+                title: 'General',
+                subtitle: 'Theme, icons, badges',
+                onTap: () => _openPreferences(c, const GeneralSettingsScreen()),
+              ),
               (c) => _Tile(
-                    icon: Icons.format_paint_outlined,
-                    title: 'Themes',
-                    subtitle: 'Smart, iOS, and Minimal launchers',
-                    onTap: () => Navigator.push(
-                      c,
-                      settingsRoute(const LauncherThemesScreen()),
-                    ),
-                  ),
+                icon: Icons.format_paint_outlined,
+                title: 'Themes',
+                subtitle: 'Smart, iOS, and Minimal launchers',
+                onTap: () => Navigator.push(
+                  c,
+                  settingsRoute(const LauncherThemesScreen()),
+                ),
+              ),
               (c) => _Tile(
-                    icon: Icons.wallpaper_outlined,
-                    title: 'Wallpaper',
-                    subtitle: 'Browse, download, and apply wallpapers',
-                    onTap: () => Navigator.push(
-                      c,
-                      settingsRoute(const WallpaperScreen()),
-                    ),
-                  ),
+                icon: Icons.wallpaper_outlined,
+                title: 'Wallpaper',
+                subtitle: 'Browse, download, and apply wallpapers',
+                onTap: () =>
+                    Navigator.push(c, settingsRoute(const WallpaperScreen())),
+              ),
               (c) => _Tile(
-                    icon: Icons.home_outlined,
-                    title: 'Home Screen',
-                    subtitle: 'Grid, layout, wallpaper',
-                    onTap: () => Navigator.push(
-                      c,
-                      settingsRoute(const HomeScreenSettingsScreen()),
-                    ),
-                  ),
+                icon: Icons.home_outlined,
+                title: 'Home Screen',
+                subtitle: 'Grid, layout, wallpaper',
+                onTap: () =>
+                    _openPreferences(c, const HomeScreenSettingsScreen()),
+              ),
               (c) => _Tile(
-                    icon: Icons.widgets_outlined,
-                    title: 'Widgets',
-                    subtitle: 'Browse and add home screen widgets',
-                    onTap: () => Navigator.push(
-                      c,
-                      settingsRoute(
-                        WidgetPickerScreen(onWidgetAdded: widget.onWidgetAdded),
-                      ),
-                    ),
+                icon: Icons.widgets_outlined,
+                title: 'Widgets',
+                subtitle: 'Browse and add home screen widgets',
+                onTap: () => Navigator.push(
+                  c,
+                  settingsRoute(
+                    WidgetPickerScreen(onWidgetAdded: widget.onWidgetAdded),
                   ),
+                ),
+              ),
               // Smartspace settings screen removed: it exposed the dead
               // Calendar Events toggle. (Its working bits — time format / next
               // alarm — fall back to defaults.) Re-add when reinstated.
@@ -323,103 +369,88 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
               //       ),
               //     ),
               (c) => _Tile(
-                    icon: Icons.dock,
-                    title: 'Dock',
-                    subtitle: 'Dock appearance and size',
-                    onTap: () => Navigator.push(
-                      c,
-                      settingsRoute(const DockSettingsScreen()),
-                    ),
-                  ),
+                icon: Icons.dock,
+                title: 'Dock',
+                subtitle: 'Dock appearance and size',
+                onTap: () => _openPreferences(c, const DockSettingsScreen()),
+              ),
               (c) => _Tile(
-                    icon: Icons.apps,
-                    title: 'App Drawer',
-                    subtitle: 'Layout, columns, hidden apps',
-                    onTap: () => Navigator.push(
-                      c,
-                      settingsRoute(const DrawerSettingsScreen()),
-                    ),
-                  ),
+                icon: Icons.apps,
+                title: 'App Drawer',
+                subtitle: 'Layout, columns, hidden apps',
+                onTap: () => _openPreferences(c, const DrawerSettingsScreen()),
+              ),
               (c) => _Tile(
-                    icon: Icons.auto_awesome_outlined,
-                    title: 'Launcher Features',
-                    subtitle: 'Feature apps, overlays, after-call tools',
-                    onTap: () => Navigator.push(
-                      c,
-                      settingsRoute(const LauncherFeaturesSettingsScreen()),
-                    ),
-                  ),
+                icon: Icons.auto_awesome_outlined,
+                title: 'Launcher Features',
+                subtitle: 'Feature apps, overlays, after-call tools',
+                onTap: () => Navigator.push(
+                  c,
+                  settingsRoute(const LauncherFeaturesSettingsScreen()),
+                ),
+              ),
               (c) => _Tile(
-                    icon: Icons.folder_outlined,
-                    title: 'Folders',
-                    subtitle: 'Folder style and grid size',
-                    onTap: () => Navigator.push(
-                      c,
-                      settingsRoute(const FolderSettingsScreen()),
-                    ),
-                  ),
+                icon: Icons.folder_outlined,
+                title: 'Folders',
+                subtitle: 'Folder style and grid size',
+                onTap: () => _openPreferences(c, const FolderSettingsScreen()),
+              ),
               (c) => _Tile(
-                    icon: Icons.swipe,
-                    title: 'Gestures',
-                    subtitle: 'Swipes, double-tap, buttons',
-                    onTap: () => Navigator.push(
-                      c,
-                      settingsRoute(const GestureSettingsScreen()),
-                    ),
-                  ),
+                icon: Icons.swipe,
+                title: 'Gestures',
+                subtitle: 'Swipes, double-tap, buttons',
+                onTap: () => _openPreferences(c, const GestureSettingsScreen()),
+              ),
               (c) => _Tile(
-                    icon: Icons.history,
-                    title: 'Recents',
-                    subtitle: 'Recent apps behavior',
-                    onTap: () => Navigator.push(
-                      c,
-                      settingsRoute(const RecentsSettingsScreen()),
-                    ),
-                  ),
+                icon: Icons.history,
+                title: 'Recents',
+                subtitle: 'Recent apps behavior',
+                onTap: () => _openPreferences(c, const RecentsSettingsScreen()),
+              ),
               (_) => const Divider(),
               (_) => const _SectionHeader(
-                    icon: Icons.support_outlined,
-                    title: 'Support',
-                  ),
+                icon: Icons.support_outlined,
+                title: 'Support',
+              ),
               (c) => _Tile(
-                    icon: Icons.privacy_tip_outlined,
-                    title: 'Privacy Policy',
-                    subtitle: 'How your data is handled',
-                    onTap: () => _openLink(
-                      c,
-                      (links) => links.openPrivacyPolicy(),
-                      "Couldn't open the privacy policy",
-                    ),
-                  ),
+                icon: Icons.privacy_tip_outlined,
+                title: 'Privacy Policy',
+                subtitle: 'How your data is handled',
+                onTap: () => _openLink(
+                  c,
+                  (links) => links.openPrivacyPolicy(),
+                  "Couldn't open the privacy policy",
+                ),
+              ),
               (c) => _Tile(
-                    icon: Icons.share_outlined,
-                    title: 'Share Smart Launcher',
-                    subtitle: 'Send a friend the Play Store link',
-                    onTap: () => _openLink(
-                      c,
-                      (links) => links.shareApp(),
-                      "Couldn't open the share sheet",
-                    ),
-                  ),
+                icon: Icons.share_outlined,
+                title: 'Share Smart Launcher',
+                subtitle: 'Send a friend the Play Store link',
+                onTap: () => _openLink(
+                  c,
+                  (links) => links.shareApp(),
+                  "Couldn't open the share sheet",
+                ),
+              ),
               (c) => _Tile(
-                    icon: Icons.star_outline,
-                    title: 'Rate on Google Play',
-                    subtitle: 'Open the store listing',
-                    onTap: () => _openLink(
-                      c,
-                      (links) => links.openStoreListing(),
-                      "Couldn't open the Play Store",
-                    ),
-                  ),
+                icon: Icons.star_outline,
+                title: 'Rate on Google Play',
+                subtitle: 'Open the store listing',
+                onTap: () => _openLink(
+                  c,
+                  (links) => links.openStoreListing(),
+                  "Couldn't open the Play Store",
+                ),
+              ),
               (c) => _Tile(
-                    icon: Icons.help_outline,
-                    title: 'Help & Feedback',
-                    subtitle: 'Restore home screen, send feedback, uninstall',
-                    onTap: () => Navigator.push(
-                      c,
-                      settingsRoute(const HelpFeedbackScreen()),
-                    ),
-                  ),
+                icon: Icons.help_outline,
+                title: 'Help & Feedback',
+                subtitle: 'Restore home screen, send feedback, uninstall',
+                onTap: () => Navigator.push(
+                  c,
+                  settingsRoute(const HelpFeedbackScreen()),
+                ),
+              ),
               // Developer Options follows the kit's DeveloperAccessController:
               // a development build, a recognised phone, or the passcode
               // entered through the title gesture above. Revoking access
@@ -428,179 +459,201 @@ class _SettingsRootScreenState extends State<SettingsRootScreen> {
               // startup — it falls back to the env development flag.
               if (_developerAccess?.allows(DeveloperAction.diagnostics) ??
                   AppEnv.developmentMode) ...[
-              (_) => const Divider(),
-              (_) => const _SectionHeader(
-                    icon: Icons.science_outlined,
-                    title: 'Developer Options',
+                (_) => const Divider(),
+                (_) => const _SectionHeader(
+                  icon: Icons.science_outlined,
+                  title: 'Developer Options',
+                ),
+                (_) => const _SubSectionHeader(
+                  icon: Icons.build_outlined,
+                  title: 'Maintenance',
+                ),
+                (c) => ListTile(
+                  leading: const Icon(Icons.restore, color: Colors.red),
+                  title: const Text(
+                    'Reset to Defaults',
+                    style: TextStyle(color: Colors.red),
                   ),
-              (_) => const _SubSectionHeader(
-                    icon: Icons.build_outlined,
-                    title: 'Maintenance',
+                  subtitle: const Text('Clear all settings and layout'),
+                  onTap: () => _confirmReset(c),
+                ),
+                (c) => ListTile(
+                  leading: const Icon(
+                    Icons.cleaning_services_outlined,
+                    color: Colors.red,
                   ),
-              (c) => ListTile(
-                    leading: const Icon(Icons.restore, color: Colors.red),
-                    title: const Text('Reset to Defaults',
-                        style: TextStyle(color: Colors.red)),
-                    subtitle: const Text('Clear all settings and layout'),
-                    onTap: () => _confirmReset(c),
+                  title: const Text(
+                    'Simulate Fresh Install',
+                    style: TextStyle(color: Colors.red),
                   ),
-              (c) => ListTile(
-                    leading: const Icon(Icons.cleaning_services_outlined,
-                        color: Colors.red),
-                    title: const Text('Simulate Fresh Install',
-                        style: TextStyle(color: Colors.red)),
-                    subtitle: const Text(
-                      'Wipe icon caches, snapshot, layout, settings & '
-                      'onboarding, then restart at onboarding',
+                  subtitle: const Text(
+                    'Wipe icon caches, snapshot, layout, settings & '
+                    'onboarding, then restart at onboarding',
+                  ),
+                  onTap: () => _confirmSimulateFreshInstall(c),
+                ),
+                (_) => const _SubSectionHeader(
+                  icon: Icons.visibility_outlined,
+                  title: 'Dev View',
+                ),
+                if (DefaultLauncherPolicy.canConfigurePageZero)
+                  (_) => ValueListenableBuilder<bool>(
+                    valueListenable: DefaultLauncherPolicy.pageZeroPrompts,
+                    builder: (_, enabled, __) => SettingsTile(
+                      item: SettingsToggle(
+                        title: 'Prompt after Page 0 → Home',
+                        subtitle:
+                            'Ask to become the default launcher after leaving Discover. Development builds only.',
+                        icon: Icons.home_outlined,
+                        value: enabled,
+                        onChanged: _savingPageZeroPrompt
+                            ? null
+                            : _setPageZeroPrompt,
+                      ),
                     ),
-                    onTap: () => _confirmSimulateFreshInstall(c),
                   ),
-              (_) => const _SubSectionHeader(
-                    icon: Icons.visibility_outlined,
-                    title: 'Dev View',
-                  ),
-              (c) => BlocBuilder<SettingsCubit, LauncherSettings>(
-                    bloc: c.read<SettingsCubit>(),
-                    builder: (context, state) {
-                      final cubit = context.read<SettingsCubit>();
-                      return Column(
-                        children: [
-                          SwitchListTile(
-                            secondary: const Icon(Icons.bug_report_outlined),
-                            title: const Text('Grid Debug Overlay'),
-                            subtitle: const Text(
-                              'Show free cells in green and blocked or occupied cells in red',
-                            ),
-                            value: state.showGridDebugOverlay,
-                            onChanged: (value) => cubit.update(
-                              state.copyWith(showGridDebugOverlay: value),
-                            ),
+                (c) => BlocBuilder<SettingsCubit, LauncherSettings>(
+                  bloc: c.read<SettingsCubit>(),
+                  builder: (context, state) {
+                    final cubit = context.read<SettingsCubit>();
+                    return Column(
+                      children: [
+                        SwitchListTile(
+                          secondary: const Icon(Icons.bug_report_outlined),
+                          title: const Text('Grid Debug Overlay'),
+                          subtitle: const Text(
+                            'Show free cells in green and blocked or occupied cells in red',
                           ),
-                          SwitchListTile(
-                            secondary: const Icon(Icons.info_outline),
-                            title: const Text('Widget Picker Debug Info'),
-                            subtitle: const Text(
-                              'Show min/max spans, dp sizes, and resize mode under each widget in the picker',
-                            ),
-                            value: state.showWidgetPickerDebugInfo,
-                            onChanged: (value) => cubit.update(
-                              state.copyWith(showWidgetPickerDebugInfo: value),
-                            ),
+                          value: state.showGridDebugOverlay,
+                          onChanged: (value) => cubit.update(
+                            state.copyWith(showGridDebugOverlay: value),
                           ),
-                        ],
-                      );
-                    },
-                  ),
-              if (_runtime case final runtime?)
-                (c) => _Tile(
-                      icon: Icons.science_outlined,
-                      title: 'Kit Lab',
-                      subtitle:
-                          'Module health, analytics, events, remote config, '
-                          'replay, logs & storage',
-                      onTap: () => Navigator.push(
-                        c,
-                        settingsRoute(
-                          StarterKitLabScreen(host: buildLabHost(runtime)),
                         ),
+                        SwitchListTile(
+                          secondary: const Icon(Icons.info_outline),
+                          title: const Text('Widget Picker Debug Info'),
+                          subtitle: const Text(
+                            'Show min/max spans, dp sizes, and resize mode under each widget in the picker',
+                          ),
+                          value: state.showWidgetPickerDebugInfo,
+                          onChanged: (value) => cubit.update(
+                            state.copyWith(showWidgetPickerDebugInfo: value),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                if (_runtime case final runtime?)
+                  (c) => _Tile(
+                    icon: Icons.science_outlined,
+                    title: 'Kit Lab',
+                    subtitle:
+                        'Module health, analytics, events, remote config, '
+                        'replay, logs & storage',
+                    onTap: () => Navigator.push(
+                      c,
+                      settingsRoute(
+                        StarterKitLabScreen(host: buildLabHost(runtime)),
                       ),
                     ),
-              if (kDebugMode)
-                (c) => _Tile(
-                      icon: Icons.flag_outlined,
-                      title: 'Onboarding',
-                      subtitle: 'Preview & reset first-run and mini-app flows',
-                      onTap: () => Navigator.push(
-                        c,
-                        settingsRoute(const OnboardingDebugScreen()),
-                      ),
+                  ),
+                if (kDebugMode)
+                  (c) => _Tile(
+                    icon: Icons.flag_outlined,
+                    title: 'Onboarding',
+                    subtitle: 'Preview & reset first-run and mini-app flows',
+                    onTap: () => Navigator.push(
+                      c,
+                      settingsRoute(const OnboardingDebugScreen()),
                     ),
-              // TEMP: After Call is disabled; keep the debug panel out of Dev
-              // View so it cannot arm or preview the paused feature.
-              // if (kDebugMode) (_) => const _AfterCallDebugPanel(),
-              // TEMP: Install & Uninstall Assistant is disabled; keep the debug
-              // panel out of Dev View so it cannot preview the paused feature.
-              // if (kDebugMode) (_) => const _InstallAssistantDebugPanel(),
-              if (kDebugMode) (_) => const _AlarmDebugPanel(),
-              // Crashlytics collection is disabled in debug (see main.dart),
-              // so this panel can't actually exercise reporting; it's kept here
-              // only for local inspection and rides the section-wide
-              // developmentMode guard above so it never ships. Temporary —
-              // strip before launch.
-              (_) => const _SubSectionHeader(
-                    icon: Icons.warning_amber_outlined,
-                    title: 'Crashlytics',
                   ),
-              (_) => const _CrashlyticsDebugPanel(),
-              (_) => const _SubSectionHeader(
-                    icon: Icons.article_outlined,
-                    title: 'Logs',
-                  ),
-              (c) => BlocBuilder<SettingsCubit, LauncherSettings>(
-                    bloc: c.read<SettingsCubit>(),
-                    builder: (context, state) {
-                      final cubit = context.read<SettingsCubit>();
-                      return Column(
-                        children: [
-                          SwitchListTile(
-                            secondary: const Icon(Icons.article_outlined),
-                            title: const Text('Widget Debug Logs'),
-                            subtitle: const Text(
-                              'Print widget sizing/resize/binding logs to logcat and the Dart console',
-                            ),
-                            value: state.showWidgetDebugLogs,
-                            onChanged: (value) => cubit.update(
-                              state.copyWith(showWidgetDebugLogs: value),
-                            ),
+                // TEMP: After Call is disabled; keep the debug panel out of Dev
+                // View so it cannot arm or preview the paused feature.
+                // if (kDebugMode) (_) => const _AfterCallDebugPanel(),
+                // TEMP: Install & Uninstall Assistant is disabled; keep the debug
+                // panel out of Dev View so it cannot preview the paused feature.
+                // if (kDebugMode) (_) => const _InstallAssistantDebugPanel(),
+                if (kDebugMode) (_) => const _AlarmDebugPanel(),
+                // Crashlytics collection is disabled in debug (see main.dart),
+                // so this panel can't actually exercise reporting; it's kept here
+                // only for local inspection and rides the section-wide
+                // developmentMode guard above so it never ships. Temporary —
+                // strip before launch.
+                (_) => const _SubSectionHeader(
+                  icon: Icons.warning_amber_outlined,
+                  title: 'Crashlytics',
+                ),
+                (_) => const _CrashlyticsDebugPanel(),
+                (_) => const _SubSectionHeader(
+                  icon: Icons.article_outlined,
+                  title: 'Logs',
+                ),
+                (c) => BlocBuilder<SettingsCubit, LauncherSettings>(
+                  bloc: c.read<SettingsCubit>(),
+                  builder: (context, state) {
+                    final cubit = context.read<SettingsCubit>();
+                    return Column(
+                      children: [
+                        SwitchListTile(
+                          secondary: const Icon(Icons.article_outlined),
+                          title: const Text('Widget Debug Logs'),
+                          subtitle: const Text(
+                            'Print widget sizing/resize/binding logs to logcat and the Dart console',
                           ),
-                          SwitchListTile(
-                            secondary: const Icon(Icons.open_with_outlined),
-                            title: const Text('Widget Drag Debug Logs'),
-                            subtitle: const Text(
-                              'Log widget long-press, drag activation, drop resolution, placement invariants, and native host-view movement (tags JUMP and WidgetDragDrop)',
-                            ),
-                            value: state.showWidgetDragDebugLogs,
-                            onChanged: (value) => cubit.update(
-                              state.copyWith(showWidgetDragDebugLogs: value),
-                            ),
+                          value: state.showWidgetDebugLogs,
+                          onChanged: (value) => cubit.update(
+                            state.copyWith(showWidgetDebugLogs: value),
                           ),
-                          SwitchListTile(
-                            secondary: const Icon(Icons.speed_outlined),
-                            title: const Text('Drawer Perf Logs'),
-                            subtitle: const Text(
-                              'Log drawer open timing, per-frame build/raster, and recycler layout/paint events to logcat (tag DrawerPerf)',
-                            ),
-                            value: state.showDrawerPerfLogs,
-                            onChanged: (value) => cubit.update(
-                              state.copyWith(showDrawerPerfLogs: value),
-                            ),
+                        ),
+                        SwitchListTile(
+                          secondary: const Icon(Icons.open_with_outlined),
+                          title: const Text('Widget Drag Debug Logs'),
+                          subtitle: const Text(
+                            'Log widget long-press, drag activation, drop resolution, placement invariants, and native host-view movement (tags JUMP and WidgetDragDrop)',
                           ),
-                          SwitchListTile(
-                            secondary: const Icon(Icons.layers_outlined),
-                            title: const Text('Route Coverage Logs'),
-                            subtitle: const Text(
-                              'Log when another route covers/uncovers the home screen (tag DrawerPerf RouteCoverage)',
-                            ),
-                            value: state.showRouteCoverageLogs,
-                            onChanged: (value) => cubit.update(
-                              state.copyWith(showRouteCoverageLogs: value),
-                            ),
+                          value: state.showWidgetDragDebugLogs,
+                          onChanged: (value) => cubit.update(
+                            state.copyWith(showWidgetDragDebugLogs: value),
                           ),
-                          SwitchListTile(
-                            secondary: const Icon(Icons.settings_outlined),
-                            title: const Text('Settings Logs'),
-                            subtitle: const Text(
-                              'Log when the Settings screen opens and closes (tag SettingsLog)',
-                            ),
-                            value: state.showSettingsLogs,
-                            onChanged: (value) => cubit.update(
-                              state.copyWith(showSettingsLogs: value),
-                            ),
+                        ),
+                        SwitchListTile(
+                          secondary: const Icon(Icons.speed_outlined),
+                          title: const Text('Drawer Perf Logs'),
+                          subtitle: const Text(
+                            'Log drawer open timing, per-frame build/raster, and recycler layout/paint events to logcat (tag DrawerPerf)',
                           ),
-                        ],
-                      );
-                    },
-                  ),
+                          value: state.showDrawerPerfLogs,
+                          onChanged: (value) => cubit.update(
+                            state.copyWith(showDrawerPerfLogs: value),
+                          ),
+                        ),
+                        SwitchListTile(
+                          secondary: const Icon(Icons.layers_outlined),
+                          title: const Text('Route Coverage Logs'),
+                          subtitle: const Text(
+                            'Log when another route covers/uncovers the home screen (tag DrawerPerf RouteCoverage)',
+                          ),
+                          value: state.showRouteCoverageLogs,
+                          onChanged: (value) => cubit.update(
+                            state.copyWith(showRouteCoverageLogs: value),
+                          ),
+                        ),
+                        SwitchListTile(
+                          secondary: const Icon(Icons.settings_outlined),
+                          title: const Text('Settings Logs'),
+                          subtitle: const Text(
+                            'Log when the Settings screen opens and closes (tag SettingsLog)',
+                          ),
+                          value: state.showSettingsLogs,
+                          onChanged: (value) => cubit.update(
+                            state.copyWith(showSettingsLogs: value),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
               ],
             ];
             return ListView.builder(
@@ -911,14 +964,16 @@ class _InstallAssistantDebugPanelState
             runSpacing: 8,
             children: [
               FilledButton.tonalIcon(
-                onPressed:
-                    _busy ? null : () => _showAssistantOverlay(removed: false),
+                onPressed: _busy
+                    ? null
+                    : () => _showAssistantOverlay(removed: false),
                 icon: const Icon(Icons.add_circle_outline),
                 label: const Text('Show install modal'),
               ),
               FilledButton.tonalIcon(
-                onPressed:
-                    _busy ? null : () => _showAssistantOverlay(removed: true),
+                onPressed: _busy
+                    ? null
+                    : () => _showAssistantOverlay(removed: true),
                 icon: const Icon(Icons.delete_outline),
                 label: const Text('Show uninstall modal'),
               ),
@@ -965,9 +1020,9 @@ class _CrashlyticsDebugPanel extends StatelessWidget {
           Text(
             kDebugMode
                 ? 'Collection is OFF in debug — install a RELEASE build, then '
-                    'tap a button below. Forced crashes upload on the next launch.'
+                      'tap a button below. Forced crashes upload on the next launch.'
                 : 'Tap to send a test event to Crashlytics. A forced crash uploads '
-                    'on the next app launch; non-fatals upload in the background.',
+                      'on the next app launch; non-fatals upload in the background.',
             style: const TextStyle(fontSize: 12),
           ),
           const SizedBox(height: 12),
@@ -977,8 +1032,10 @@ class _CrashlyticsDebugPanel extends StatelessWidget {
             children: [
               FilledButton.tonalIcon(
                 onPressed: () {
-                  _toast(context,
-                      'Recorded non-fatal. Check Crashlytics in a minute or two.');
+                  _toast(
+                    context,
+                    'Recorded non-fatal. Check Crashlytics in a minute or two.',
+                  );
                   FirebaseCrashlytics.instance.recordError(
                     Exception('Test non-fatal from Settings'),
                     StackTrace.current,
@@ -1004,8 +1061,10 @@ class _CrashlyticsDebugPanel extends StatelessWidget {
               FilledButton.icon(
                 style: FilledButton.styleFrom(backgroundColor: Colors.red),
                 onPressed: () {
-                  _toast(context,
-                      'Crashing now — REOPEN the app to upload the report.');
+                  _toast(
+                    context,
+                    'Crashing now — REOPEN the app to upload the report.',
+                  );
                   // Small delay so the toast paints before the native crash.
                   Future<void>.delayed(
                     const Duration(milliseconds: 400),
@@ -1042,9 +1101,7 @@ class _AlarmDebugPanelState extends State<_AlarmDebugPanel> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _scheduleTestAlarm({
-    required bool goodMorning,
-  }) async {
+  Future<void> _scheduleTestAlarm({required bool goodMorning}) async {
     if (_busy) return;
     setState(() => _busy = true);
     try {
@@ -1068,8 +1125,8 @@ class _AlarmDebugPanelState extends State<_AlarmDebugPanel> {
       _toast(
         ok
             ? goodMorning
-                ? 'Good Morning test rings in 5s — dismiss it to open the dashboard.'
-                : 'Test alarm rings in 5s — lock the phone to see the full-screen ring.'
+                  ? 'Good Morning test rings in 5s — dismiss it to open the dashboard.'
+                  : 'Test alarm rings in 5s — lock the phone to see the full-screen ring.'
             : 'Could not schedule. Allow exact alarms, then try again.',
       );
     } catch (e) {
@@ -1101,14 +1158,16 @@ class _AlarmDebugPanelState extends State<_AlarmDebugPanel> {
             runSpacing: 8,
             children: [
               FilledButton.tonalIcon(
-                onPressed:
-                    _busy ? null : () => _scheduleTestAlarm(goodMorning: false),
+                onPressed: _busy
+                    ? null
+                    : () => _scheduleTestAlarm(goodMorning: false),
                 icon: const Icon(Icons.alarm),
                 label: const Text('Test alarm'),
               ),
               FilledButton.tonalIcon(
-                onPressed:
-                    _busy ? null : () => _scheduleTestAlarm(goodMorning: true),
+                onPressed: _busy
+                    ? null
+                    : () => _scheduleTestAlarm(goodMorning: true),
                 icon: const Icon(Icons.wb_sunny_outlined),
                 label: const Text('Good Morning test'),
               ),

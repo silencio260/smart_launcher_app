@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:smart_launcher_app/core/ads/launcher_ads.dart';
+import 'package:smart_launcher_app/core/ads/launcher_banner_ad.dart';
 import 'package:smart_launcher_app/features/settings/presentation/bloc/wallpaper_feed_controller.dart';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -59,7 +61,11 @@ Future<WallpaperTarget?> _askWallpaperTarget(BuildContext context) {
           for (final (target, icon, label) in const [
             (WallpaperTarget.home, Icons.home_outlined, 'Home screen'),
             (WallpaperTarget.lock, Icons.lock_outline, 'Lock screen'),
-            (WallpaperTarget.both, Icons.phone_android, 'Home and lock screens'),
+            (
+              WallpaperTarget.both,
+              Icons.phone_android,
+              'Home and lock screens',
+            ),
           ])
             ListTile(
               leading: Icon(icon),
@@ -85,14 +91,12 @@ Future<void> _followPhoneWallpaper(SettingsCubit cubit) {
   final s = cubit.state;
   return cubit.update(
     s.copyWith(
-      iosBackground:
-          s.iosBackground == HomeBackground.photo
-              ? HomeBackground.wallpaper
-              : null,
-      minimalBackground:
-          s.minimalBackground == HomeBackground.photo
-              ? HomeBackground.wallpaper
-              : null,
+      iosBackground: s.iosBackground == HomeBackground.photo
+          ? HomeBackground.wallpaper
+          : null,
+      minimalBackground: s.minimalBackground == HomeBackground.photo
+          ? HomeBackground.wallpaper
+          : null,
     ),
   );
 }
@@ -117,6 +121,11 @@ class _WallpaperScreenState extends State<WallpaperScreen> {
     _feed = WallpaperFeedController()..addListener(_onFeedChanged);
     _feed.refresh();
     _feed.loadCategories();
+    if (!widget.embedded) {
+      unawaited(
+        LauncherAds.preloadAction(LauncherAdPlacements.wallpaperApplied),
+      );
+    }
   }
 
   void _onFeedChanged() {
@@ -183,11 +192,14 @@ class _WallpaperScreenState extends State<WallpaperScreen> {
     Navigator.push(
       context,
       MaterialPageRoute<void>(
-        builder:
-            (_) => BlocProvider.value(
-              value: settings,
-              child: _WallpaperPreviewScreen(item: item, expiresAt: expiresAt),
-            ),
+        builder: (_) => BlocProvider.value(
+          value: settings,
+          child: _WallpaperPreviewScreen(
+            item: item,
+            expiresAt: expiresAt,
+            adsEnabled: !widget.embedded,
+          ),
+        ),
       ),
     );
   }
@@ -211,9 +223,15 @@ class _WallpaperScreenState extends State<WallpaperScreen> {
         settings.state.minimalPhotoPath,
       ]);
       if (!mounted || target == null) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_appliedMessage(target))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_appliedMessage(target))));
+      if (!widget.embedded) {
+        await LauncherAds.onActionCompleted(
+          context,
+          LauncherAdPlacements.wallpaperApplied,
+        );
+      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -229,6 +247,12 @@ class _WallpaperScreenState extends State<WallpaperScreen> {
     return Scaffold(
       backgroundColor: widget.embedded ? Colors.transparent : null,
       appBar: widget.embedded ? null : AppBar(title: const Text('Wallpaper')),
+      bottomNavigationBar: widget.embedded
+          ? null
+          : const LauncherBannerAd(
+              placement: LauncherAdPlacements.wallpaperBanner,
+              showLabel: true,
+            ),
       body: BlocBuilder<SettingsCubit, LauncherSettings>(
         builder: (context, settings) {
           return CustomScrollView(
@@ -240,8 +264,9 @@ class _WallpaperScreenState extends State<WallpaperScreen> {
                     children: [
                       Expanded(
                         child: OutlinedButton.icon(
-                          onPressed:
-                              _pickingGalleryImage ? null : _chooseFromGallery,
+                          onPressed: _pickingGalleryImage
+                              ? null
+                              : _chooseFromGallery,
                           icon: const Icon(Icons.photo_library_outlined),
                           label: const Text('Choose from gallery'),
                         ),
@@ -250,22 +275,13 @@ class _WallpaperScreenState extends State<WallpaperScreen> {
                   ),
                 ),
               ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Wallpapers'),
-                      if (wallpaperNoticeText(_feed.notices).isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text(wallpaperNoticeText(_feed.notices)),
-                        ),
-                    ],
+              if (wallpaperNoticeText(_feed.notices).isNotEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                    child: Text(wallpaperNoticeText(_feed.notices)),
                   ),
                 ),
-              ),
               SliverToBoxAdapter(
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
@@ -277,18 +293,18 @@ class _WallpaperScreenState extends State<WallpaperScreen> {
                         selected:
                             _feed.selectedCategoryId == null &&
                             _feed.selectedSearch == null,
-                        onSelected:
-                            _feed.loading
-                                ? null
-                                : (_) => _feed.selectCategory(null),
+                        onSelected: _feed.loading
+                            ? null
+                            : (_) => _feed.selectCategory(null),
                       ),
                       for (final tab in _availableTabs) ...[
                         const SizedBox(width: 8),
                         ChoiceChip(
                           label: Text(tab.label),
                           selected: _isSelectedCategory(tab),
-                          onSelected:
-                              _feed.loading ? null : (_) => _selectTab(tab),
+                          onSelected: _feed.loading
+                              ? null
+                              : (_) => _selectTab(tab),
                         ),
                       ],
                     ],
@@ -319,36 +335,35 @@ class _WallpaperScreenState extends State<WallpaperScreen> {
                   child: Padding(
                     padding: const EdgeInsets.all(24),
                     child: Center(
-                      child:
-                          _feed.loading
-                              ? const CircularProgressIndicator()
-                              : _feed.error != null
-                              ? Column(
-                                children: [
-                                  Text(
-                                    _feed.error!.message,
-                                    textAlign: TextAlign.center,
+                      child: _feed.loading
+                          ? const CircularProgressIndicator()
+                          : _feed.error != null
+                          ? Column(
+                              children: [
+                                Text(
+                                  _feed.error!.message,
+                                  textAlign: TextAlign.center,
+                                ),
+                                TextButton(
+                                  onPressed: _feed.loadMore,
+                                  child: Text(
+                                    _feed.needsReload
+                                        ? 'Reload wallpapers'
+                                        : 'Retry',
                                   ),
-                                  TextButton(
-                                    onPressed: _feed.loadMore,
-                                    child: Text(
-                                      _feed.needsReload
-                                          ? 'Reload wallpapers'
-                                          : 'Retry',
-                                    ),
-                                  ),
-                                ],
-                              )
-                              : _feed.nextPage != null
-                              ? OutlinedButton(
-                                onPressed: _feed.loadMore,
-                                child: const Text('Load more'),
-                              )
-                              : Text(
-                                _feed.items.isEmpty
-                                    ? 'No wallpapers available'
-                                    : 'All wallpapers loaded',
-                              ),
+                                ),
+                              ],
+                            )
+                          : _feed.nextPage != null
+                          ? OutlinedButton(
+                              onPressed: _feed.loadMore,
+                              child: const Text('Load more'),
+                            )
+                          : Text(
+                              _feed.items.isEmpty
+                                  ? 'No wallpapers available'
+                                  : 'All wallpapers loaded',
+                            ),
                     ),
                   ),
                 ),
@@ -382,29 +397,28 @@ class _WallpaperTile extends StatelessWidget {
             Positioned(
               top: 8,
               right: 8,
-              child:
-                  item.isLive
-                      ? DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.68),
-                          borderRadius: BorderRadius.circular(999),
+              child: item.isLive
+                  ? DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.68),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
                         ),
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          child: Text(
-                            'Live',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
+                        child: Text(
+                          'Live',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                      )
-                      : const SizedBox.shrink(),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
             ),
             Positioned(
               left: 0,
@@ -449,8 +463,13 @@ class _WallpaperPreviewScreen extends StatefulWidget {
   final WallpaperItem item;
 
   final DateTime expiresAt;
+  final bool adsEnabled;
 
-  const _WallpaperPreviewScreen({required this.item, required this.expiresAt});
+  const _WallpaperPreviewScreen({
+    required this.item,
+    required this.expiresAt,
+    required this.adsEnabled,
+  });
 
   @override
   State<_WallpaperPreviewScreen> createState() =>
@@ -506,7 +525,15 @@ class _WallpaperPreviewScreenState extends State<_WallpaperPreviewScreen>
       messenger
         ..removeCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text(_appliedMessage(target))));
-      if (mounted) Navigator.pop(context);
+      if (widget.adsEnabled) {
+        await LauncherAds.onActionCompleted(
+          context,
+          LauncherAdPlacements.wallpaperApplied,
+        );
+      }
+      if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+        Navigator.pop(context);
+      }
     } catch (error) {
       if (!mounted) return;
       messenger
@@ -529,79 +556,76 @@ class _WallpaperPreviewScreenState extends State<_WallpaperPreviewScreen>
         surfaceTintColor: Colors.transparent,
         foregroundColor: Colors.white,
       ),
-      body:
-          _expired
-              ? Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'This selection expired. Reload wallpapers to continue.',
-                      style: TextStyle(color: Colors.white),
-                      textAlign: TextAlign.center,
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Back to wallpapers'),
-                    ),
-                  ],
-                ),
-              )
-              : Stack(
-                fit: StackFit.expand,
+      body: _expired
+          ? Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  _WallpaperImage(
-                    item: widget.item,
-                    fullResolution: true,
-                    loadingColor: Colors.white,
-                    brokenColor: Colors.white70,
+                  const Text(
+                    'This selection expired. Reload wallpapers to continue.',
+                    style: TextStyle(color: Colors.white),
+                    textAlign: TextAlign.center,
                   ),
-                  // Keeps the back button and title legible on bright images.
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: MediaQuery.paddingOf(context).top + kToolbarHeight,
-                    child: const IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [Colors.black54, Colors.transparent],
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                          ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Back to wallpapers'),
+                  ),
+                ],
+              ),
+            )
+          : Stack(
+              fit: StackFit.expand,
+              children: [
+                _WallpaperImage(
+                  item: widget.item,
+                  fullResolution: true,
+                  loadingColor: Colors.white,
+                  brokenColor: Colors.white70,
+                ),
+                // Keeps the back button and title legible on bright images.
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: MediaQuery.paddingOf(context).top + kToolbarHeight,
+                  child: const IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Colors.black54, Colors.transparent],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
                         ),
                       ),
                     ),
                   ),
-                  Positioned(
-                    left: 16,
-                    right: 16,
-                    bottom: MediaQuery.of(context).padding.bottom + 16,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed:
-                                _busy || widget.item.isLive ? null : _save,
-                            icon:
-                                _busy
-                                    ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                    : const Icon(Icons.check_rounded),
-                            label: const Text('Set wallpaper'),
-                          ),
+                ),
+                Positioned(
+                  left: 16,
+                  right: 16,
+                  bottom: MediaQuery.of(context).padding.bottom + 16,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: _busy || widget.item.isLive ? null : _save,
+                          icon: _busy
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.check_rounded),
+                          label: const Text('Set wallpaper'),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
+            ),
     );
   }
 }
@@ -625,23 +649,18 @@ class _WallpaperImage extends StatelessWidget {
       return Image.asset(
         item.assetPath,
         fit: BoxFit.cover,
-        errorBuilder:
-            (_, __, ___) => Icon(Icons.broken_image, color: brokenColor),
+        errorBuilder: (_, __, ___) =>
+            Icon(Icons.broken_image, color: brokenColor),
       );
     }
     return CachedNetworkImage(
-      imageUrl:
-          !fullResolution && item.thumbnailUrl.isNotEmpty
-              ? item.thumbnailUrl
-              : item.imageUrl,
+      imageUrl: !fullResolution && item.thumbnailUrl.isNotEmpty
+          ? item.thumbnailUrl
+          : item.imageUrl,
       fit: BoxFit.cover,
-      placeholder:
-          (_, __) => Center(
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: loadingColor,
-            ),
-          ),
+      placeholder: (_, __) => Center(
+        child: CircularProgressIndicator(strokeWidth: 2, color: loadingColor),
+      ),
       errorWidget: (_, __, ___) => Icon(Icons.broken_image, color: brokenColor),
     );
   }

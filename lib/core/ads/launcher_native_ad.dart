@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:smart_launcher_app/core/ads/launcher_ad_load_boundary.dart';
+import 'package:smart_launcher_app/core/ads/launcher_ads.dart';
 import 'package:flutter/material.dart';
 import 'package:genrevibes_ads/genrevibes_ads.dart';
 import 'package:genrevibes_ads_yodo1/genrevibes_ads_yodo1.dart';
@@ -19,6 +20,12 @@ class LauncherNativeAd extends StatefulWidget {
 
   final AdPlacement placement;
   final bool enabled;
+
+  static double reservedHeight(BuildContext context) =>
+      24 +
+      LauncherAds.nativeHeight +
+      16 +
+      MediaQuery.textScalerOf(context).scale(12);
 
   @override
   State<LauncherNativeAd> createState() => _LauncherNativeAdState();
@@ -46,6 +53,7 @@ class _LauncherNativeAdState extends State<LauncherNativeAd>
   void didUpdateWidget(LauncherNativeAd oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.placement != widget.placement) {
+      if (_started) LauncherAds.inlineUnmounted(oldWidget.placement);
       _recordedImpression = false;
       _started = false;
     }
@@ -60,6 +68,7 @@ class _LauncherNativeAdState extends State<LauncherNativeAd>
 
   @override
   void dispose() {
+    if (_started) LauncherAds.inlineUnmounted(widget.placement);
     _policyWakeup?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -73,131 +82,136 @@ class _LauncherNativeAdState extends State<LauncherNativeAd>
       return const SizedBox.shrink();
     }
     final runtime = sl<AppRuntime>();
-    return AnimatedBuilder(
-      animation: runtime,
-      builder:
-          (context, _) => StreamBuilder<Object>(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Do not crop a compact creative in split-screen or a narrow parent.
+        if (constraints.maxWidth < LauncherAds.nativeWidth) {
+          return const SizedBox.shrink();
+        }
+        return AnimatedBuilder(
+          animation: runtime,
+          builder: (context, _) => StreamBuilder<Object>(
             stream: runtime.adPolicyBinder?.healthChanges,
-            builder:
-                (context, _) => StreamBuilder<Object>(
-                  stream: runtime.adProvider?.healthChanges,
-                  builder: (context, _) {
-                    final provider = runtime.adProvider;
-                    final policy = runtime.adPolicy;
-                    if (provider == null || policy == null) {
-                      return const SizedBox.shrink();
-                    }
-                    final decision = policy.evaluate(widget.placement);
-                    // A cap prevents the next creative, not the one already displayed.
-                    final allowed =
-                        decision.isAllowed ||
-                        (_recordedImpression &&
-                            decision.blockReason ==
-                                AdPolicyBlockReason.frequencyCap);
-                    if (!allowed) {
-                      _recordedImpression = false;
-                      if (_foreground &&
-                          widget.enabled &&
-                          (decision.blockReason ==
-                                  AdPolicyBlockReason.frequencyCap ||
-                              decision.blockReason ==
-                                  AdPolicyBlockReason.initialDelay) &&
-                          !(_policyWakeup?.isActive ?? false)) {
-                        _policyWakeup = Timer(const Duration(seconds: 1), () {
-                          if (mounted && _foreground && widget.enabled) {
-                            setState(() {});
-                          }
-                        });
+            builder: (context, _) => StreamBuilder<Object>(
+              stream: runtime.adProvider?.healthChanges,
+              builder: (context, _) {
+                final provider = runtime.adProvider;
+                final policy = runtime.adPolicy;
+                if (provider == null || policy == null) {
+                  return const SizedBox.shrink();
+                }
+                if (widget.placement == LauncherAdPlacements.onboardingNative &&
+                    !LauncherAds.onboardingAdAllowed) {
+                  return const SizedBox.shrink();
+                }
+                final decision = policy.evaluate(widget.placement);
+                // A cap prevents the next creative, not the one already displayed.
+                final allowed =
+                    decision.isAllowed ||
+                    (_recordedImpression &&
+                        decision.blockReason ==
+                            AdPolicyBlockReason.frequencyCap);
+                if (!allowed) {
+                  _recordedImpression = false;
+                  if (_foreground &&
+                      widget.enabled &&
+                      (decision.blockReason ==
+                              AdPolicyBlockReason.frequencyCap ||
+                          decision.blockReason ==
+                              AdPolicyBlockReason.initialDelay) &&
+                      !(_policyWakeup?.isActive ?? false)) {
+                    _policyWakeup = Timer(const Duration(seconds: 1), () {
+                      if (mounted && _foreground && widget.enabled) {
+                        setState(() {});
                       }
-                      return const SizedBox.shrink();
-                    }
-                    _policyWakeup?.cancel();
-                    if (!provider.health.isOperational) {
-                      return const SizedBox.shrink();
-                    }
-                    if (!_started && (!widget.enabled || !_foreground)) {
-                      return const SizedBox.shrink();
-                    }
-                    _started = true;
-                    return Offstage(
-                      offstage: !widget.enabled || !_foreground,
-                      child: LauncherAdLoadBoundary(
-                        key: ValueKey(widget.placement.id),
-                        placement: widget.placement,
-                        active: widget.enabled && _foreground,
-                        canRetry:
-                            () =>
-                                widget.enabled &&
-                                _foreground &&
-                                provider.health.isOperational &&
-                                policy.evaluate(widget.placement).isAllowed,
-                        builder:
-                            (attempt, onEvent, onFailure) => Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              child: SizedBox(
-                                height:
-                                    376 +
-                                    MediaQuery.textScalerOf(context).scale(12),
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF5F5F5),
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      const Padding(
-                                        padding: EdgeInsets.fromLTRB(
-                                          12,
-                                          6,
-                                          12,
-                                          2,
-                                        ),
-                                        child: Text(
-                                          'Ad',
-                                          style: TextStyle(
-                                            color: Colors.black87,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ),
-                                      Yodo1NativeView(
-                                        key: ValueKey(attempt),
-                                        placement: widget.placement,
-                                        height: 360,
-                                        backgroundColor: '#F5F5F5',
-                                        onLoadFailed: onFailure,
-                                        onEvent: (event) {
-                                          if (!onEvent(event)) return;
-                                          // MAS's paid callback accompanies an impression. Loading
-                                          // alone is not evidence that an off-screen ad was seen.
-                                          if (event.type == AdEventType.paid &&
-                                              !_recordedImpression) {
-                                            _recordedImpression = true;
-                                            policy.recordShown(
-                                              widget.placement,
-                                            );
-                                          }
-                                          AppAnalytics.adLifecycle(
-                                            adType: 'native',
-                                            action: event.type.name,
-                                            result: 'success',
-                                            source: widget.placement.id,
-                                            testAds: false,
-                                          );
-                                        },
-                                      ),
-                                    ],
+                    });
+                  }
+                  return const SizedBox.shrink();
+                }
+                _policyWakeup?.cancel();
+                if (!provider.health.isOperational) {
+                  return const SizedBox.shrink();
+                }
+                if (!_started && (!widget.enabled || !_foreground)) {
+                  return const SizedBox.shrink();
+                }
+                if (!_started) LauncherAds.inlineMounted(widget.placement);
+                _started = true;
+                return Offstage(
+                  offstage: !widget.enabled || !_foreground,
+                  child: LauncherAdLoadBoundary(
+                    key: ValueKey(widget.placement.id),
+                    placement: widget.placement,
+                    active: widget.enabled && _foreground,
+                    canRetry: () =>
+                        widget.enabled &&
+                        _foreground &&
+                        provider.health.isOperational &&
+                        policy.evaluate(widget.placement).isAllowed,
+                    builder: (attempt, onEvent, onFailure) => Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: SizedBox(
+                          width: LauncherAds.nativeWidth,
+                          height:
+                              LauncherAds.nativeHeight +
+                              16 +
+                              MediaQuery.textScalerOf(context).scale(12),
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF5F5F5),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                const Padding(
+                                  padding: EdgeInsets.fromLTRB(12, 6, 12, 2),
+                                  child: Text(
+                                    'Ad',
+                                    style: TextStyle(
+                                      color: Colors.black87,
+                                      fontSize: 12,
+                                    ),
                                   ),
                                 ),
-                              ),
+                                Yodo1NativeView(
+                                  key: ValueKey(attempt),
+                                  placement: widget.placement,
+                                  height: LauncherAds.nativeHeight,
+                                  backgroundColor: '#F5F5F5',
+                                  onLoadFailed: onFailure,
+                                  onEvent: (event) {
+                                    if (!onEvent(event)) return;
+                                    // MAS's paid callback accompanies an impression. Loading
+                                    // alone is not evidence that an off-screen ad was seen.
+                                    if (event.type == AdEventType.paid &&
+                                        !_recordedImpression) {
+                                      _recordedImpression = true;
+                                      policy.recordShown(widget.placement);
+                                    }
+                                    AppAnalytics.adLifecycle(
+                                      adType: 'native',
+                                      action: event.type.name,
+                                      result: 'success',
+                                      source: widget.placement.id,
+                                      testAds: false,
+                                    );
+                                  },
+                                ),
+                              ],
                             ),
+                          ),
+                        ),
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  ),
+                );
+              },
+            ),
           ),
+        );
+      },
     );
   }
 }

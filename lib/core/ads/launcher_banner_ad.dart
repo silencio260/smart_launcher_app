@@ -7,6 +7,7 @@ import 'package:smart_launcher_app/bootstrap/app_runtime.dart';
 import 'package:smart_launcher_app/container_injector.dart';
 import 'package:smart_launcher_app/core/analytics/app_events.dart';
 import 'package:smart_launcher_app/core/ads/launcher_ad_load_boundary.dart';
+import 'package:smart_launcher_app/core/ads/launcher_ads.dart';
 
 /// A banner for the bottom of a mini-app screen.
 ///
@@ -21,6 +22,7 @@ class LauncherBannerAd extends StatefulWidget {
     super.key,
     required this.placement,
     this.size = Yodo1BannerSize.standard,
+    this.showLabel = false,
   });
 
   /// Placement this banner is reported under.
@@ -28,6 +30,7 @@ class LauncherBannerAd extends StatefulWidget {
 
   /// Banner shape to request.
   final Yodo1BannerSize size;
+  final bool showLabel;
 
   @override
   State<LauncherBannerAd> createState() => _LauncherBannerAdState();
@@ -43,6 +46,7 @@ class _LauncherBannerAdState extends State<LauncherBannerAd>
   @override
   void initState() {
     super.initState();
+    LauncherAds.inlineMounted(widget.placement);
     WidgetsBinding.instance.addObserver(this);
     final state = WidgetsBinding.instance.lifecycleState;
     _foreground = state == null || state == AppLifecycleState.resumed;
@@ -55,9 +59,20 @@ class _LauncherBannerAdState extends State<LauncherBannerAd>
 
   @override
   void dispose() {
+    LauncherAds.inlineUnmounted(widget.placement);
     _policyWakeup?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(LauncherBannerAd oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.placement != widget.placement) {
+      LauncherAds.inlineUnmounted(oldWidget.placement);
+      LauncherAds.inlineMounted(widget.placement);
+      _recordedImpression = false;
+    }
   }
 
   AdPlacement get placement => widget.placement;
@@ -82,19 +97,21 @@ class _LauncherBannerAdState extends State<LauncherBannerAd>
     if (runtime == null) return const SizedBox.shrink();
     return AnimatedBuilder(
       animation: runtime,
-      builder:
-          (context, _) => StreamBuilder<Object>(
-            stream: runtime.adPolicyBinder?.healthChanges,
-            builder:
-                (context, _) => StreamBuilder<Object>(
-                  stream: runtime.adProvider?.healthChanges,
-                  builder: (context, _) => _buildSlot(runtime),
-                ),
-          ),
+      builder: (context, _) => StreamBuilder<Object>(
+        stream: runtime.adPolicyBinder?.healthChanges,
+        builder: (context, _) => StreamBuilder<Object>(
+          stream: runtime.adProvider?.healthChanges,
+          builder: (context, _) => _buildSlot(runtime),
+        ),
+      ),
     );
   }
 
   Widget _buildSlot(AppRuntime runtime) {
+    // Pushed settings/preview routes must not leave ads refreshing underneath.
+    if (ModalRoute.isCurrentOf(context) == false) {
+      return const SizedBox.shrink();
+    }
     final provider = runtime.adProvider;
     final policy = runtime.adPolicy;
     // Skipping is normal — no ad key, provider still starting, policy off —
@@ -130,15 +147,21 @@ class _LauncherBannerAdState extends State<LauncherBannerAd>
         key: ValueKey(placement.id),
         placement: placement,
         active: _foreground,
-        canRetry:
-            () =>
-                _foreground &&
-                provider.health.isOperational &&
-                policy.evaluate(placement).isAllowed,
-        builder:
-            (attempt, onEvent, onFailure) => SafeArea(
-              top: false,
-              child: Yodo1BannerView(
+        canRetry: () =>
+            _foreground &&
+            provider.health.isOperational &&
+            policy.evaluate(placement).isAllowed,
+        builder: (attempt, onEvent, onFailure) => SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.showLabel) ...[
+                const SizedBox(height: 12),
+                Text('Ad', style: Theme.of(context).textTheme.labelSmall),
+                const SizedBox(height: 4),
+              ],
+              Yodo1BannerView(
                 key: ValueKey(attempt),
                 placement: placement,
                 size: size,
@@ -158,7 +181,10 @@ class _LauncherBannerAdState extends State<LauncherBannerAd>
                   );
                 },
               ),
-            ),
+              if (widget.showLabel) const SizedBox(height: 8),
+            ],
+          ),
+        ),
       ),
     );
   }

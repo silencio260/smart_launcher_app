@@ -49,6 +49,7 @@ class _DiscoverPageState extends State<DiscoverPage> {
   final _searchController = TextEditingController();
   List<RssItem> _items = const [];
   bool _loading = true;
+  int _feedGeneration = 0;
   String _appQuery = '';
 
   @override
@@ -106,13 +107,41 @@ class _DiscoverPageState extends State<DiscoverPage> {
   }
 
   Future<void> _loadFeed({bool force = false}) async {
-    final sources = await _sourceStore.load();
-    final items = await RssService.instance.fetch(sources, force: force);
-    if (mounted) {
-      setState(() {
-        _items = _arrange(items);
-        _loading = false;
-      });
+    if (!mounted) return;
+    setState(() => _loading = true);
+    final generation = ++_feedGeneration;
+    try {
+      final sources = await _sourceStore.load();
+      if (!mounted || generation != _feedGeneration) return;
+      final items = await RssService.instance.fetch(
+        sources,
+        force: force,
+        onPartial: (items) {
+          if (!mounted || generation != _feedGeneration) return;
+          // Append new stories without moving the article the user is reading.
+          final known = _items.map((item) => item.link).toSet();
+          setState(() {
+            _items = [
+              ..._items,
+              ..._arrange(items.where((item) => known.add(item.link))),
+            ];
+            _loading = false;
+          });
+        },
+      );
+      if (!mounted || generation != _feedGeneration) return;
+      final byLink = {for (final item in items) item.link: item};
+      final retained = [
+        for (final item in _items)
+          if (byLink.remove(item.link) case final updated?) updated,
+      ];
+      setState(() => _items = [...retained, ..._arrange(byLink.values)]);
+    } catch (error) {
+      debugPrint('DiscoverFeed: could not load sources: $error');
+    } finally {
+      if (mounted && generation == _feedGeneration) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -133,17 +162,16 @@ class _DiscoverPageState extends State<DiscoverPage> {
   @override
   Widget build(BuildContext context) {
     final hidden = context.watch<SettingsCubit>().state.hiddenApps.toSet();
-    final visibleApps =
-        context
-            .watch<AppsCubit>()
-            .state
-            .apps
-            .where(
-              (a) =>
-                  !hidden.contains(a.launcherKey) &&
-                  !hidden.contains(a.packageName),
-            )
-            .toList();
+    final visibleApps = context
+        .watch<AppsCubit>()
+        .state
+        .apps
+        .where(
+          (a) =>
+              !hidden.contains(a.launcherKey) &&
+              !hidden.contains(a.packageName),
+        )
+        .toList();
     final suggestions = visibleApps.take(8).toList();
     final query = _appQuery.trim().toLowerCase();
     final searching = query.isNotEmpty;
@@ -200,8 +228,9 @@ class _DiscoverPageState extends State<DiscoverPage> {
   }
 
   List<Widget> _buildAppResults(List<AppInfo> apps, String query) {
-    final matches =
-        apps.where((a) => a.name.toLowerCase().contains(query)).toList();
+    final matches = apps
+        .where((a) => a.name.toLowerCase().contains(query))
+        .toList();
     if (matches.isEmpty) {
       return [
         const Padding(
@@ -228,22 +257,21 @@ class _DiscoverPageState extends State<DiscoverPage> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 40),
           child: Center(
-            child:
-                _loading
-                    ? const CircularProgressIndicator(strokeWidth: 2)
-                    : Column(
-                      children: [
-                        const Text(
-                          'No stories yet',
-                          style: TextStyle(color: Colors.white54),
-                        ),
-                        const SizedBox(height: 8),
-                        TextButton(
-                          onPressed: _manageSources,
-                          child: const Text('Add a news source'),
-                        ),
-                      ],
-                    ),
+            child: _loading
+                ? const CircularProgressIndicator(strokeWidth: 2)
+                : Column(
+                    children: [
+                      const Text(
+                        'No stories yet',
+                        style: TextStyle(color: Colors.white54),
+                      ),
+                      const SizedBox(height: 8),
+                      TextButton(
+                        onPressed: () => _loadFeed(force: true),
+                        child: const Text('Retry news'),
+                      ),
+                    ],
+                  ),
           ),
         ),
       ];
@@ -254,19 +282,20 @@ class _DiscoverPageState extends State<DiscoverPage> {
           padding: const EdgeInsets.only(bottom: 12),
           child: _ArticleCard(item: item, onTap: () => _openArticle(item)),
         ),
-        if (index == 2)
+        if (index >= 2 && (index - 2) % 8 == 0 && (index - 2) ~/ 8 < 5)
           if (widget.activeSection case final section?)
             ValueListenableBuilder<HomeSection>(
+              key: ValueKey('discover_ad_${(index - 2) ~/ 8}'),
               valueListenable: section,
-              builder:
-                  (context, current, _) => LauncherNativeAd(
-                    placement: LauncherAdPlacements.discoverNative,
-                    enabled: current == HomeSection.discover,
-                  ),
+              builder: (context, current, _) => LauncherNativeAd(
+                placement: LauncherAdPlacements.discoverSlots[(index - 2) ~/ 8],
+                enabled: current == HomeSection.discover,
+              ),
             )
           else
-            const LauncherNativeAd(
-              placement: LauncherAdPlacements.discoverNative,
+            LauncherNativeAd(
+              key: ValueKey('discover_ad_${(index - 2) ~/ 8}'),
+              placement: LauncherAdPlacements.discoverSlots[(index - 2) ~/ 8],
             ),
       ],
     ];
@@ -283,21 +312,16 @@ class _DiscoverPageState extends State<DiscoverPage> {
         hintText: 'Search apps',
         hintStyle: const TextStyle(color: Colors.white54, fontSize: 16),
         prefixIcon: const Icon(Icons.search, color: Colors.white54, size: 20),
-        suffixIcon:
-            _appQuery.isEmpty
-                ? null
-                : IconButton(
-                  icon: const Icon(
-                    Icons.close,
-                    color: Colors.white54,
-                    size: 20,
-                  ),
-                  onPressed: () {
-                    _searchController.clear();
-                    setState(() => _appQuery = '');
-                    FocusScope.of(context).unfocus();
-                  },
-                ),
+        suffixIcon: _appQuery.isEmpty
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.close, color: Colors.white54, size: 20),
+                onPressed: () {
+                  _searchController.clear();
+                  setState(() => _appQuery = '');
+                  FocusScope.of(context).unfocus();
+                },
+              ),
         filled: true,
         fillColor: Colors.white.withValues(alpha: 0.12),
         contentPadding: const EdgeInsets.symmetric(vertical: 12),
@@ -347,17 +371,17 @@ class _SuggestionsRow extends StatelessWidget {
             children: [
               app.launcherFeatureId != null
                   ? FeatureIcon(
-                    featureId: app.launcherFeatureId!,
-                    componentName: app.appComponentName,
-                    size: 48,
-                  )
+                      featureId: app.launcherFeatureId!,
+                      componentName: app.appComponentName,
+                      size: 48,
+                    )
                   : ShapedIcon(
-                    iconBytes: app.icon,
-                    iconPath: app.iconPath,
-                    shape: 'squircle',
-                    size: 48,
-                    cacheKey: app.packageName,
-                  ),
+                      iconBytes: app.icon,
+                      iconPath: app.iconPath,
+                      shape: 'squircle',
+                      size: 48,
+                      cacheKey: app.packageName,
+                    ),
               const SizedBox(height: 6),
               Text(
                 app.name,
@@ -510,12 +534,11 @@ class _ArticleCard extends StatelessWidget {
                     // decode and hold in memory.
                     memCacheWidth: 220,
                     memCacheHeight: 220,
-                    placeholder:
-                        (_, __) => Container(
-                          width: 84,
-                          height: 84,
-                          color: Colors.white.withValues(alpha: 0.06),
-                        ),
+                    placeholder: (_, __) => Container(
+                      width: 84,
+                      height: 84,
+                      color: Colors.white.withValues(alpha: 0.06),
+                    ),
                     errorWidget: (_, __, ___) => const SizedBox.shrink(),
                   ),
                 ),
